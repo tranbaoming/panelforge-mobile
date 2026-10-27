@@ -1,0 +1,351 @@
+import 'package:flutter/material.dart';
+import 'package:google_fonts/google_fonts.dart';
+import '../models/comic_model.dart';
+import '../theme/app_theme.dart';
+
+class ReadingModeSwitcher extends StatefulWidget {
+  final ChapterItem chapter;
+  final ReadingMode mode;
+  final ReaderThemeMode themeMode;
+  final int initialPage;
+  final ValueChanged<int> onPageChanged;
+  final VoidCallback onTapScreen;
+
+  const ReadingModeSwitcher({
+    super.key,
+    required this.chapter,
+    required this.mode,
+    required this.themeMode,
+    this.initialPage = 1,
+    required this.onPageChanged,
+    required this.onTapScreen,
+  });
+
+  @override
+  State<ReadingModeSwitcher> createState() => ReadingModeSwitcherState();
+}
+
+class ReadingModeSwitcherState extends State<ReadingModeSwitcher> {
+  late PageController _pageController;
+  late ScrollController _scrollController;
+  int _currentPage = 1;
+
+  @override
+  void initState() {
+    super.initState();
+    _currentPage = widget.initialPage;
+    final initialIndex = (_currentPage - 1).clamp(0, widget.chapter.pages.length - 1);
+
+    if (widget.mode == ReadingMode.rtl) {
+      _pageController = PageController(
+        initialPage: widget.chapter.pages.length - 1 - initialIndex,
+      );
+    } else {
+      _pageController = PageController(initialPage: initialIndex);
+    }
+
+    _scrollController = ScrollController();
+    _scrollController.addListener(_onScroll);
+  }
+
+  @override
+  void didUpdateWidget(covariant ReadingModeSwitcher oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    if (oldWidget.mode != widget.mode) {
+      // Re-initialize controller for changed mode
+      final targetIndex = (_currentPage - 1).clamp(0, widget.chapter.pages.length - 1);
+      _pageController.dispose();
+      if (widget.mode == ReadingMode.rtl) {
+        _pageController = PageController(
+          initialPage: widget.chapter.pages.length - 1 - targetIndex,
+        );
+      } else {
+        _pageController = PageController(initialPage: targetIndex);
+      }
+    }
+  }
+
+  void _onScroll() {
+    if (widget.mode == ReadingMode.webtoon && _scrollController.hasClients) {
+      final maxScroll = _scrollController.position.maxScrollExtent;
+      final currentScroll = _scrollController.offset;
+      if (maxScroll > 0) {
+        final progress = (currentScroll / maxScroll).clamp(0.0, 1.0);
+        final page = (progress * (widget.chapter.pages.length - 1)).round() + 1;
+        if (page != _currentPage) {
+          setState(() => _currentPage = page);
+          widget.onPageChanged(page);
+        }
+      }
+    }
+  }
+
+  void jumpToPage(int page) {
+    final clampedPage = page.clamp(1, widget.chapter.pages.length);
+    setState(() => _currentPage = clampedPage);
+    widget.onPageChanged(clampedPage);
+
+    if (widget.mode == ReadingMode.webtoon) {
+      if (_scrollController.hasClients) {
+        final fraction = (clampedPage - 1) / (widget.chapter.pages.length - 1);
+        final targetOffset = fraction * _scrollController.position.maxScrollExtent;
+        _scrollController.animateTo(
+          targetOffset,
+          duration: const Duration(milliseconds: 300),
+          curve: Curves.easeOutCubic,
+        );
+      }
+    } else if (widget.mode == ReadingMode.rtl) {
+      final rtlIndex = widget.chapter.pages.length - clampedPage;
+      if (_pageController.hasClients) {
+        _pageController.jumpToPage(rtlIndex);
+      }
+    } else {
+      final index = clampedPage - 1;
+      if (_pageController.hasClients) {
+        _pageController.jumpToPage(index);
+      }
+    }
+  }
+
+  @override
+  void dispose() {
+    _pageController.dispose();
+    _scrollController.removeListener(_onScroll);
+    _scrollController.dispose();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final bgColor = Color(widget.themeMode.bgColor);
+    final surfaceColor = Color(widget.themeMode.surfaceColor);
+    final textColor = Color(widget.themeMode.textColor);
+
+    return Container(
+      color: bgColor,
+      child: GestureDetector(
+        behavior: HitTestBehavior.opaque,
+        onTap: widget.onTapScreen,
+        child: widget.mode == ReadingMode.webtoon
+            ? _buildWebtoonVerticalView(surfaceColor, textColor)
+            : _buildHorizontalPageView(surfaceColor, textColor),
+      ),
+    );
+  }
+
+  Widget _buildHorizontalPageView(Color surfaceColor, Color textColor) {
+    final isRtl = widget.mode == ReadingMode.rtl;
+    final pages = widget.chapter.pages;
+
+    return PageView.builder(
+      controller: _pageController,
+      reverse: isRtl,
+      physics: const BouncingScrollPhysics(),
+      itemCount: pages.length,
+      onPageChanged: (index) {
+        final actualPage = isRtl ? (pages.length - index) : (index + 1);
+        setState(() => _currentPage = actualPage);
+        widget.onPageChanged(actualPage);
+      },
+      itemBuilder: (context, index) {
+        final actualIndex = isRtl ? (pages.length - 1 - index) : index;
+        final page = pages[actualIndex];
+        return _buildComicSinglePage(page, surfaceColor, textColor);
+      },
+    );
+  }
+
+  Widget _buildWebtoonVerticalView(Color surfaceColor, Color textColor) {
+    final pages = widget.chapter.pages;
+
+    return ListView.builder(
+      controller: _scrollController,
+      physics: const BouncingScrollPhysics(),
+      padding: const EdgeInsets.symmetric(vertical: 24),
+      itemCount: pages.length,
+      itemBuilder: (context, index) {
+        final page = pages[index];
+        return Container(
+          margin: const EdgeInsets.only(bottom: 24),
+          child: _buildComicSinglePage(page, surfaceColor, textColor),
+        );
+      },
+    );
+  }
+
+  Widget _buildComicSinglePage(ComicPageData page, Color surfaceColor, Color textColor) {
+    return Center(
+      child: Container(
+        constraints: const BoxConstraints(maxWidth: 580),
+        margin: const EdgeInsets.symmetric(horizontal: 12),
+        decoration: BoxDecoration(
+          color: surfaceColor,
+          borderRadius: BorderRadius.circular(12),
+          boxShadow: [
+            BoxShadow(
+              color: Colors.black.withValues(alpha: 0.15),
+              blurRadius: 16,
+              offset: const Offset(0, 6),
+            ),
+          ],
+        ),
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            // Page Header tag
+            Container(
+              padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+              alignment: Alignment.centerLeft,
+              child: Row(
+                mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                children: [
+                  Text(
+                    '${widget.chapter.title.toUpperCase()} • ${page.title.toUpperCase()}',
+                    style: GoogleFonts.plusJakartaSans(
+                      fontSize: 10,
+                      fontWeight: FontWeight.w700,
+                      color: textColor.withValues(alpha: 0.5),
+                      letterSpacing: 1.2,
+                    ),
+                  ),
+                  if (widget.mode == ReadingMode.rtl)
+                    Container(
+                      padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+                      decoration: BoxDecoration(
+                        color: AppColors.primary.withValues(alpha: 0.15),
+                        borderRadius: BorderRadius.circular(4),
+                      ),
+                      child: Text(
+                        'RTL MANGA',
+                        style: GoogleFonts.plusJakartaSans(
+                          fontSize: 9,
+                          fontWeight: FontWeight.w800,
+                          color: AppColors.primary,
+                        ),
+                      ),
+                    ),
+                ],
+              ),
+            ),
+
+            // Panels inside this page
+            Padding(
+              padding: const EdgeInsets.all(12),
+              child: Column(
+                children: page.panels.map((panel) {
+                  return Container(
+                    margin: const EdgeInsets.only(bottom: 12),
+                    decoration: BoxDecoration(
+                      color: Colors.black.withValues(alpha: 0.05),
+                      borderRadius: BorderRadius.circular(8),
+                      border: Border.all(
+                        color: textColor.withValues(alpha: 0.15),
+                        width: 1.5,
+                      ),
+                    ),
+                    child: AspectRatio(
+                      aspectRatio: panel.aspectRatio,
+                      child: Stack(
+                        fit: StackFit.expand,
+                        children: [
+                          // Comic art background with tone gradient
+                          Container(
+                            decoration: BoxDecoration(
+                              gradient: LinearGradient(
+                                begin: Alignment.topLeft,
+                                end: Alignment.bottomRight,
+                                colors: [
+                                  Color(int.parse(panel.colorHex)),
+                                  Color(int.parse(panel.colorHex)).withValues(alpha: 0.7),
+                                ],
+                              ),
+                              borderRadius: BorderRadius.circular(6),
+                            ),
+                          ),
+
+                          // Action lines overlay
+                          CustomPaint(
+                            painter: _SpeedLinesPainter(),
+                          ),
+
+                          // Comic Dialogue Bubble
+                          Positioned(
+                            top: 12,
+                            left: 12,
+                            right: 48,
+                            child: Container(
+                              padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
+                              decoration: BoxDecoration(
+                                color: Colors.white,
+                                borderRadius: BorderRadius.circular(8),
+                                boxShadow: const [
+                                  BoxShadow(
+                                    color: Colors.black26,
+                                    blurRadius: 4,
+                                    offset: Offset(2, 2),
+                                  ),
+                                ],
+                              ),
+                              child: Text(
+                                panel.dialogue,
+                                style: GoogleFonts.newsreader(
+                                  fontSize: 12,
+                                  fontWeight: FontWeight.w600,
+                                  color: Colors.black87,
+                                  fontStyle: FontStyle.italic,
+                                ),
+                              ),
+                            ),
+                          ),
+
+                          // Comic SFX Sound effect
+                          Positioned(
+                            bottom: 10,
+                            right: 12,
+                            child: Transform.rotate(
+                              angle: -0.12,
+                              child: Text(
+                                panel.soundEffect,
+                                style: GoogleFonts.plusJakartaSans(
+                                  fontSize: 18,
+                                  fontWeight: FontWeight.w900,
+                                  color: AppColors.primary,
+                                  shadows: const [
+                                    Shadow(color: Colors.black, blurRadius: 4),
+                                    Shadow(color: Colors.white, blurRadius: 2),
+                                  ],
+                                ),
+                              ),
+                            ),
+                          ),
+                        ],
+                      ),
+                    ),
+                  );
+                }).toList(),
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+class _SpeedLinesPainter extends CustomPainter {
+  @override
+  void paint(Canvas canvas, Size size) {
+    final p = Paint()
+      ..color = Colors.white.withValues(alpha: 0.08)
+      ..strokeWidth = 1.0;
+
+    for (int i = 0; i < 8; i++) {
+      final y = size.height * (i / 8);
+      canvas.drawLine(Offset(0, y), Offset(size.width, y + 20), p);
+    }
+  }
+
+  @override
+  bool shouldRepaint(covariant CustomPainter oldDelegate) => false;
+}
