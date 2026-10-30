@@ -1,7 +1,9 @@
 import 'package:flutter/material.dart';
 import 'package:go_router/go_router.dart';
 import 'package:google_fonts/google_fonts.dart';
+import '../../models/api_dtos.dart';
 import '../../models/comic_model.dart';
+import '../../services/catalog_service.dart';
 import '../../theme/app_theme.dart';
 import '../../widgets/interactive_scrubber.dart';
 import '../../widgets/reading_mode_switcher.dart';
@@ -24,8 +26,10 @@ class _ComicReaderPageState extends State<ComicReaderPage> {
   final GlobalKey<ScaffoldState> _scaffoldKey = GlobalKey<ScaffoldState>();
   final GlobalKey<ReadingModeSwitcherState> _readerSwitcherKey = GlobalKey<ReadingModeSwitcherState>();
 
-  late SeriesItem _series;
-  late ChapterItem _currentChapter;
+  SeriesItem? _series;
+  ChapterItem? _currentChapter;
+  bool _isLoading = true;
+  String? _errorMessage;
 
   ReadingMode _readingMode = ReadingMode.ltr;
   ReaderThemeMode _themeMode = ReaderThemeMode.night;
@@ -35,28 +39,58 @@ class _ComicReaderPageState extends State<ComicReaderPage> {
   @override
   void initState() {
     super.initState();
-    final all = MockDataRepository.getMockSeries();
-    _series = all.firstWhere(
-      (s) => s.id == widget.seriesId,
-      orElse: () => all.first,
-    );
+    _loadData();
+  }
 
-    if (widget.chapterId != null) {
-      _currentChapter = _series.chapters.firstWhere(
-        (c) => c.id == widget.chapterId,
-        orElse: () => _series.chapters.first,
-      );
-    } else {
-      _currentChapter = _series.chapters.first;
-    }
+  Future<void> _loadData() async {
+    setState(() {
+      _isLoading = true;
+      _errorMessage = null;
+    });
 
-    // Default reading mode according to series format
-    if (_series.format == ComicFormat.manga) {
-      _readingMode = ReadingMode.rtl;
-    } else if (_series.format == ComicFormat.webtoon) {
-      _readingMode = ReadingMode.webtoon;
-    } else {
-      _readingMode = ReadingMode.ltr;
+    try {
+      final seriesDetail = await CatalogService().getSeriesDetail(widget.seriesId);
+      final series = SeriesItem.fromPublicDetailDto(seriesDetail);
+
+      final chId = widget.chapterId ?? (series.chapters.isNotEmpty ? series.chapters.first.id : null);
+      if (chId == null) {
+        if (mounted) {
+          setState(() {
+            _series = series;
+            _isLoading = false;
+            _errorMessage = 'Tác phẩm chưa có chương nào được phát hành.';
+          });
+        }
+        return;
+      }
+
+      final readDto = await CatalogService().readChapter(chId);
+      final currentChapter = ChapterItem.fromPublicReadDto(readDto);
+
+      var readingMode = ReadingMode.ltr;
+      if (readDto.readingDirection == ApiReadingDirection.rightToLeft || series.format == ComicFormat.manga) {
+        readingMode = ReadingMode.rtl;
+      } else if (readDto.readingDirection == ApiReadingDirection.vertical || series.format == ComicFormat.webtoon) {
+        readingMode = ReadingMode.webtoon;
+      }
+
+      if (mounted) {
+        setState(() {
+          _series = series;
+          _currentChapter = currentChapter;
+          _readingMode = readingMode;
+          _isLoading = false;
+          _currentPage = 1;
+        });
+      }
+    } catch (e) {
+      debugPrint('[ComicReader API Error] $e');
+      if (mounted) {
+        setState(() {
+          _isLoading = false;
+          _errorMessage = 'Không thể tải nội dung chương truyện từ máy chủ ($e).';
+        });
+      }
     }
   }
 
@@ -66,17 +100,106 @@ class _ComicReaderPageState extends State<ComicReaderPage> {
     });
   }
 
-  void _onSelectChapter(ChapterItem chapter) {
+  Future<void> _onSelectChapter(ChapterItem chapter) async {
     Navigator.of(context).pop(); // Close drawer
     setState(() {
-      _currentChapter = chapter;
-      _currentPage = 1;
+      _isLoading = true;
     });
-    _readerSwitcherKey.currentState?.jumpToPage(1);
+    try {
+      final readDto = await CatalogService().readChapter(chapter.id);
+      if (mounted) {
+        setState(() {
+          _currentChapter = ChapterItem.fromPublicReadDto(readDto);
+          _currentPage = 1;
+          _isLoading = false;
+        });
+        _readerSwitcherKey.currentState?.jumpToPage(1);
+      }
+    } catch (e) {
+      if (mounted) {
+        setState(() {
+          _isLoading = false;
+        });
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text('Lỗi khi mở chương: $e')),
+        );
+      }
+    }
   }
 
   @override
   Widget build(BuildContext context) {
+    if (_isLoading) {
+      return Scaffold(
+        backgroundColor: AppColors.darkBg,
+        appBar: AppBar(
+          backgroundColor: Colors.transparent,
+          elevation: 0,
+          leading: IconButton(
+            icon: const Icon(Icons.arrow_back_ios_new_rounded, color: Colors.white, size: 20),
+            onPressed: () => context.pop(),
+          ),
+        ),
+        body: const Center(
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              CircularProgressIndicator(color: AppColors.primary),
+              SizedBox(height: 16),
+              Text(
+                'Đang tải nội dung bản vẽ trang truyện...',
+                style: TextStyle(color: Colors.white70, fontSize: 13),
+              ),
+            ],
+          ),
+        ),
+      );
+    }
+
+    if (_series == null || _currentChapter == null) {
+      return Scaffold(
+        backgroundColor: AppColors.darkBg,
+        appBar: AppBar(
+          backgroundColor: Colors.transparent,
+          elevation: 0,
+          leading: IconButton(
+            icon: const Icon(Icons.arrow_back_ios_new_rounded, color: Colors.white, size: 20),
+            onPressed: () => context.pop(),
+          ),
+        ),
+        body: Center(
+          child: Padding(
+            padding: const EdgeInsets.all(24),
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                const Icon(Icons.menu_book_rounded, color: Colors.grey, size: 54),
+                const SizedBox(height: 16),
+                Text(
+                  _errorMessage ?? 'Không thể mở chương truyện này.',
+                  textAlign: TextAlign.center,
+                  style: GoogleFonts.plusJakartaSans(color: Colors.white70, fontSize: 14),
+                ),
+                const SizedBox(height: 20),
+                ElevatedButton.icon(
+                  onPressed: _loadData,
+                  icon: const Icon(Icons.refresh_rounded),
+                  label: const Text('Thử lại'),
+                  style: ElevatedButton.styleFrom(
+                    backgroundColor: AppColors.primary,
+                    foregroundColor: Colors.white,
+                  ),
+                ),
+              ],
+            ),
+          ),
+        ),
+      );
+    }
+
+    final series = _series!;
+    final currentChapter = _currentChapter!;
+
     final isDarkTheme = _themeMode == ReaderThemeMode.night;
     final topBarBg = Color(_themeMode.surfaceColor).withValues(alpha: 0.96);
     final hudTextColor = Color(_themeMode.textColor);
@@ -84,14 +207,14 @@ class _ComicReaderPageState extends State<ComicReaderPage> {
     return Scaffold(
       key: _scaffoldKey,
       backgroundColor: Color(_themeMode.bgColor),
-      endDrawer: _buildTableOfContentsDrawer(),
+      endDrawer: _buildTableOfContentsDrawer(series, currentChapter),
       body: Stack(
         children: [
           // FULL-BLEED IMMERSIVE READING AREA WITH 3 MODES (LTR, RTL, WEBTOON)
           Positioned.fill(
             child: ReadingModeSwitcher(
               key: _readerSwitcherKey,
-              chapter: _currentChapter,
+              chapter: currentChapter,
               mode: _readingMode,
               themeMode: _themeMode,
               initialPage: _currentPage,
@@ -145,7 +268,7 @@ class _ComicReaderPageState extends State<ComicReaderPage> {
                       mainAxisSize: MainAxisSize.min,
                       children: [
                         Text(
-                          _series.title,
+                          series.title,
                           maxLines: 1,
                           overflow: TextOverflow.ellipsis,
                           style: GoogleFonts.newsreader(
@@ -155,7 +278,7 @@ class _ComicReaderPageState extends State<ComicReaderPage> {
                           ),
                         ),
                         Text(
-                          _currentChapter.title,
+                          currentChapter.title,
                           maxLines: 1,
                           overflow: TextOverflow.ellipsis,
                           style: GoogleFonts.plusJakartaSans(
@@ -319,7 +442,7 @@ class _ComicReaderPageState extends State<ComicReaderPage> {
                   // INTERACTIVE SCRUBBER WITH TANGERINE CITRUS THEME
                   InteractiveScrubber(
                     currentPage: _currentPage,
-                    totalPages: _currentChapter.pages.length,
+                    totalPages: currentChapter.pages.length,
                     isDark: isDarkTheme,
                     onPageSelected: (page) {
                       _readerSwitcherKey.currentState?.jumpToPage(page);
@@ -330,7 +453,7 @@ class _ComicReaderPageState extends State<ComicReaderPage> {
                       }
                     },
                     onNextPage: () {
-                      if (_currentPage < _currentChapter.pages.length) {
+                      if (_currentPage < currentChapter.pages.length) {
                         _readerSwitcherKey.currentState?.jumpToPage(_currentPage + 1);
                       }
                     },
@@ -344,7 +467,7 @@ class _ComicReaderPageState extends State<ComicReaderPage> {
     );
   }
 
-  Widget _buildTableOfContentsDrawer() {
+  Widget _buildTableOfContentsDrawer(SeriesItem series, ChapterItem currentChapter) {
     return Drawer(
       backgroundColor: AppColors.darkSurface,
       child: SafeArea(
@@ -368,7 +491,7 @@ class _ComicReaderPageState extends State<ComicReaderPage> {
                   ),
                   const SizedBox(height: 6),
                   Text(
-                    _series.title,
+                    series.title,
                     style: GoogleFonts.newsreader(
                       fontSize: 20,
                       fontWeight: FontWeight.w700,
@@ -384,10 +507,10 @@ class _ComicReaderPageState extends State<ComicReaderPage> {
             // Chapters List
             Expanded(
               child: ListView.builder(
-                itemCount: _series.chapters.length,
+                itemCount: series.chapters.length,
                 itemBuilder: (context, index) {
-                  final ch = _series.chapters[index];
-                  final isCurrent = ch.id == _currentChapter.id;
+                  final ch = series.chapters[index];
+                  final isCurrent = ch.id == currentChapter.id;
 
                   return Container(
                     decoration: BoxDecoration(

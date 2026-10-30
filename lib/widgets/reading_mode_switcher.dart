@@ -1,3 +1,4 @@
+import 'package:cached_network_image/cached_network_image.dart';
 import 'package:flutter/material.dart';
 import 'package:google_fonts/google_fonts.dart';
 import '../models/comic_model.dart';
@@ -34,11 +35,11 @@ class ReadingModeSwitcherState extends State<ReadingModeSwitcher> {
   void initState() {
     super.initState();
     _currentPage = widget.initialPage;
-    final initialIndex = (_currentPage - 1).clamp(0, widget.chapter.pages.length - 1);
+    final initialIndex = (_currentPage - 1).clamp(0, widget.chapter.pages.isEmpty ? 0 : widget.chapter.pages.length - 1);
 
     if (widget.mode == ReadingMode.rtl) {
       _pageController = PageController(
-        initialPage: widget.chapter.pages.length - 1 - initialIndex,
+        initialPage: widget.chapter.pages.isEmpty ? 0 : widget.chapter.pages.length - 1 - initialIndex,
       );
     } else {
       _pageController = PageController(initialPage: initialIndex);
@@ -51,13 +52,12 @@ class ReadingModeSwitcherState extends State<ReadingModeSwitcher> {
   @override
   void didUpdateWidget(covariant ReadingModeSwitcher oldWidget) {
     super.didUpdateWidget(oldWidget);
-    if (oldWidget.mode != widget.mode) {
-      // Re-initialize controller for changed mode
-      final targetIndex = (_currentPage - 1).clamp(0, widget.chapter.pages.length - 1);
+    if (oldWidget.mode != widget.mode || oldWidget.chapter != widget.chapter) {
+      final targetIndex = (_currentPage - 1).clamp(0, widget.chapter.pages.isEmpty ? 0 : widget.chapter.pages.length - 1);
       _pageController.dispose();
       if (widget.mode == ReadingMode.rtl) {
         _pageController = PageController(
-          initialPage: widget.chapter.pages.length - 1 - targetIndex,
+          initialPage: widget.chapter.pages.isEmpty ? 0 : widget.chapter.pages.length - 1 - targetIndex,
         );
       } else {
         _pageController = PageController(initialPage: targetIndex);
@@ -69,7 +69,7 @@ class ReadingModeSwitcherState extends State<ReadingModeSwitcher> {
     if (widget.mode == ReadingMode.webtoon && _scrollController.hasClients) {
       final maxScroll = _scrollController.position.maxScrollExtent;
       final currentScroll = _scrollController.offset;
-      if (maxScroll > 0) {
+      if (maxScroll > 0 && widget.chapter.pages.length > 1) {
         final progress = (currentScroll / maxScroll).clamp(0.0, 1.0);
         final page = (progress * (widget.chapter.pages.length - 1)).round() + 1;
         if (page != _currentPage) {
@@ -81,12 +81,13 @@ class ReadingModeSwitcherState extends State<ReadingModeSwitcher> {
   }
 
   void jumpToPage(int page) {
+    if (widget.chapter.pages.isEmpty) return;
     final clampedPage = page.clamp(1, widget.chapter.pages.length);
     setState(() => _currentPage = clampedPage);
     widget.onPageChanged(clampedPage);
 
     if (widget.mode == ReadingMode.webtoon) {
-      if (_scrollController.hasClients) {
+      if (_scrollController.hasClients && widget.chapter.pages.length > 1) {
         final fraction = (clampedPage - 1) / (widget.chapter.pages.length - 1);
         final targetOffset = fraction * _scrollController.position.maxScrollExtent;
         _scrollController.animateTo(
@@ -121,6 +122,25 @@ class ReadingModeSwitcherState extends State<ReadingModeSwitcher> {
     final bgColor = Color(widget.themeMode.bgColor);
     final surfaceColor = Color(widget.themeMode.surfaceColor);
     final textColor = Color(widget.themeMode.textColor);
+
+    if (widget.chapter.pages.isEmpty) {
+      return Container(
+        color: bgColor,
+        child: Center(
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              const Icon(Icons.auto_stories_outlined, size: 48, color: Colors.white38),
+              const SizedBox(height: 12),
+              Text(
+                'Chương truyện này chưa có trang nào.',
+                style: GoogleFonts.plusJakartaSans(color: Colors.white70),
+              ),
+            ],
+          ),
+        ),
+      );
+    }
 
     return Container(
       color: bgColor,
@@ -229,102 +249,135 @@ class ReadingModeSwitcherState extends State<ReadingModeSwitcher> {
               ),
             ),
 
-            // Panels inside this page
+            // Content: Either real Page Image (CachedNetworkImage) or simulated panels
             Padding(
               padding: const EdgeInsets.all(12),
-              child: Column(
-                children: page.panels.map((panel) {
-                  return Container(
-                    margin: const EdgeInsets.only(bottom: 12),
-                    decoration: BoxDecoration(
-                      color: Colors.black.withValues(alpha: 0.05),
+              child: page.imageUrl != null && page.imageUrl!.isNotEmpty
+                  ? ClipRRect(
                       borderRadius: BorderRadius.circular(8),
-                      border: Border.all(
-                        color: textColor.withValues(alpha: 0.15),
-                        width: 1.5,
-                      ),
-                    ),
-                    child: AspectRatio(
-                      aspectRatio: panel.aspectRatio,
-                      child: Stack(
-                        fit: StackFit.expand,
-                        children: [
-                          // Comic art background with tone gradient
-                          Container(
-                            decoration: BoxDecoration(
-                              gradient: LinearGradient(
-                                begin: Alignment.topLeft,
-                                end: Alignment.bottomRight,
-                                colors: [
-                                  Color(int.parse(panel.colorHex)),
-                                  Color(int.parse(panel.colorHex)).withValues(alpha: 0.7),
-                                ],
-                              ),
-                              borderRadius: BorderRadius.circular(6),
+                      child: CachedNetworkImage(
+                        imageUrl: page.imageUrl!,
+                        fit: BoxFit.contain,
+                        placeholder: (context, url) => Container(
+                          height: 400,
+                          color: Colors.black12,
+                          child: const Center(
+                            child: CircularProgressIndicator(color: AppColors.primary),
+                          ),
+                        ),
+                        errorWidget: (context, url, error) => Container(
+                          height: 280,
+                          color: Colors.black12,
+                          padding: const EdgeInsets.all(16),
+                          child: Center(
+                            child: Column(
+                              mainAxisAlignment: MainAxisAlignment.center,
+                              children: [
+                                const Icon(Icons.broken_image_rounded, size: 40, color: Colors.white54),
+                                const SizedBox(height: 8),
+                                Text(
+                                  'Không thể tải ảnh trang truyện từ server',
+                                  style: GoogleFonts.plusJakartaSans(color: Colors.white70, fontSize: 12),
+                                ),
+                              ],
                             ),
                           ),
-
-                          // Action lines overlay
-                          CustomPaint(
-                            painter: _SpeedLinesPainter(),
+                        ),
+                      ),
+                    )
+                  : Column(
+                      children: page.panels.map((panel) {
+                        return Container(
+                          margin: const EdgeInsets.only(bottom: 12),
+                          decoration: BoxDecoration(
+                            color: Colors.black.withValues(alpha: 0.05),
+                            borderRadius: BorderRadius.circular(8),
+                            border: Border.all(
+                              color: textColor.withValues(alpha: 0.15),
+                              width: 1.5,
+                            ),
                           ),
-
-                          // Comic Dialogue Bubble
-                          Positioned(
-                            top: 12,
-                            left: 12,
-                            right: 48,
-                            child: Container(
-                              padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
-                              decoration: BoxDecoration(
-                                color: Colors.white,
-                                borderRadius: BorderRadius.circular(8),
-                                boxShadow: const [
-                                  BoxShadow(
-                                    color: Colors.black26,
-                                    blurRadius: 4,
-                                    offset: Offset(2, 2),
+                          child: AspectRatio(
+                            aspectRatio: panel.aspectRatio,
+                            child: Stack(
+                              fit: StackFit.expand,
+                              children: [
+                                // Comic art background with tone gradient
+                                Container(
+                                  decoration: BoxDecoration(
+                                    gradient: LinearGradient(
+                                      begin: Alignment.topLeft,
+                                      end: Alignment.bottomRight,
+                                      colors: [
+                                        Color(int.parse(panel.colorHex)),
+                                        Color(int.parse(panel.colorHex)).withValues(alpha: 0.7),
+                                      ],
+                                    ),
+                                    borderRadius: BorderRadius.circular(6),
                                   ),
-                                ],
-                              ),
-                              child: Text(
-                                panel.dialogue,
-                                style: GoogleFonts.newsreader(
-                                  fontSize: 12,
-                                  fontWeight: FontWeight.w600,
-                                  color: Colors.black87,
-                                  fontStyle: FontStyle.italic,
                                 ),
-                              ),
-                            ),
-                          ),
 
-                          // Comic SFX Sound effect
-                          Positioned(
-                            bottom: 10,
-                            right: 12,
-                            child: Transform.rotate(
-                              angle: -0.12,
-                              child: Text(
-                                panel.soundEffect,
-                                style: GoogleFonts.plusJakartaSans(
-                                  fontSize: 18,
-                                  fontWeight: FontWeight.w900,
-                                  color: AppColors.primary,
-                                  shadows: const [
-                                    Shadow(color: Colors.black, blurRadius: 4),
-                                    Shadow(color: Colors.white, blurRadius: 2),
-                                  ],
+                                // Action lines overlay
+                                CustomPaint(
+                                  painter: _SpeedLinesPainter(),
                                 ),
-                              ),
+
+                                // Comic Dialogue Bubble
+                                Positioned(
+                                  top: 12,
+                                  left: 12,
+                                  right: 48,
+                                  child: Container(
+                                    padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
+                                    decoration: BoxDecoration(
+                                      color: Colors.white,
+                                      borderRadius: BorderRadius.circular(8),
+                                      boxShadow: const [
+                                        BoxShadow(
+                                          color: Colors.black26,
+                                          blurRadius: 4,
+                                          offset: Offset(2, 2),
+                                        ),
+                                      ],
+                                    ),
+                                    child: Text(
+                                      panel.dialogue,
+                                      style: GoogleFonts.newsreader(
+                                        fontSize: 12,
+                                        fontWeight: FontWeight.w600,
+                                        color: Colors.black87,
+                                        fontStyle: FontStyle.italic,
+                                      ),
+                                    ),
+                                  ),
+                                ),
+
+                                // Comic SFX Sound effect
+                                Positioned(
+                                  bottom: 10,
+                                  right: 12,
+                                  child: Transform.rotate(
+                                    angle: -0.12,
+                                    child: Text(
+                                      panel.soundEffect,
+                                      style: GoogleFonts.plusJakartaSans(
+                                        fontSize: 18,
+                                        fontWeight: FontWeight.w900,
+                                        color: AppColors.primary,
+                                        shadows: const [
+                                          Shadow(color: Colors.black, blurRadius: 4),
+                                          Shadow(color: Colors.white, blurRadius: 2),
+                                        ],
+                                      ),
+                                    ),
+                                  ),
+                                ),
+                              ],
                             ),
                           ),
-                        ],
-                      ),
+                        );
+                      }).toList(),
                     ),
-                  );
-                }).toList(),
-              ),
             ),
           ],
         ),

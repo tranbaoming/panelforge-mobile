@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:google_fonts/google_fonts.dart';
+import 'package:mobile_scanner/mobile_scanner.dart';
 import '../theme/app_theme.dart';
 
 class QRScannerDialog extends StatefulWidget {
@@ -29,7 +30,9 @@ class _QRScannerDialogState extends State<QRScannerDialog>
     with SingleTickerProviderStateMixin {
   late AnimationController _laserController;
   late TextEditingController _manualController;
+  late MobileScannerController _scannerController;
   bool _isTorchOn = false;
+  bool _hasDetected = false;
 
   @override
   void initState() {
@@ -40,16 +43,24 @@ class _QRScannerDialogState extends State<QRScannerDialog>
     )..repeat(reverse: true);
 
     _manualController = TextEditingController();
+    _scannerController = MobileScannerController(
+      detectionSpeed: DetectionSpeed.normal,
+      facing: CameraFacing.back,
+      torchEnabled: false,
+    );
   }
 
   @override
   void dispose() {
     _laserController.dispose();
     _manualController.dispose();
+    _scannerController.dispose();
     super.dispose();
   }
 
   void _triggerScanResult(String token) {
+    if (_hasDetected) return;
+    _hasDetected = true;
     widget.onCodeScanned(token);
     Navigator.of(context).pop(token);
   }
@@ -97,158 +108,179 @@ class _QRScannerDialogState extends State<QRScannerDialog>
             ),
             const SizedBox(height: 16),
 
-            // Camera Viewfinder Box with Animated Laser
+            // Camera Viewfinder Box with MobileScanner & Laser
             Container(
-              height: 240,
+              height: 250,
               width: double.infinity,
               decoration: BoxDecoration(
                 color: Colors.black,
                 borderRadius: BorderRadius.circular(16),
                 border: Border.all(color: AppColors.darkBorder),
               ),
-              child: Stack(
-                alignment: Alignment.center,
-                children: [
-                  // Camera Simulation Texture
-                  Positioned.fill(
-                    child: Container(
-                      decoration: BoxDecoration(
-                        gradient: RadialGradient(
-                          center: Alignment.center,
-                          radius: 0.8,
-                          colors: [
-                            _isTorchOn
-                                ? Colors.white.withValues(alpha: 0.15)
-                                : const Color(0xFF141824),
-                            Colors.black,
-                          ],
-                        ),
+              child: ClipRRect(
+                borderRadius: BorderRadius.circular(16),
+                child: Stack(
+                  alignment: Alignment.center,
+                  children: [
+                    // Real Camera Feed from MobileScanner
+                    Positioned.fill(
+                      child: MobileScanner(
+                        controller: _scannerController,
+                        onDetect: (capture) {
+                          final barcodes = capture.barcodes;
+                          for (final barcode in barcodes) {
+                            if (barcode.rawValue != null && barcode.rawValue!.isNotEmpty) {
+                              _triggerScanResult(barcode.rawValue!);
+                              break;
+                            }
+                          }
+                        },
+                        errorBuilder: (context, error) {
+                          return _buildCameraFallback();
+                        },
                       ),
                     ),
-                  ),
 
-                  // Framing corners
-                  SizedBox(
-                    width: 170,
-                    height: 170,
-                    child: CustomPaint(
-                      painter: _ViewfinderCornersPainter(),
+                    // Framing corners
+                    SizedBox(
+                      width: 170,
+                      height: 170,
+                      child: CustomPaint(
+                        painter: _ViewfinderCornersPainter(),
+                      ),
                     ),
-                  ),
 
-                  // Animated Laser Scanning Line
-                  AnimatedBuilder(
-                    animation: _laserController,
-                    builder: (context, child) {
-                      return Positioned(
-                        top: 40 + (_laserController.value * 150),
-                        left: 40,
-                        right: 40,
-                        child: Container(
-                          height: 3,
-                          decoration: BoxDecoration(
-                            gradient: const LinearGradient(
-                              colors: [
-                                Colors.transparent,
-                                AppColors.primary,
-                                AppColors.primaryLight,
-                                AppColors.primary,
-                                Colors.transparent,
+                    // Animated Laser Scanning Line
+                    AnimatedBuilder(
+                      animation: _laserController,
+                      builder: (context, child) {
+                        return Positioned(
+                          top: 40 + (_laserController.value * 160),
+                          left: 40,
+                          right: 40,
+                          child: Container(
+                            height: 3,
+                            decoration: BoxDecoration(
+                              gradient: const LinearGradient(
+                                colors: [
+                                  Colors.transparent,
+                                  AppColors.primary,
+                                  AppColors.primaryLight,
+                                  AppColors.primary,
+                                  Colors.transparent,
+                                ],
+                              ),
+                              boxShadow: [
+                                BoxShadow(
+                                  color: AppColors.primary.withValues(alpha: 0.8),
+                                  blurRadius: 10,
+                                  spreadRadius: 2,
+                                ),
                               ],
                             ),
-                            boxShadow: [
-                              BoxShadow(
-                                color: AppColors.primary.withValues(alpha: 0.8),
-                                blurRadius: 10,
-                                spreadRadius: 2,
-                              ),
-                            ],
                           ),
-                        ),
-                      );
-                    },
-                  ),
+                        );
+                      },
+                    ),
 
-                  // Center QR Code target hint
-                  Icon(
-                    Icons.qr_code_2_rounded,
-                    size: 80,
-                    color: Colors.white.withValues(alpha: 0.1),
-                  ),
-
-                  // Torch toggle button
-                  Positioned(
-                    bottom: 12,
-                    right: 12,
-                    child: IconButton(
-                      onPressed: () => setState(() => _isTorchOn = !_isTorchOn),
-                      icon: Icon(
-                        _isTorchOn ? Icons.flash_on_rounded : Icons.flash_off_rounded,
-                        color: _isTorchOn ? AppColors.primary : Colors.white60,
-                      ),
-                      style: IconButton.styleFrom(
-                        backgroundColor: Colors.black54,
+                    // Controls: Torch toggle & Switch camera
+                    Positioned(
+                      bottom: 12,
+                      right: 12,
+                      child: Row(
+                        mainAxisSize: MainAxisSize.min,
+                        children: [
+                          IconButton(
+                            onPressed: () async {
+                              await _scannerController.switchCamera();
+                            },
+                            icon: const Icon(Icons.flip_camera_ios_rounded, color: Colors.white70, size: 20),
+                            style: IconButton.styleFrom(backgroundColor: Colors.black54),
+                          ),
+                          const SizedBox(width: 8),
+                          IconButton(
+                            onPressed: () async {
+                              await _scannerController.toggleTorch();
+                              setState(() => _isTorchOn = !_isTorchOn);
+                            },
+                            icon: Icon(
+                              _isTorchOn ? Icons.flash_on_rounded : Icons.flash_off_rounded,
+                              color: _isTorchOn ? AppColors.primary : Colors.white60,
+                              size: 20,
+                            ),
+                            style: IconButton.styleFrom(backgroundColor: Colors.black54),
+                          ),
+                        ],
                       ),
                     ),
-                  ),
-                ],
+                  ],
+                ),
               ),
             ),
 
             const SizedBox(height: 14),
 
-            // Quick Testing Tokens for easy testing
-            Text(
-              'HOẶC CHỌN MẪU TEST NHANH',
-              style: GoogleFonts.plusJakartaSans(
-                fontSize: 10,
-                fontWeight: FontWeight.w700,
-                color: AppColors.darkTextSecondary,
-                letterSpacing: 0.8,
-              ),
-            ),
-            const SizedBox(height: 8),
-
+            // Nhap ma token thu cong
             Row(
               children: [
                 Expanded(
-                  child: OutlinedButton(
-                    onPressed: () => _triggerScanResult('REV-8891-OBSIDIAN-AETHEL'),
-                    style: OutlinedButton.styleFrom(
-                      padding: const EdgeInsets.symmetric(vertical: 8),
-                      side: const BorderSide(color: AppColors.mint),
-                      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
-                    ),
-                    child: Text(
-                      'Bản Còn Hạn (Active)',
-                      style: GoogleFonts.plusJakartaSans(
-                        fontSize: 11,
-                        fontWeight: FontWeight.w700,
-                        color: AppColors.mint,
+                  child: TextField(
+                    controller: _manualController,
+                    style: GoogleFonts.plusJakartaSans(fontSize: 13, color: Colors.white),
+                    decoration: InputDecoration(
+                      hintText: 'Nhập mã token thủ công...',
+                      hintStyle: GoogleFonts.plusJakartaSans(
+                        fontSize: 12,
+                        color: AppColors.darkTextSecondary.withValues(alpha: 0.6),
+                      ),
+                      isDense: true,
+                      contentPadding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
+                      border: OutlineInputBorder(
+                        borderRadius: BorderRadius.circular(10),
+                        borderSide: const BorderSide(color: AppColors.darkBorder),
                       ),
                     ),
                   ),
                 ),
                 const SizedBox(width: 8),
-                Expanded(
-                  child: OutlinedButton(
-                    onPressed: () => _triggerScanResult('REV-EXPIRED-TEST-TOKEN'),
-                    style: OutlinedButton.styleFrom(
-                      padding: const EdgeInsets.symmetric(vertical: 8),
-                      side: const BorderSide(color: AppColors.rose),
-                      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
-                    ),
-                    child: Text(
-                      'Bản Hết Hạn (Lock)',
-                      style: GoogleFonts.plusJakartaSans(
-                        fontSize: 11,
-                        fontWeight: FontWeight.w700,
-                        color: AppColors.rose,
-                      ),
-                    ),
+                ElevatedButton(
+                  onPressed: () {
+                    final val = _manualController.text.trim();
+                    if (val.isNotEmpty) {
+                      _triggerScanResult(val);
+                    }
+                  },
+                  style: ElevatedButton.styleFrom(
+                    backgroundColor: AppColors.primary,
+                    padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
+                    shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
                   ),
+                  child: const Text('Xác nhận', style: TextStyle(color: Colors.white)),
                 ),
               ],
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  Widget _buildCameraFallback() {
+    return Container(
+      color: const Color(0xFF141824),
+      child: Center(
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Icon(Icons.camera_alt_outlined, size: 40, color: Colors.white.withValues(alpha: 0.3)),
+            const SizedBox(height: 8),
+            Text(
+              'Camera chưa khả dụng\n(Vui lòng nhập mã token bên dưới)',
+              textAlign: TextAlign.center,
+              style: GoogleFonts.plusJakartaSans(
+                fontSize: 11,
+                color: Colors.white60,
+              ),
             ),
           ],
         ),

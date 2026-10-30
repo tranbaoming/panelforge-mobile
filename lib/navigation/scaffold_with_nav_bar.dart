@@ -21,25 +21,24 @@ class ScaffoldWithNavBar extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final currentIndex = navigationShell.currentIndex;
-    final isDark = currentIndex == 1; // Tab 2 is dark Obsidian theme
-
-    final bgBarColor = isDark ? AppColors.darkSurface : AppColors.lightSurface;
-    final unselectedColor = isDark ? AppColors.darkTextSecondary : AppColors.lightTextSecondary;
+    const bgBarColor = AppColors.darkSurface;
+    const unselectedColor = AppColors.darkTextSecondary;
 
     return Scaffold(
+      backgroundColor: AppColors.darkBg,
       body: navigationShell,
       bottomNavigationBar: Container(
         decoration: BoxDecoration(
           color: bgBarColor,
-          border: Border(
+          border: const Border(
             top: BorderSide(
-              color: isDark ? AppColors.darkBorder : AppColors.lightBorder,
+              color: AppColors.darkBorder,
               width: 1,
             ),
           ),
           boxShadow: [
             BoxShadow(
-              color: Colors.black.withValues(alpha: isDark ? 0.4 : 0.06),
+              color: Colors.black.withValues(alpha: 0.4),
               blurRadius: 16,
               offset: const Offset(0, -4),
             ),

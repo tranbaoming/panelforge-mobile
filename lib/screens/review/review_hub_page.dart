@@ -2,7 +2,9 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:go_router/go_router.dart';
 import 'package:google_fonts/google_fonts.dart';
-import '../../models/review_model.dart';
+import '../../services/api_client.dart';
+import '../../services/preferences_service.dart';
+import '../../services/preview_service.dart';
 import '../../theme/app_theme.dart';
 import '../../widgets/qr_scanner_dialog.dart';
 
@@ -15,7 +17,14 @@ class ReviewHubPage extends StatefulWidget {
 
 class _ReviewHubPageState extends State<ReviewHubPage> {
   final TextEditingController _linkController = TextEditingController();
-  final List<ReviewManuscript> _recentReviews = MockReviewRepository.getRecentManuscripts();
+  List<String> _recentTokens = [];
+  bool _isValidating = false;
+
+  @override
+  void initState() {
+    super.initState();
+    _recentTokens = PreferencesService.getRecentReviewTokens();
+  }
 
   @override
   void dispose() {
@@ -23,26 +32,71 @@ class _ReviewHubPageState extends State<ReviewHubPage> {
     super.dispose();
   }
 
-  void _openReviewWithToken(String token) {
-    if (token.trim().isEmpty) return;
-    final cleanToken = token.trim();
-    if (cleanToken.toLowerCase().contains('expired') || cleanToken.contains('7712')) {
-      context.push('/review/expired/$cleanToken');
-    } else {
-      context.push('/review/invite/$cleanToken');
+  void _openReviewWithToken(String token) async {
+    final clean = token.trim();
+    if (clean.isEmpty) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('Vui lòng nhập hoặc quét mã token')),
+      );
+      return;
+    }
+
+    // Trích xuất token nếu người dùng dán link dạng http://.../preview/{token}
+    String actualToken = clean;
+    if (actualToken.contains('/preview/')) {
+      actualToken = actualToken.split('/preview/').last.split('?').first;
+    } else if (actualToken.contains('/review/')) {
+      actualToken = actualToken.split('/review/').last.split('?').first;
+    }
+
+    setState(() => _isValidating = true);
+
+    try {
+      final preview = await PreviewService().openPreview(actualToken);
+      if (!mounted) return;
+      setState(() => _isValidating = false);
+      if (preview.isExpired) {
+        context.push('/review/expired/$actualToken');
+      } else {
+        await PreferencesService.addRecentReviewToken(actualToken);
+        if (mounted) {
+          setState(() {
+            _recentTokens = PreferencesService.getRecentReviewTokens();
+          });
+          context.push('/review/invite/$actualToken');
+        }
+      }
+    } on ApiException catch (e) {
+      if (!mounted) return;
+      setState(() => _isValidating = false);
+      if (e.statusCode == 403 || e.statusCode == 404) {
+        context.push('/review/expired/$actualToken');
+      } else {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text('Không thể xác thực bản thảo: ${e.message}')),
+        );
+      }
+    } catch (e) {
+      if (!mounted) return;
+      setState(() => _isValidating = false);
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text('Lỗi kết nối máy chủ: $e')),
+      );
     }
   }
 
   void _pasteFromClipboard() async {
     final data = await Clipboard.getData(Clipboard.kTextPlain);
     if (!mounted) return;
-    if (data?.text != null && data!.text!.isNotEmpty) {
-      _linkController.text = data.text!;
+    if (data?.text != null && data!.text!.trim().isNotEmpty) {
+      _linkController.text = data.text!.trim();
       ScaffoldMessenger.of(context).showSnackBar(
         const SnackBar(content: Text('Đã dán liên kết từ bộ nhớ tạm!')),
       );
     } else {
-      _linkController.text = 'https://panelforge.studio/review/REV-8891-OBSIDIAN-AETHEL';
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('Bộ nhớ tạm trống hoặc không có văn bản')),
+      );
     }
   }
 
@@ -54,6 +108,15 @@ class _ReviewHubPageState extends State<ReviewHubPage> {
         _openReviewWithToken(scannedToken);
       },
     );
+  }
+
+  void _deleteRecentToken(String token) async {
+    await PreferencesService.removeRecentReviewToken(token);
+    if (mounted) {
+      setState(() {
+        _recentTokens = PreferencesService.getRecentReviewTokens();
+      });
+    }
   }
 
   @override
@@ -206,14 +269,26 @@ class _ReviewHubPageState extends State<ReviewHubPage> {
                       SizedBox(
                         width: double.infinity,
                         child: ElevatedButton.icon(
-                          onPressed: () {
-                            if (_linkController.text.trim().isEmpty) {
-                              _linkController.text = 'REV-8891-OBSIDIAN-AETHEL';
-                            }
-                            _openReviewWithToken(_linkController.text);
-                          },
-                          icon: const Icon(Icons.lock_open_rounded, size: 18),
-                          label: const Text('XÁC THỰC & MỞ LỜI MỜI REVIEW'),
+                          onPressed: _isValidating
+                              ? null
+                              : () {
+                                  final text = _linkController.text.trim();
+                                  if (text.isEmpty) {
+                                    ScaffoldMessenger.of(context).showSnackBar(
+                                      const SnackBar(content: Text('Vui lòng nhập hoặc dán mã token review')),
+                                    );
+                                    return;
+                                  }
+                                  _openReviewWithToken(text);
+                                },
+                          icon: _isValidating
+                              ? const SizedBox(
+                                  width: 18,
+                                  height: 18,
+                                  child: CircularProgressIndicator(strokeWidth: 2, color: Colors.white),
+                                )
+                              : const Icon(Icons.lock_open_rounded, size: 18),
+                          label: Text(_isValidating ? 'ĐANG KẾT NỐI SERVER...' : 'XÁC THỰC & MỞ LỜI MỜI REVIEW'),
                           style: ElevatedButton.styleFrom(
                             backgroundColor: AppColors.primary,
                             padding: const EdgeInsets.symmetric(vertical: 14),
@@ -242,7 +317,7 @@ class _ReviewHubPageState extends State<ReviewHubPage> {
                       ),
                     ),
                     Text(
-                      '${_recentReviews.length} bản',
+                      '${_recentTokens.length} mã token',
                       style: GoogleFonts.plusJakartaSans(
                         fontSize: 12,
                         fontWeight: FontWeight.w600,
@@ -254,19 +329,57 @@ class _ReviewHubPageState extends State<ReviewHubPage> {
               ),
             ),
 
-            // List of Recent Reviews with Status Tags (Còn Hạn / Đã Hết Hạn)
-            SliverPadding(
-              padding: const EdgeInsets.symmetric(horizontal: 20),
-              sliver: SliverList(
-                delegate: SliverChildBuilderDelegate(
-                  (context, index) {
-                    final review = _recentReviews[index];
-                    return _buildReviewManuscriptCard(context, review);
-                  },
-                  childCount: _recentReviews.length,
+            // List of Recent Tokens or Empty State
+            if (_recentTokens.isEmpty)
+              SliverToBoxAdapter(
+                child: Padding(
+                  padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 16),
+                  child: Container(
+                    padding: const EdgeInsets.all(24),
+                    decoration: BoxDecoration(
+                      color: AppColors.darkSurface,
+                      borderRadius: BorderRadius.circular(16),
+                      border: Border.all(color: AppColors.darkBorder),
+                    ),
+                    child: Column(
+                      children: [
+                        const Icon(Icons.history_toggle_off_rounded, size: 40, color: Colors.white30),
+                        const SizedBox(height: 12),
+                        Text(
+                          'Chưa có bản thảo nào được mở gần đây',
+                          style: GoogleFonts.plusJakartaSans(
+                            fontSize: 14,
+                            fontWeight: FontWeight.w600,
+                            color: Colors.white70,
+                          ),
+                        ),
+                        const SizedBox(height: 6),
+                        Text(
+                          'Hãy dán đường link hoặc quét mã QR do Producer gửi để bắt đầu thẩm định bản vẽ.',
+                          textAlign: TextAlign.center,
+                          style: GoogleFonts.plusJakartaSans(
+                            fontSize: 12,
+                            color: AppColors.darkTextSecondary,
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+                ),
+              )
+            else
+              SliverPadding(
+                padding: const EdgeInsets.symmetric(horizontal: 20),
+                sliver: SliverList(
+                  delegate: SliverChildBuilderDelegate(
+                    (context, index) {
+                      final token = _recentTokens[index];
+                      return _buildRecentTokenCard(context, token);
+                    },
+                    childCount: _recentTokens.length,
+                  ),
                 ),
               ),
-            ),
 
             const SliverToBoxAdapter(child: SizedBox(height: 36)),
           ],
@@ -275,147 +388,55 @@ class _ReviewHubPageState extends State<ReviewHubPage> {
     );
   }
 
-  Widget _buildReviewManuscriptCard(BuildContext context, ReviewManuscript item) {
-    final isExpired = item.isExpired;
-
+  Widget _buildRecentTokenCard(BuildContext context, String token) {
     return Container(
       margin: const EdgeInsets.only(bottom: 12),
       decoration: BoxDecoration(
         color: AppColors.darkSurface,
         borderRadius: BorderRadius.circular(14),
-        border: Border.all(
-          color: isExpired
-              ? AppColors.rose.withValues(alpha: 0.3)
-              : AppColors.mint.withValues(alpha: 0.3),
-        ),
+        border: Border.all(color: AppColors.darkBorder),
       ),
-      child: InkWell(
-        onTap: () {
-          if (isExpired) {
-            context.push('/review/expired/${item.token}');
-          } else {
-            context.push('/review/canvas/${item.token}');
-          }
-        },
-        borderRadius: BorderRadius.circular(14),
-        child: Padding(
-          padding: const EdgeInsets.all(16),
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              // Top Row: Status badge & Token
-              Row(
-                mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                children: [
-                  // Status Tag: Còn hạn (Mint) / Đã hết hạn (Rose)
-                  Container(
-                    padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
-                    decoration: BoxDecoration(
-                      color: isExpired ? AppColors.roseSubtle : AppColors.mintSubtle,
-                      borderRadius: BorderRadius.circular(6),
-                      border: Border.all(
-                        color: isExpired ? AppColors.rose : AppColors.mint,
-                        width: 1,
-                      ),
-                    ),
-                    child: Row(
-                      mainAxisSize: MainAxisSize.min,
-                      children: [
-                        Icon(
-                          isExpired ? Icons.cancel_outlined : Icons.check_circle_outline_rounded,
-                          size: 12,
-                          color: isExpired ? AppColors.rose : AppColors.mint,
-                        ),
-                        const SizedBox(width: 4),
-                        Text(
-                          isExpired ? 'ĐÃ HẾT HẠN' : 'CÒN HẠN REVIEW',
-                          style: GoogleFonts.plusJakartaSans(
-                            fontSize: 10,
-                            fontWeight: FontWeight.w800,
-                            color: isExpired ? AppColors.rose : AppColors.mint,
-                            letterSpacing: 0.6,
-                          ),
-                        ),
-                      ],
-                    ),
-                  ),
-
-                  Text(
-                    item.token,
-                    style: GoogleFonts.plusJakartaSans(
-                      fontSize: 11,
-                      fontWeight: FontWeight.w700,
-                      color: AppColors.darkTextSecondary,
-                      letterSpacing: 0.5,
-                    ),
-                  ),
-                ],
-              ),
-
-              const SizedBox(height: 10),
-
-              // Series Title & Chapter
-              Text(
-                item.seriesTitle,
-                style: GoogleFonts.newsreader(
-                  fontSize: 18,
-                  fontWeight: FontWeight.w700,
-                  color: Colors.white,
-                ),
-              ),
-              const SizedBox(height: 2),
-              Text(
-                item.chapterTitle,
-                style: GoogleFonts.plusJakartaSans(
-                  fontSize: 12,
-                  color: AppColors.darkTextSecondary,
-                ),
-              ),
-
-              const SizedBox(height: 12),
-
-              // Producer Info & Expiry time
-              Row(
-                mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                children: [
-                  Row(
-                    children: [
-                      const Icon(Icons.person_outline_rounded, size: 14, color: AppColors.primary),
-                      const SizedBox(width: 4),
-                      Text(
-                        'Producer: ${item.producerName}',
-                        style: GoogleFonts.plusJakartaSans(
-                          fontSize: 11,
-                          color: Colors.white70,
-                        ),
-                      ),
-                    ],
-                  ),
-                  Row(
-                    children: [
-                      Icon(
-                        Icons.schedule_rounded,
-                        size: 13,
-                        color: isExpired ? AppColors.rose : AppColors.mint,
-                      ),
-                      const SizedBox(width: 4),
-                      Text(
-                        isExpired
-                            ? 'Đã khóa'
-                            : 'Còn ${item.remainingTime.inHours}h ${item.remainingTime.inMinutes % 60}m',
-                        style: GoogleFonts.plusJakartaSans(
-                          fontSize: 11,
-                          fontWeight: FontWeight.w700,
-                          color: isExpired ? AppColors.rose : AppColors.mint,
-                        ),
-                      ),
-                    ],
-                  ),
-                ],
-              ),
-            ],
+      child: ListTile(
+        contentPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 6),
+        leading: Container(
+          padding: const EdgeInsets.all(10),
+          decoration: BoxDecoration(
+            color: AppColors.primary.withValues(alpha: 0.15),
+            borderRadius: BorderRadius.circular(10),
+          ),
+          child: const Icon(Icons.description_outlined, color: AppColors.primary, size: 22),
+        ),
+        title: Text(
+          token,
+          style: GoogleFonts.plusJakartaSans(
+            fontSize: 14,
+            fontWeight: FontWeight.w700,
+            color: Colors.white,
+            letterSpacing: 0.5,
           ),
         ),
+        subtitle: Text(
+          'Nhấn để kết nối và mở lại bản thảo',
+          style: GoogleFonts.plusJakartaSans(
+            fontSize: 11,
+            color: AppColors.darkTextSecondary,
+          ),
+        ),
+        trailing: Row(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            IconButton(
+              icon: const Icon(Icons.close_rounded, size: 18, color: Colors.white38),
+              tooltip: 'Xóa khỏi lịch sử',
+              onPressed: () => _deleteRecentToken(token),
+            ),
+            const Icon(Icons.arrow_forward_ios_rounded, size: 14, color: AppColors.primary),
+          ],
+        ),
+        onTap: () {
+          _linkController.text = token;
+          _openReviewWithToken(token);
+        },
       ),
     );
   }

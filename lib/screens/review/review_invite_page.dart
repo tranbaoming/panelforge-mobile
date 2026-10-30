@@ -3,6 +3,8 @@ import 'package:flutter/material.dart';
 import 'package:go_router/go_router.dart';
 import 'package:google_fonts/google_fonts.dart';
 import '../../models/review_model.dart';
+import '../../services/api_client.dart';
+import '../../services/preview_service.dart';
 import '../../theme/app_theme.dart';
 
 class ReviewInvitePage extends StatefulWidget {
@@ -15,22 +17,21 @@ class ReviewInvitePage extends StatefulWidget {
 }
 
 class _ReviewInvitePageState extends State<ReviewInvitePage> {
-  late ReviewManuscript _manuscript;
+  ReviewManuscript? _manuscript;
   Timer? _countdownTimer;
-  Duration _remaining = const Duration(hours: 4, minutes: 28, seconds: 40);
+  Duration _remaining = Duration.zero;
+  bool _isLoading = true;
+  String? _errorMessage;
   bool _isDecrypting = false;
 
   @override
   void initState() {
     super.initState();
-    if (widget.token.toLowerCase().contains('expired')) {
-      _manuscript = MockReviewRepository.getExpiredReview();
-    } else {
-      _manuscript = MockReviewRepository.getActiveReview();
-    }
+    _fetchLivePreview();
+  }
 
-    _remaining = _manuscript.remainingTime;
-
+  void _startTimer() {
+    _countdownTimer?.cancel();
     _countdownTimer = Timer.periodic(const Duration(seconds: 1), (timer) {
       if (_remaining.inSeconds > 0) {
         setState(() {
@@ -40,6 +41,52 @@ class _ReviewInvitePageState extends State<ReviewInvitePage> {
         _countdownTimer?.cancel();
       }
     });
+  }
+
+  Future<void> _fetchLivePreview() async {
+    setState(() {
+      _isLoading = true;
+      _errorMessage = null;
+    });
+
+    try {
+      final dto = await PreviewService().openPreview(widget.token);
+      if (dto.isExpired) {
+        if (mounted) {
+          context.pushReplacement('/review/expired/${widget.token}');
+        }
+        return;
+      }
+      if (mounted) {
+        final ms = ReviewManuscript.fromPreviewDto(dto, widget.token);
+        setState(() {
+          _manuscript = ms;
+          _remaining = ms.remainingTime;
+          _isLoading = false;
+        });
+        _startTimer();
+      }
+    } on ApiException catch (e) {
+      debugPrint('[ReviewInvite API Error] $e');
+      if (mounted) {
+        if (e.statusCode == 403 || e.statusCode == 404) {
+          context.pushReplacement('/review/expired/${widget.token}');
+          return;
+        }
+        setState(() {
+          _isLoading = false;
+          _errorMessage = e.message;
+        });
+      }
+    } catch (e) {
+      debugPrint('[ReviewInvite Error] $e');
+      if (mounted) {
+        setState(() {
+          _isLoading = false;
+          _errorMessage = 'Không thể kết nối đến máy chủ để xác thực token ($e)';
+        });
+      }
+    }
   }
 
   @override
@@ -57,20 +104,91 @@ class _ReviewInvitePageState extends State<ReviewInvitePage> {
   }
 
   void _decodeManuscript() async {
+    if (_manuscript == null) return;
     setState(() => _isDecrypting = true);
-    await Future.delayed(const Duration(milliseconds: 900));
+    await Future.delayed(const Duration(milliseconds: 600));
 
     if (!mounted) return;
 
-    if (_manuscript.isExpired || _remaining.inSeconds <= 0) {
-      context.pushReplacement('/review/expired/${_manuscript.token}');
+    if (_manuscript!.isExpired || _remaining.inSeconds <= 0) {
+      context.pushReplacement('/review/expired/${_manuscript!.token}');
     } else {
-      context.pushReplacement('/review/canvas/${_manuscript.token}');
+      context.pushReplacement('/review/canvas/${_manuscript!.token}');
     }
   }
 
   @override
   Widget build(BuildContext context) {
+    if (_isLoading) {
+      return Scaffold(
+        backgroundColor: AppColors.darkBg,
+        appBar: AppBar(
+          backgroundColor: Colors.transparent,
+          elevation: 0,
+          leading: IconButton(
+            icon: const Icon(Icons.arrow_back_ios_new_rounded, color: Colors.white, size: 20),
+            onPressed: () => context.pop(),
+          ),
+        ),
+        body: const Center(
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              CircularProgressIndicator(color: AppColors.primary),
+              SizedBox(height: 16),
+              Text(
+                'Đang xác thực lời mời review bản thảo...',
+                style: TextStyle(color: Colors.white70, fontSize: 13),
+              ),
+            ],
+          ),
+        ),
+      );
+    }
+
+    if (_manuscript == null) {
+      return Scaffold(
+        backgroundColor: AppColors.darkBg,
+        appBar: AppBar(
+          backgroundColor: Colors.transparent,
+          elevation: 0,
+          leading: IconButton(
+            icon: const Icon(Icons.arrow_back_ios_new_rounded, color: Colors.white, size: 20),
+            onPressed: () => context.pop(),
+          ),
+        ),
+        body: Center(
+          child: Padding(
+            padding: const EdgeInsets.all(24),
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                const Icon(Icons.error_outline_rounded, color: Colors.grey, size: 54),
+                const SizedBox(height: 16),
+                Text(
+                  _errorMessage ?? 'Không tìm thấy thông tin bản thảo hoặc mã token không tồn tại.',
+                  textAlign: TextAlign.center,
+                  style: GoogleFonts.plusJakartaSans(color: Colors.white70, fontSize: 14),
+                ),
+                const SizedBox(height: 20),
+                ElevatedButton.icon(
+                  onPressed: _fetchLivePreview,
+                  icon: const Icon(Icons.refresh_rounded),
+                  label: const Text('Thử lại'),
+                  style: ElevatedButton.styleFrom(
+                    backgroundColor: AppColors.primary,
+                    foregroundColor: Colors.white,
+                  ),
+                ),
+              ],
+            ),
+          ),
+        ),
+      );
+    }
+
+    final manuscript = _manuscript!;
+
     return Scaffold(
       backgroundColor: AppColors.darkBg,
       appBar: AppBar(
@@ -126,7 +244,7 @@ class _ReviewInvitePageState extends State<ReviewInvitePage> {
 
               // Series Title & Chapter
               Text(
-                _manuscript.seriesTitle,
+                manuscript.seriesTitle,
                 textAlign: TextAlign.center,
                 style: GoogleFonts.newsreader(
                   fontSize: 28,
@@ -137,7 +255,7 @@ class _ReviewInvitePageState extends State<ReviewInvitePage> {
               ),
               const SizedBox(height: 6),
               Text(
-                _manuscript.chapterTitle,
+                manuscript.chapterTitle,
                 textAlign: TextAlign.center,
                 style: GoogleFonts.plusJakartaSans(
                   fontSize: 13,
@@ -185,7 +303,7 @@ class _ReviewInvitePageState extends State<ReviewInvitePage> {
                           ),
                           const SizedBox(height: 2),
                           Text(
-                            _manuscript.producerName,
+                            manuscript.producerName,
                             style: GoogleFonts.plusJakartaSans(
                               fontSize: 15,
                               fontWeight: FontWeight.w700,
@@ -193,7 +311,7 @@ class _ReviewInvitePageState extends State<ReviewInvitePage> {
                             ),
                           ),
                           Text(
-                            '${_manuscript.producerStudio} • ${_manuscript.producerEmail}',
+                            '${manuscript.producerStudio} • ${manuscript.producerEmail}',
                             style: GoogleFonts.plusJakartaSans(
                               fontSize: 11,
                               color: AppColors.darkTextSecondary,
@@ -265,7 +383,7 @@ class _ReviewInvitePageState extends State<ReviewInvitePage> {
                               crossAxisAlignment: CrossAxisAlignment.start,
                               children: [
                                 Text(
-                                  _manuscript.recipientEmail,
+                                  manuscript.recipientEmail,
                                   style: GoogleFonts.plusJakartaSans(
                                     fontSize: 13,
                                     fontWeight: FontWeight.w700,
@@ -273,7 +391,7 @@ class _ReviewInvitePageState extends State<ReviewInvitePage> {
                                   ),
                                 ),
                                 Text(
-                                  'Mã kiểm duyệt: ${_manuscript.recipientId}',
+                                  'Mã kiểm duyệt: ${manuscript.recipientId}',
                                   style: GoogleFonts.plusJakartaSans(
                                     fontSize: 11,
                                     color: AppColors.darkTextSecondary,

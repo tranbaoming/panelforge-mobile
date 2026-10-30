@@ -1,7 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:go_router/go_router.dart';
 import 'package:google_fonts/google_fonts.dart';
-import '../../models/review_model.dart';
+import '../../services/preview_service.dart';
 import '../../theme/app_theme.dart';
 
 class ReviewExpiredPage extends StatefulWidget {
@@ -14,13 +14,30 @@ class ReviewExpiredPage extends StatefulWidget {
 }
 
 class _ReviewExpiredPageState extends State<ReviewExpiredPage> {
-  late ReviewManuscript _manuscript;
   final TextEditingController _replacementTokenController = TextEditingController();
+  final String _producerName = 'Ban Biên Tập & Producer';
+  final String _producerEmail = 'producer@panelforge.studio';
+  String _seriesTitle = 'Bản Thảo Truyện';
 
   @override
   void initState() {
     super.initState();
-    _manuscript = MockReviewRepository.getExpiredReview();
+    _fetchDetails();
+  }
+
+  Future<void> _fetchDetails() async {
+    try {
+      final dto = await PreviewService().openPreview(widget.token);
+      if (mounted) {
+        setState(() {
+          if (dto.seriesTitle.isNotEmpty) {
+            _seriesTitle = dto.seriesTitle;
+          }
+        });
+      }
+    } catch (_) {
+      // Ignored for expired tokens
+    }
   }
 
   @override
@@ -38,16 +55,7 @@ class _ReviewExpiredPageState extends State<ReviewExpiredPage> {
       return;
     }
 
-    if (token.toLowerCase().contains('expired')) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(
-          content: Text('Token này cũng đã hết hạn. Vui lòng kiểm tra lại!'),
-          backgroundColor: AppColors.rose,
-        ),
-      );
-    } else {
-      context.pushReplacement('/review/invite/$token');
-    }
+    context.pushReplacement('/review/invite/$token');
   }
 
   @override
@@ -182,7 +190,7 @@ class _ReviewExpiredPageState extends State<ReviewExpiredPage> {
                     ),
                     const SizedBox(height: 4),
                     Text(
-                      'Tác phẩm: ${_manuscript.seriesTitle} (${_manuscript.chapterTitle})',
+                      'Tác phẩm: $_seriesTitle',
                       style: GoogleFonts.plusJakartaSans(
                         fontSize: 11,
                         color: AppColors.darkTextSecondary,
@@ -233,7 +241,7 @@ class _ReviewExpiredPageState extends State<ReviewExpiredPage> {
                             crossAxisAlignment: CrossAxisAlignment.start,
                             children: [
                               Text(
-                                _manuscript.producerName,
+                                _producerName,
                                 style: GoogleFonts.plusJakartaSans(
                                   fontSize: 14,
                                   fontWeight: FontWeight.w700,
@@ -241,7 +249,7 @@ class _ReviewExpiredPageState extends State<ReviewExpiredPage> {
                                 ),
                               ),
                               Text(
-                                _manuscript.producerEmail,
+                                _producerEmail,
                                 style: GoogleFonts.plusJakartaSans(
                                   fontSize: 12,
                                   color: AppColors.darkTextSecondary,
@@ -259,7 +267,7 @@ class _ReviewExpiredPageState extends State<ReviewExpiredPage> {
                         onPressed: () {
                           ScaffoldMessenger.of(context).showSnackBar(
                             SnackBar(
-                              content: Text('Đang mở ứng dụng email gửi tới ${_manuscript.producerEmail}...'),
+                              content: Text('Đang mở ứng dụng email gửi tới $_producerEmail...'),
                             ),
                           );
                         },
@@ -308,7 +316,7 @@ class _ReviewExpiredPageState extends State<ReviewExpiredPage> {
                         color: Colors.white,
                       ),
                       decoration: InputDecoration(
-                        hintText: 'Nhập token mới (VD: REV-8891-OBSIDIAN-AETHEL)',
+                        hintText: 'Nhập token mới',
                         hintStyle: GoogleFonts.plusJakartaSans(
                           fontSize: 12,
                           color: AppColors.darkTextSecondary.withValues(alpha: 0.6),

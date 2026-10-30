@@ -1,3 +1,4 @@
+import 'package:cached_network_image/cached_network_image.dart';
 import 'package:flutter/material.dart';
 import 'package:google_fonts/google_fonts.dart';
 import '../models/review_model.dart';
@@ -266,6 +267,25 @@ class PanelSelectionDetector extends StatelessWidget {
   }
 
   Widget _buildPanelCanvas(BuildContext context) {
+    if (panel.imageUrl != null && panel.imageUrl!.isNotEmpty) {
+      return CachedNetworkImage(
+        imageUrl: panel.imageUrl!,
+        fit: BoxFit.cover,
+        width: double.infinity,
+        height: double.infinity,
+        placeholder: (context, url) => Container(
+          color: const Color(0xFF131722),
+          child: const Center(
+            child: CircularProgressIndicator(color: AppColors.primary, strokeWidth: 2),
+          ),
+        ),
+        errorWidget: (context, url, error) => _buildSimulatedCanvas(),
+      );
+    }
+    return _buildSimulatedCanvas();
+  }
+
+  Widget _buildSimulatedCanvas() {
     // Rich artistic custom sketch simulation
     return Container(
       decoration: BoxDecoration(

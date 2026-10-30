@@ -53,7 +53,7 @@ final GoRouter appRouter = GoRouter(
       parentNavigatorKey: _rootNavigatorKey,
       path: '/series/:id',
       builder: (context, state) {
-        final seriesId = state.pathParameters['id'] ?? 'chronicles-aether';
+        final seriesId = state.pathParameters['id'] ?? '';
         return SeriesDetailPage(seriesId: seriesId);
       },
     ),
@@ -63,7 +63,7 @@ final GoRouter appRouter = GoRouter(
       parentNavigatorKey: _rootNavigatorKey,
       path: '/reader/:id',
       builder: (context, state) {
-        final seriesId = state.pathParameters['id'] ?? 'chronicles-aether';
+        final seriesId = state.pathParameters['id'] ?? '';
         final chapterId = state.uri.queryParameters['chapterId'];
         return ComicReaderPage(
           seriesId: seriesId,
@@ -77,7 +77,7 @@ final GoRouter appRouter = GoRouter(
       parentNavigatorKey: _rootNavigatorKey,
       path: '/review/invite/:token',
       builder: (context, state) {
-        final token = state.pathParameters['token'] ?? 'REV-8891-OBSIDIAN-AETHEL';
+        final token = state.pathParameters['token'] ?? '';
         return ReviewInvitePage(token: token);
       },
     ),
@@ -87,7 +87,7 @@ final GoRouter appRouter = GoRouter(
       parentNavigatorKey: _rootNavigatorKey,
       path: '/review/canvas/:token',
       builder: (context, state) {
-        final token = state.pathParameters['token'] ?? 'REV-8891-OBSIDIAN-AETHEL';
+        final token = state.pathParameters['token'] ?? '';
         return ReviewCanvasPage(token: token);
       },
     ),
@@ -97,7 +97,7 @@ final GoRouter appRouter = GoRouter(
       parentNavigatorKey: _rootNavigatorKey,
       path: '/review/expired/:token',
       builder: (context, state) {
-        final token = state.pathParameters['token'] ?? 'REV-EXPIRED-TEST-TOKEN';
+        final token = state.pathParameters['token'] ?? '';
         return ReviewExpiredPage(token: token);
       },
     ),

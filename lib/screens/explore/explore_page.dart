@@ -3,6 +3,9 @@ import 'package:go_router/go_router.dart';
 import 'package:google_fonts/google_fonts.dart';
 import '../../models/comic_model.dart';
 import '../../theme/app_theme.dart';
+import '../../services/api_config.dart';
+import '../../services/catalog_service.dart';
+import '../../services/preferences_service.dart';
 
 class ExplorePage extends StatefulWidget {
   const ExplorePage({super.key});
@@ -12,15 +15,131 @@ class ExplorePage extends StatefulWidget {
 }
 
 class _ExplorePageState extends State<ExplorePage> {
-  final List<SeriesItem> _allSeries = MockDataRepository.getMockSeries();
+  List<SeriesItem> _allSeries = [];
   String _searchQuery = '';
   ComicFormat? _selectedFormat;
   late final TextEditingController _searchController;
+  bool _isLoading = false;
+  bool _isLiveBackend = false;
 
   @override
   void initState() {
     super.initState();
     _searchController = TextEditingController();
+    _fetchCatalog();
+  }
+
+  Future<void> _fetchCatalog() async {
+    setState(() => _isLoading = true);
+    try {
+      final res = await CatalogService().getSeries(
+        search: _searchQuery.isEmpty ? null : _searchQuery,
+      );
+      if (mounted) {
+        setState(() {
+          _allSeries = res.items.map((e) => SeriesItem.fromPublicDto(e)).toList();
+          _isLiveBackend = true;
+          _isLoading = false;
+        });
+      }
+    } catch (e) {
+      debugPrint('[Catalog Load Error] $e');
+      if (mounted) {
+        setState(() {
+          _allSeries = [];
+          _isLiveBackend = false;
+          _isLoading = false;
+        });
+      }
+    }
+  }
+
+  void _showServerConfigDialog() {
+    final ipController = TextEditingController(text: ApiConfig.baseUrl);
+    showDialog(
+      context: context,
+      builder: (context) {
+        return AlertDialog(
+          backgroundColor: AppColors.darkSurface,
+          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+          title: Text(
+            'Kết Nối Backend PanelForge',
+            style: GoogleFonts.newsreader(fontWeight: FontWeight.w700, fontSize: 18, color: Colors.white),
+          ),
+          content: Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Text(
+                'Địa chỉ Backend API (.NET 8):',
+                style: GoogleFonts.plusJakartaSans(fontSize: 12, color: AppColors.darkTextSecondary),
+              ),
+              const SizedBox(height: 8),
+              TextField(
+                controller: ipController,
+                decoration: InputDecoration(
+                  filled: true,
+                  fillColor: AppColors.darkCard,
+                  border: OutlineInputBorder(
+                    borderRadius: BorderRadius.circular(10),
+                    borderSide: const BorderSide(color: AppColors.darkBorder),
+                  ),
+                  enabledBorder: OutlineInputBorder(
+                    borderRadius: BorderRadius.circular(10),
+                    borderSide: const BorderSide(color: AppColors.darkBorder),
+                  ),
+                  hintText: 'http://10.0.2.2:5044',
+                  hintStyle: const TextStyle(color: Colors.white38),
+                  isDense: true,
+                ),
+                style: GoogleFonts.plusJakartaSans(fontSize: 13, color: Colors.white),
+              ),
+              const SizedBox(height: 14),
+              Row(
+                children: [
+                  Container(
+                    width: 10,
+                    height: 10,
+                    decoration: BoxDecoration(
+                      color: _isLiveBackend ? AppColors.mint : AppColors.amber,
+                      shape: BoxShape.circle,
+                    ),
+                  ),
+                  const SizedBox(width: 8),
+                  Text(
+                    _isLiveBackend ? 'Đã kết nối API (.NET)' : 'Chưa có kết nối máy chủ',
+                    style: GoogleFonts.plusJakartaSans(
+                      fontSize: 12,
+                      fontWeight: FontWeight.w600,
+                      color: _isLiveBackend ? AppColors.mint : AppColors.amber,
+                    ),
+                  ),
+                ],
+              ),
+            ],
+          ),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.of(context).pop(),
+              child: const Text('Đóng', style: TextStyle(color: Colors.white70)),
+            ),
+            ElevatedButton(
+              style: ElevatedButton.styleFrom(
+                backgroundColor: AppColors.primary,
+                foregroundColor: Colors.white,
+                shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
+              ),
+              onPressed: () async {
+                await PreferencesService.setCustomBaseUrl(ipController.text.trim());
+                if (context.mounted) Navigator.of(context).pop();
+                _fetchCatalog();
+              },
+              child: const Text('Lưu & Thử kết nối'),
+            ),
+          ],
+        );
+      },
+    );
   }
 
   @override
@@ -44,71 +163,78 @@ class _ExplorePageState extends State<ExplorePage> {
 
   @override
   Widget build(BuildContext context) {
-    final spotlightSeries = _allSeries.first;
-
     return Scaffold(
-      backgroundColor: AppColors.lightBg,
+      backgroundColor: AppColors.darkBg,
       body: SafeArea(
-        child: CustomScrollView(
-          physics: const BouncingScrollPhysics(),
-          slivers: [
-            // App Bar with Brand Title & Profile
-            SliverToBoxAdapter(
-              child: Padding(
-                padding: const EdgeInsets.fromLTRB(20, 16, 20, 12),
-                child: Row(
-                  mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                  children: [
-                    Column(
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      children: [
-                        Row(
-                          children: [
-                            Container(
-                              width: 10,
-                              height: 10,
-                              decoration: const BoxDecoration(
-                                color: AppColors.primary,
-                                shape: BoxShape.circle,
+        child: RefreshIndicator(
+          onRefresh: _fetchCatalog,
+          color: AppColors.primary,
+          child: CustomScrollView(
+            physics: const AlwaysScrollableScrollPhysics(parent: BouncingScrollPhysics()),
+            slivers: [
+              // App Bar with Brand Title & Profile
+              SliverToBoxAdapter(
+                child: Padding(
+                  padding: const EdgeInsets.fromLTRB(20, 16, 20, 12),
+                  child: Row(
+                    mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                    children: [
+                      Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          Row(
+                            children: [
+                              Container(
+                                width: 10,
+                                height: 10,
+                                decoration: BoxDecoration(
+                                  color: _isLiveBackend ? AppColors.mint : AppColors.primary,
+                                  shape: BoxShape.circle,
+                                ),
                               ),
-                            ),
-                            const SizedBox(width: 8),
-                            Text(
-                              'PANELFORGE',
-                              style: GoogleFonts.plusJakartaSans(
-                                fontSize: 11,
-                                fontWeight: FontWeight.w800,
-                                letterSpacing: 2.0,
-                                color: AppColors.primary,
+                              const SizedBox(width: 8),
+                              Text(
+                                _isLiveBackend ? 'PANELFORGE • LIVE API' : 'PANELFORGE',
+                                style: GoogleFonts.plusJakartaSans(
+                                  fontSize: 11,
+                                  fontWeight: FontWeight.w800,
+                                  letterSpacing: 2.0,
+                                  color: _isLiveBackend ? AppColors.mint : AppColors.primary,
+                                ),
                               ),
-                            ),
-                          ],
-                        ),
-                        const SizedBox(height: 2),
-                        Text(
-                          'Khám Phá Truyện Tranh',
-                          style: GoogleFonts.newsreader(
-                            fontSize: 26,
-                            fontWeight: FontWeight.w700,
-                            color: AppColors.lightTextPrimary,
-                            letterSpacing: -0.5,
+                            ],
                           ),
-                        ),
-                      ],
-                    ),
-                    IconButton(
-                      icon: const Icon(Icons.tune_rounded),
-                      onPressed: () {},
-                      style: IconButton.styleFrom(
-                        backgroundColor: AppColors.lightSurface,
-                        foregroundColor: AppColors.lightTextPrimary,
-                        side: const BorderSide(color: AppColors.lightBorder),
+                          const SizedBox(height: 2),
+                          Text(
+                            'Khám Phá Truyện Tranh',
+                            style: GoogleFonts.newsreader(
+                              fontSize: 26,
+                              fontWeight: FontWeight.w700,
+                              color: Colors.white,
+                              letterSpacing: -0.5,
+                            ),
+                          ),
+                        ],
                       ),
-                    ),
-                  ],
+                      IconButton(
+                        icon: _isLoading
+                            ? const SizedBox(
+                                width: 18,
+                                height: 18,
+                                child: CircularProgressIndicator(strokeWidth: 2, color: AppColors.primary),
+                              )
+                            : const Icon(Icons.tune_rounded),
+                        onPressed: _showServerConfigDialog,
+                        style: IconButton.styleFrom(
+                          backgroundColor: AppColors.darkSurface,
+                          foregroundColor: Colors.white,
+                          side: const BorderSide(color: AppColors.darkBorder),
+                        ),
+                      ),
+                    ],
+                  ),
                 ),
               ),
-            ),
 
             // Search Bar
             SliverToBoxAdapter(
@@ -116,12 +242,12 @@ class _ExplorePageState extends State<ExplorePage> {
                 padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 6),
                 child: Container(
                   decoration: BoxDecoration(
-                    color: AppColors.lightSurface,
+                    color: AppColors.darkSurface,
                     borderRadius: BorderRadius.circular(14),
-                    border: Border.all(color: AppColors.lightBorder),
+                    border: Border.all(color: AppColors.darkBorder),
                     boxShadow: [
                       BoxShadow(
-                        color: Colors.black.withValues(alpha: 0.03),
+                        color: Colors.black.withValues(alpha: 0.2),
                         blurRadius: 10,
                         offset: const Offset(0, 3),
                       ),
@@ -132,18 +258,18 @@ class _ExplorePageState extends State<ExplorePage> {
                     onChanged: (val) => setState(() => _searchQuery = val),
                     style: GoogleFonts.plusJakartaSans(
                       fontSize: 14,
-                      color: AppColors.lightTextPrimary,
+                      color: Colors.white,
                     ),
                     decoration: InputDecoration(
                       hintText: 'Tìm kiếm bộ truyện, tác giả, thể loại...',
                       hintStyle: GoogleFonts.plusJakartaSans(
                         fontSize: 13,
-                        color: AppColors.lightTextSecondary,
+                        color: AppColors.darkTextSecondary,
                       ),
                       prefixIcon: const Icon(Icons.search_rounded, color: AppColors.primary, size: 22),
                       suffixIcon: _searchQuery.isNotEmpty
                           ? IconButton(
-                              icon: const Icon(Icons.clear_rounded, size: 18),
+                              icon: const Icon(Icons.clear_rounded, size: 18, color: Colors.white70),
                               onPressed: () {
                                 _searchController.clear();
                                 setState(() => _searchQuery = '');
@@ -183,95 +309,151 @@ class _ExplorePageState extends State<ExplorePage> {
               ),
             ),
 
-            // Banner Tiêu Điểm Tuần (Weekly Spotlight)
-            if (_searchQuery.isEmpty && _selectedFormat == null)
-              SliverToBoxAdapter(
-                child: Padding(
-                  padding: const EdgeInsets.fromLTRB(20, 4, 20, 20),
-                  child: _buildSpotlightBanner(context, spotlightSeries),
+            if (_isLoading && _allSeries.isEmpty)
+              SliverFillRemaining(
+                child: Center(
+                  child: Column(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      const CircularProgressIndicator(color: AppColors.primary),
+                      const SizedBox(height: 16),
+                      Text(
+                        'Đang tải danh mục truyện từ server...',
+                        style: GoogleFonts.plusJakartaSans(color: AppColors.darkTextSecondary, fontSize: 13),
+                      ),
+                    ],
+                  ),
                 ),
-              ),
-
-            // Section Header: Truyện Đã Lên Kệ
-            SliverToBoxAdapter(
-              child: Padding(
-                padding: const EdgeInsets.fromLTRB(20, 8, 20, 12),
-                child: Row(
-                  mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                  children: [
-                    Row(
+              )
+            else if (_allSeries.isEmpty)
+              SliverFillRemaining(
+                child: Center(
+                  child: Padding(
+                    padding: const EdgeInsets.all(24.0),
+                    child: Column(
+                      mainAxisSize: MainAxisSize.min,
                       children: [
+                        const Icon(Icons.auto_stories_outlined, size: 54, color: AppColors.darkTextSecondary),
+                        const SizedBox(height: 14),
                         Text(
-                          'Truyện Đã Lên Kệ',
-                          style: GoogleFonts.newsreader(
-                            fontSize: 20,
-                            fontWeight: FontWeight.w700,
-                            color: AppColors.lightTextPrimary,
-                          ),
+                          'Chưa có truyện nào được phát hành',
+                          style: GoogleFonts.newsreader(fontSize: 18, fontWeight: FontWeight.w700, color: Colors.white),
                         ),
-                        const SizedBox(width: 8),
-                        Container(
-                          padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 2),
-                          decoration: BoxDecoration(
-                            color: AppColors.primary.withValues(alpha: 0.12),
-                            borderRadius: BorderRadius.circular(12),
-                          ),
-                          child: Text(
-                            '${_filteredSeries.length}',
-                            style: GoogleFonts.plusJakartaSans(
-                              fontSize: 11,
-                              fontWeight: FontWeight.w800,
-                              color: AppColors.primary,
-                            ),
+                        const SizedBox(height: 8),
+                        Text(
+                          'Hãy chắc chắn backend PanelForge.API đang chạy hoặc kéo xuống để tải lại danh mục.',
+                          textAlign: TextAlign.center,
+                          style: GoogleFonts.plusJakartaSans(fontSize: 12, color: AppColors.darkTextSecondary),
+                        ),
+                        const SizedBox(height: 16),
+                        ElevatedButton.icon(
+                          onPressed: _fetchCatalog,
+                          icon: const Icon(Icons.refresh_rounded, size: 16),
+                          label: const Text('Tải lại'),
+                          style: ElevatedButton.styleFrom(
+                            backgroundColor: AppColors.primary,
+                            foregroundColor: Colors.white,
+                            shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
                           ),
                         ),
                       ],
                     ),
-                    Text(
-                      'Xem tất cả',
-                      style: GoogleFonts.plusJakartaSans(
-                        fontSize: 12,
-                        fontWeight: FontWeight.w700,
-                        color: AppColors.primary,
+                  ),
+                ),
+              )
+            else ...[
+              // Banner Tiêu Điểm Tuần (Weekly Spotlight)
+              if (_searchQuery.isEmpty && _selectedFormat == null && _allSeries.isNotEmpty)
+                SliverToBoxAdapter(
+                  child: Padding(
+                    padding: const EdgeInsets.fromLTRB(20, 4, 20, 20),
+                    child: _buildSpotlightBanner(context, _allSeries.first),
+                  ),
+                ),
+
+              // Section Header: Truyện Đã Lên Kệ
+              SliverToBoxAdapter(
+                child: Padding(
+                  padding: const EdgeInsets.fromLTRB(20, 8, 20, 12),
+                  child: Row(
+                    mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                    children: [
+                      Row(
+                        children: [
+                          Text(
+                            'Truyện Đã Lên Kệ',
+                            style: GoogleFonts.newsreader(
+                              fontSize: 20,
+                              fontWeight: FontWeight.w700,
+                              color: Colors.white,
+                            ),
+                          ),
+                          const SizedBox(width: 8),
+                          Container(
+                            padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 2),
+                            decoration: BoxDecoration(
+                              color: AppColors.primary.withValues(alpha: 0.15),
+                              borderRadius: BorderRadius.circular(12),
+                            ),
+                            child: Text(
+                              '${_filteredSeries.length}',
+                              style: GoogleFonts.plusJakartaSans(
+                                fontSize: 11,
+                                fontWeight: FontWeight.w800,
+                                color: AppColors.primary,
+                              ),
+                            ),
+                          ),
+                        ],
                       ),
-                    ),
-                  ],
+                      Text(
+                        'Xem tất cả',
+                        style: GoogleFonts.plusJakartaSans(
+                          fontSize: 12,
+                          fontWeight: FontWeight.w700,
+                          color: AppColors.primary,
+                        ),
+                      ),
+                    ],
+                  ),
                 ),
               ),
-            ),
 
-            // Lưới truyện 2 cột (2-Column Grid)
-            SliverPadding(
-              padding: const EdgeInsets.symmetric(horizontal: 20),
-              sliver: SliverGrid(
-                gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
-                  crossAxisCount: 2,
-                  childAspectRatio: 0.60,
-                  crossAxisSpacing: 14,
-                  mainAxisSpacing: 16,
-                ),
-                delegate: SliverChildBuilderDelegate(
-                  (context, index) {
-                    final item = _filteredSeries[index];
-                    return _buildComicGridCard(context, item);
-                  },
-                  childCount: _filteredSeries.length,
+              // Lưới truyện 2 cột (2-Column Grid)
+              SliverPadding(
+                padding: const EdgeInsets.symmetric(horizontal: 20),
+                sliver: SliverGrid(
+                  gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
+                    crossAxisCount: 2,
+                    childAspectRatio: 0.60,
+                    crossAxisSpacing: 14,
+                    mainAxisSpacing: 16,
+                  ),
+                  delegate: SliverChildBuilderDelegate(
+                    (context, index) {
+                      final item = _filteredSeries[index];
+                      return _buildComicGridCard(context, item);
+                    },
+                    childCount: _filteredSeries.length,
+                  ),
                 ),
               ),
-            ),
 
-            // Ghi Chú Biên Tập (Editorial Notes)
-            SliverToBoxAdapter(
-              child: Padding(
-                padding: const EdgeInsets.fromLTRB(20, 28, 20, 32),
-                child: _buildEditorialNoteCard(spotlightSeries),
-              ),
-            ),
+              // Ghi Chú Biên Tập (Editorial Notes)
+              if (_allSeries.isNotEmpty)
+                SliverToBoxAdapter(
+                  child: Padding(
+                    padding: const EdgeInsets.fromLTRB(20, 28, 20, 32),
+                    child: _buildEditorialNoteCard(_allSeries.first),
+                  ),
+                ),
+            ],
           ],
         ),
       ),
-    );
-  }
+    ),
+  );
+}
 
   Widget _buildFormatChip(ComicFormat? format, String label) {
     final isSelected = _selectedFormat == format;
@@ -287,10 +469,10 @@ class _ExplorePageState extends State<ExplorePage> {
         duration: const Duration(milliseconds: 200),
         padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
         decoration: BoxDecoration(
-          color: isSelected ? AppColors.primary : AppColors.lightSurface,
+          color: isSelected ? AppColors.primary : AppColors.darkSurface,
           borderRadius: BorderRadius.circular(20),
           border: Border.all(
-            color: isSelected ? AppColors.primary : AppColors.lightBorder,
+            color: isSelected ? AppColors.primary : AppColors.darkBorder,
           ),
           boxShadow: isSelected
               ? [
@@ -307,7 +489,7 @@ class _ExplorePageState extends State<ExplorePage> {
           style: GoogleFonts.plusJakartaSans(
             fontSize: 12,
             fontWeight: isSelected ? FontWeight.w700 : FontWeight.w600,
-            color: isSelected ? Colors.white : AppColors.lightTextSecondary,
+            color: isSelected ? Colors.white : AppColors.darkTextSecondary,
           ),
         ),
       ),
@@ -583,7 +765,7 @@ class _ExplorePageState extends State<ExplorePage> {
             style: GoogleFonts.newsreader(
               fontSize: 16,
               fontWeight: FontWeight.w700,
-              color: AppColors.lightTextPrimary,
+              color: Colors.white,
             ),
           ),
 
@@ -598,7 +780,7 @@ class _ExplorePageState extends State<ExplorePage> {
                   overflow: TextOverflow.ellipsis,
                   style: GoogleFonts.plusJakartaSans(
                     fontSize: 11,
-                    color: AppColors.lightTextSecondary,
+                    color: AppColors.darkTextSecondary,
                   ),
                 ),
               ),
@@ -610,7 +792,7 @@ class _ExplorePageState extends State<ExplorePage> {
                     style: GoogleFonts.plusJakartaSans(
                       fontSize: 11,
                       fontWeight: FontWeight.w700,
-                      color: AppColors.lightTextPrimary,
+                      color: Colors.white,
                     ),
                   ),
                 ],
@@ -626,16 +808,16 @@ class _ExplorePageState extends State<ExplorePage> {
     return Container(
       padding: const EdgeInsets.all(18),
       decoration: BoxDecoration(
-        color: AppColors.lightVintagePaper,
+        color: AppColors.darkSurface,
         borderRadius: BorderRadius.circular(16),
-        border: Border.all(color: AppColors.lightBorder),
+        border: Border.all(color: AppColors.darkBorder),
       ),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
           Row(
             children: [
-              const Icon(Icons.history_edu_rounded, color: AppColors.primaryDark, size: 20),
+              const Icon(Icons.history_edu_rounded, color: AppColors.primary, size: 20),
               const SizedBox(width: 8),
               Text(
                 'GHI CHÚ BIÊN TẬP (EDITORIAL)',
@@ -643,7 +825,7 @@ class _ExplorePageState extends State<ExplorePage> {
                   fontSize: 11,
                   fontWeight: FontWeight.w800,
                   letterSpacing: 1.2,
-                  color: AppColors.primaryDark,
+                  color: AppColors.primary,
                 ),
               ),
             ],
@@ -655,7 +837,7 @@ class _ExplorePageState extends State<ExplorePage> {
               fontSize: 14,
               fontStyle: FontStyle.italic,
               height: 1.5,
-              color: AppColors.lightTextPrimary,
+              color: Colors.white,
             ),
           ),
           const SizedBox(height: 10),
@@ -666,7 +848,7 @@ class _ExplorePageState extends State<ExplorePage> {
               style: GoogleFonts.plusJakartaSans(
                 fontSize: 11,
                 fontWeight: FontWeight.w600,
-                color: AppColors.lightTextSecondary,
+                color: AppColors.darkTextSecondary,
               ),
             ),
           ),

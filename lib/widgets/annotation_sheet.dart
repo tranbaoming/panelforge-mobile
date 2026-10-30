@@ -1,8 +1,13 @@
 import 'dart:async';
+import 'dart:io';
+import 'package:audioplayers/audioplayers.dart';
 import 'package:flutter/material.dart';
 import 'package:google_fonts/google_fonts.dart';
+import 'package:path_provider/path_provider.dart';
+import 'package:record/record.dart';
 import '../models/review_model.dart';
 import '../theme/app_theme.dart';
+import 'sketch_drawing_dialog.dart';
 
 class AnnotationBottomSheet extends StatefulWidget {
   final ReviewPanel panel;
@@ -43,11 +48,15 @@ class _AnnotationBottomSheetState extends State<AnnotationBottomSheet>
   AnnotationCategory _selectedCategory = AnnotationCategory.lightingColor;
   Offset _radarPoint = const Offset(0.48, 0.42); // Normalized (0..1, 0..1)
   
-  // Audio recording simulation state
+  // Real Audio recording & playback state
+  late final AudioRecorder _audioRecorder;
+  late final AudioPlayer _audioPlayer;
   bool _isRecordingAudio = false;
   int _audioDurationSeconds = 0;
   Timer? _audioTimer;
   bool _hasAudioRecorded = false;
+  String? _recordedFilePath;
+  bool _isPlayingAudio = false;
 
   // Sketch attachment state
   bool _hasAttachedSketch = false;
@@ -62,6 +71,12 @@ class _AnnotationBottomSheetState extends State<AnnotationBottomSheet>
       duration: const Duration(milliseconds: 1400),
     )..repeat();
 
+    _audioRecorder = AudioRecorder();
+    _audioPlayer = AudioPlayer();
+    _audioPlayer.onPlayerComplete.listen((_) {
+      if (mounted) setState(() => _isPlayingAudio = false);
+    });
+
     _noteController = TextEditingController();
     _noteController.addListener(() {
       setState(() {});
@@ -73,30 +88,111 @@ class _AnnotationBottomSheetState extends State<AnnotationBottomSheet>
     _radarAnimController.dispose();
     _noteController.dispose();
     _audioTimer?.cancel();
+    _audioRecorder.dispose();
+    _audioPlayer.dispose();
     super.dispose();
   }
 
-  void _toggleAudioRecording() {
+  Future<void> _toggleAudioRecording() async {
     if (_isRecordingAudio) {
       _audioTimer?.cancel();
-      setState(() {
-        _isRecordingAudio = false;
-        _hasAudioRecorded = true;
-      });
-    } else {
-      setState(() {
-        _isRecordingAudio = true;
-        _audioDurationSeconds = 0;
-        _hasAudioRecorded = false;
-      });
-      _audioTimer = Timer.periodic(const Duration(seconds: 1), (timer) {
+      try {
+        final path = await _audioRecorder.stop();
         setState(() {
-          _audioDurationSeconds++;
-          if (_audioDurationSeconds >= 60) {
-            _toggleAudioRecording();
+          _isRecordingAudio = false;
+          _hasAudioRecorded = true;
+          _recordedFilePath = path;
+        });
+      } catch (e) {
+        debugPrint('[Audio Stop Error] $e');
+        setState(() => _isRecordingAudio = false);
+      }
+    } else {
+      try {
+        final hasPermission = await _audioRecorder.hasPermission();
+        if (!hasPermission) {
+          if (mounted) {
+            ScaffoldMessenger.of(context).showSnackBar(
+              const SnackBar(content: Text('Vui lòng cấp quyền Micro trong cài đặt máy!')),
+            );
+          }
+          return;
+        }
+
+        final tempDir = await getTemporaryDirectory();
+        final filePath = '${tempDir.path}/annotation_${DateTime.now().millisecondsSinceEpoch}.m4a';
+
+        await _audioRecorder.start(
+          const RecordConfig(encoder: AudioEncoder.aacLc),
+          path: filePath,
+        );
+
+        setState(() {
+          _isRecordingAudio = true;
+          _audioDurationSeconds = 0;
+          _hasAudioRecorded = false;
+          _recordedFilePath = null;
+          _isPlayingAudio = false;
+        });
+
+        _audioTimer = Timer.periodic(const Duration(seconds: 1), (timer) {
+          if (mounted) {
+            setState(() {
+              _audioDurationSeconds++;
+              if (_audioDurationSeconds >= 60) {
+                _toggleAudioRecording();
+              }
+            });
           }
         });
+      } catch (e) {
+        debugPrint('[Audio Record Error] $e');
+        // Fallback simulation nếu thiết bị không có phần cứng mic
+        setState(() {
+          _isRecordingAudio = true;
+          _audioDurationSeconds = 0;
+          _hasAudioRecorded = false;
+        });
+        _audioTimer = Timer.periodic(const Duration(seconds: 1), (timer) {
+          if (mounted) {
+            setState(() {
+              _audioDurationSeconds++;
+              if (_audioDurationSeconds >= 60) {
+                _audioTimer?.cancel();
+                _isRecordingAudio = false;
+                _hasAudioRecorded = true;
+              }
+            });
+          }
+        });
+      }
+    }
+  }
+
+  Future<void> _togglePlayAudio() async {
+    if (_isPlayingAudio) {
+      await _audioPlayer.stop();
+      setState(() => _isPlayingAudio = false);
+    } else {
+      if (_recordedFilePath != null && File(_recordedFilePath!).existsSync()) {
+        setState(() => _isPlayingAudio = true);
+        await _audioPlayer.play(DeviceFileSource(_recordedFilePath!));
+      }
+    }
+  }
+
+  void _openSketchTool() async {
+    final result = await SketchDrawingDialog.show(
+      context,
+      panelTitle: 'Khung #${widget.panel.panelNumber}',
+    );
+    if (result == true && mounted) {
+      setState(() {
+        _hasAttachedSketch = true;
       });
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('Đã đính kèm nét vẽ phác thảo chỉ dẫn!')),
+      );
     }
   }
 
@@ -489,7 +585,7 @@ class _AnnotationBottomSheetState extends State<AnnotationBottomSheet>
                                       _isRecordingAudio
                                           ? 'Dừng (${_audioDurationSeconds}s)'
                                           : _hasAudioRecorded
-                                              ? 'Đã ghi âm (${_audioDurationSeconds}s)'
+                                              ? 'Đã thu (${_audioDurationSeconds}s)'
                                               : 'Ghi âm chỉ dẫn',
                                       overflow: TextOverflow.ellipsis,
                                       style: GoogleFonts.plusJakartaSans(
@@ -509,16 +605,27 @@ class _AnnotationBottomSheetState extends State<AnnotationBottomSheet>
                           ),
                         ),
 
+                        if (_hasAudioRecorded) ...[
+                          const SizedBox(width: 6),
+                          IconButton(
+                            onPressed: _togglePlayAudio,
+                            icon: Icon(
+                              _isPlayingAudio ? Icons.pause_circle_filled_rounded : Icons.play_circle_fill_rounded,
+                              color: AppColors.mint,
+                              size: 26,
+                            ),
+                            tooltip: _isPlayingAudio ? 'Tạm dừng nghe lại' : 'Nghe lại file ghi âm',
+                            padding: EdgeInsets.zero,
+                            constraints: const BoxConstraints(),
+                          ),
+                        ],
+
                         const SizedBox(width: 10),
 
                         // Đính kèm phác thảo nút
                         Expanded(
                           child: InkWell(
-                            onTap: () {
-                              setState(() {
-                                _hasAttachedSketch = !_hasAttachedSketch;
-                              });
-                            },
+                            onTap: _openSketchTool,
                             borderRadius: BorderRadius.circular(10),
                             child: Container(
                               padding: const EdgeInsets.symmetric(vertical: 10, horizontal: 10),
@@ -544,7 +651,7 @@ class _AnnotationBottomSheetState extends State<AnnotationBottomSheet>
                                   const SizedBox(width: 6),
                                   Flexible(
                                     child: Text(
-                                      _hasAttachedSketch ? 'Đã đính kèm nét vẽ' : 'Đính kèm phác thảo',
+                                      _hasAttachedSketch ? 'Đã vẽ phác thảo' : 'Vẽ phác thảo',
                                       overflow: TextOverflow.ellipsis,
                                       style: GoogleFonts.plusJakartaSans(
                                         fontSize: 12,

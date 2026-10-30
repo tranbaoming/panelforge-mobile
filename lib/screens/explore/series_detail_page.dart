@@ -3,6 +3,8 @@ import 'package:go_router/go_router.dart';
 import 'package:google_fonts/google_fonts.dart';
 import '../../models/comic_model.dart';
 import '../../theme/app_theme.dart';
+import '../../services/catalog_service.dart';
+import '../../services/preferences_service.dart';
 
 class SeriesDetailPage extends StatefulWidget {
   final String seriesId;
@@ -14,46 +16,137 @@ class SeriesDetailPage extends StatefulWidget {
 }
 
 class _SeriesDetailPageState extends State<SeriesDetailPage> {
-  late SeriesItem _series;
+  SeriesItem? _series;
+  bool _isLoading = true;
+  String? _errorMessage;
   bool _isNewestFirst = false;
 
   @override
   void initState() {
     super.initState();
-    final all = MockDataRepository.getMockSeries();
-    _series = all.firstWhere(
-      (s) => s.id == widget.seriesId,
-      orElse: () => all.first,
-    );
+    _fetchDetailFromApi();
   }
 
-  void _toggleBookmark() {
+  Future<void> _fetchDetailFromApi() async {
     setState(() {
-      _series = _series.copyWith(isBookmarked: !_series.isBookmarked);
+      _isLoading = true;
+      _errorMessage = null;
     });
-    ScaffoldMessenger.of(context).showSnackBar(
-      SnackBar(
-        content: Text(
-          _series.isBookmarked ? 'Đã thêm vào tủ sách cá nhân' : 'Đã xóa khỏi tủ sách',
+    try {
+      final detail = await CatalogService().getSeriesDetail(widget.seriesId);
+      if (mounted) {
+        final bookmarked = PreferencesService.isBookmarked(widget.seriesId);
+        setState(() {
+          _series = SeriesItem.fromPublicDetailDto(detail).copyWith(isBookmarked: bookmarked);
+          _isLoading = false;
+        });
+      }
+    } catch (e) {
+      debugPrint('[SeriesDetail API Error] $e');
+      if (mounted) {
+        setState(() {
+          _isLoading = false;
+          _errorMessage = 'Không thể tải chi tiết tác phẩm từ máy chủ.';
+        });
+      }
+    }
+  }
+
+  void _toggleBookmark() async {
+    if (_series == null) return;
+    final newState = await PreferencesService.toggleBookmark(_series!.id);
+    if (mounted) {
+      setState(() {
+        _series = _series!.copyWith(isBookmarked: newState);
+      });
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text(
+            newState ? 'Đã thêm vào tủ sách cá nhân' : 'Đã xóa khỏi tủ sách',
+          ),
+          duration: const Duration(seconds: 2),
         ),
-        duration: const Duration(seconds: 2),
-      ),
-    );
+      );
+    }
   }
 
   @override
   Widget build(BuildContext context) {
-    final chaptersList = List<ChapterItem>.from(_series.chapters);
+    if (_isLoading) {
+      return Scaffold(
+        backgroundColor: AppColors.darkBg,
+        appBar: AppBar(
+          backgroundColor: Colors.transparent,
+          elevation: 0,
+          leading: IconButton(
+            icon: const Icon(Icons.arrow_back_ios_new_rounded, size: 20, color: Colors.white),
+            onPressed: () => context.pop(),
+          ),
+        ),
+        body: const Center(
+          child: CircularProgressIndicator(color: AppColors.primary),
+        ),
+      );
+    }
+
+    if (_series == null) {
+      return Scaffold(
+        backgroundColor: AppColors.darkBg,
+        appBar: AppBar(
+          backgroundColor: Colors.transparent,
+          elevation: 0,
+          leading: IconButton(
+            icon: const Icon(Icons.arrow_back_ios_new_rounded, size: 20, color: Colors.white),
+            onPressed: () => context.pop(),
+          ),
+        ),
+        body: Center(
+          child: Padding(
+            padding: const EdgeInsets.all(24),
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                const Icon(Icons.menu_book_outlined, size: 48, color: Colors.grey),
+                const SizedBox(height: 16),
+                Text(
+                  _errorMessage ?? 'Không tìm thấy tác phẩm này trên hệ thống.',
+                  textAlign: TextAlign.center,
+                  style: GoogleFonts.plusJakartaSans(
+                    fontSize: 14,
+                    color: AppColors.darkTextSecondary,
+                  ),
+                ),
+                const SizedBox(height: 16),
+                ElevatedButton.icon(
+                  onPressed: _fetchDetailFromApi,
+                  icon: const Icon(Icons.refresh_rounded, size: 18),
+                  label: const Text('Tải lại'),
+                  style: ElevatedButton.styleFrom(
+                    backgroundColor: AppColors.primary,
+                    foregroundColor: Colors.white,
+                  ),
+                ),
+              ],
+            ),
+          ),
+        ),
+      );
+    }
+
+    final series = _series!;
+    final chaptersList = List<ChapterItem>.from(series.chapters);
     if (_isNewestFirst) {
       chaptersList.sort((a, b) => b.number.compareTo(a.number));
     } else {
       chaptersList.sort((a, b) => a.number.compareTo(b.number));
     }
 
-    final readPercent = ((_series.readProgressChapter / _series.totalChapters) * 100).round();
+    final readPercent = series.totalChapters > 0
+        ? ((series.readProgressChapter / series.totalChapters) * 100).round()
+        : 0;
 
     return Scaffold(
-      backgroundColor: AppColors.lightBg,
+      backgroundColor: AppColors.darkBg,
       body: CustomScrollView(
         physics: const BouncingScrollPhysics(),
         slivers: [
@@ -61,23 +154,23 @@ class _SeriesDetailPageState extends State<SeriesDetailPage> {
           SliverAppBar(
             expandedHeight: 340,
             pinned: true,
-            backgroundColor: AppColors.lightBg,
+            backgroundColor: AppColors.darkBg,
             elevation: 0,
             leading: IconButton(
-              icon: const Icon(Icons.arrow_back_ios_new_rounded, size: 20),
+              icon: const Icon(Icons.arrow_back_ios_new_rounded, size: 20, color: Colors.white),
               style: IconButton.styleFrom(
-                backgroundColor: Colors.white70,
+                backgroundColor: Colors.black45,
               ),
               onPressed: () => context.pop(),
             ),
             actions: [
               IconButton(
                 icon: Icon(
-                  _series.isBookmarked ? Icons.bookmark_rounded : Icons.bookmark_border_rounded,
-                  color: _series.isBookmarked ? AppColors.primary : AppColors.lightTextPrimary,
+                  series.isBookmarked ? Icons.bookmark_rounded : Icons.bookmark_border_rounded,
+                  color: series.isBookmarked ? AppColors.primary : Colors.white70,
                 ),
                 style: IconButton.styleFrom(
-                  backgroundColor: Colors.white70,
+                  backgroundColor: Colors.black45,
                 ),
                 onPressed: _toggleBookmark,
               ),
@@ -90,15 +183,15 @@ class _SeriesDetailPageState extends State<SeriesDetailPage> {
                     begin: Alignment.topCenter,
                     end: Alignment.bottomCenter,
                     colors: [
-                      Color(int.parse(_series.coverGradientStart)).withValues(alpha: 0.25),
-                      AppColors.lightBg,
+                      Color(int.parse(series.coverGradientStart)).withValues(alpha: 0.35),
+                      AppColors.darkBg,
                     ],
                   ),
                 ),
                 child: Center(
                   child: Padding(
                     padding: const EdgeInsets.only(top: 50),
-                    child: _buildPrintBookCover(_series),
+                    child: _buildPrintBookCover(series),
                   ),
                 ),
               ),
@@ -118,11 +211,11 @@ class _SeriesDetailPageState extends State<SeriesDetailPage> {
                     children: [
                       Expanded(
                         child: Text(
-                          _series.title,
+                          series.title,
                           style: GoogleFonts.newsreader(
                             fontSize: 28,
                             fontWeight: FontWeight.w700,
-                            color: AppColors.lightTextPrimary,
+                            color: Colors.white,
                             letterSpacing: -0.5,
                           ),
                         ),
@@ -134,7 +227,7 @@ class _SeriesDetailPageState extends State<SeriesDetailPage> {
                           borderRadius: BorderRadius.circular(6),
                         ),
                         child: Text(
-                          _series.format.label.toUpperCase(),
+                          series.format.label.toUpperCase(),
                           style: GoogleFonts.plusJakartaSans(
                             fontSize: 10,
                             fontWeight: FontWeight.w800,
@@ -150,11 +243,11 @@ class _SeriesDetailPageState extends State<SeriesDetailPage> {
 
                   // Author & Artist
                   Text(
-                    'Tác giả: ${_series.author} • Họa sĩ: ${_series.artist}',
+                    'Tác giả: ${series.author} • Họa sĩ: ${series.artist}',
                     style: GoogleFonts.plusJakartaSans(
                       fontSize: 13,
                       fontWeight: FontWeight.w500,
-                      color: AppColors.lightTextSecondary,
+                      color: AppColors.darkTextSecondary,
                     ),
                   ),
 
@@ -164,20 +257,20 @@ class _SeriesDetailPageState extends State<SeriesDetailPage> {
                   Wrap(
                     spacing: 6,
                     runSpacing: 6,
-                    children: _series.genres.map((g) {
+                    children: series.genres.map((g) {
                       return Container(
                         padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
                         decoration: BoxDecoration(
-                          color: AppColors.lightSurface,
+                          color: AppColors.darkSurface,
                           borderRadius: BorderRadius.circular(20),
-                          border: Border.all(color: AppColors.lightBorder),
+                          border: Border.all(color: AppColors.darkBorder),
                         ),
                         child: Text(
                           g,
                           style: GoogleFonts.plusJakartaSans(
                             fontSize: 11,
                             fontWeight: FontWeight.w600,
-                            color: AppColors.lightTextPrimary,
+                            color: Colors.white,
                           ),
                         ),
                       );
@@ -190,9 +283,9 @@ class _SeriesDetailPageState extends State<SeriesDetailPage> {
                   Container(
                     padding: const EdgeInsets.all(14),
                     decoration: BoxDecoration(
-                      color: AppColors.lightSurface,
+                      color: AppColors.darkSurface,
                       borderRadius: BorderRadius.circular(14),
-                      border: Border.all(color: AppColors.lightBorder),
+                      border: Border.all(color: AppColors.darkBorder),
                     ),
                     child: Column(
                       crossAxisAlignment: CrossAxisAlignment.start,
@@ -216,11 +309,11 @@ class _SeriesDetailPageState extends State<SeriesDetailPage> {
                               ],
                             ),
                             Text(
-                              'Chương ${_series.readProgressChapter} / ${_series.totalChapters} • $readPercent%',
+                              'Chương ${series.readProgressChapter} / ${series.totalChapters} • $readPercent%',
                               style: GoogleFonts.plusJakartaSans(
                                 fontSize: 12,
                                 fontWeight: FontWeight.w700,
-                                color: AppColors.lightTextPrimary,
+                                color: Colors.white,
                               ),
                             ),
                           ],
@@ -229,8 +322,10 @@ class _SeriesDetailPageState extends State<SeriesDetailPage> {
                         ClipRRect(
                           borderRadius: BorderRadius.circular(4),
                           child: LinearProgressIndicator(
-                            value: (_series.readProgressChapter / _series.totalChapters).clamp(0.0, 1.0),
-                            backgroundColor: AppColors.lightBorder,
+                            value: series.totalChapters > 0
+                                ? (series.readProgressChapter / series.totalChapters).clamp(0.0, 1.0)
+                                : 0.0,
+                            backgroundColor: AppColors.darkBorder,
                             valueColor: const AlwaysStoppedAnimation<Color>(AppColors.primary),
                             minHeight: 6,
                           ),
@@ -245,29 +340,31 @@ class _SeriesDetailPageState extends State<SeriesDetailPage> {
                   Container(
                     padding: const EdgeInsets.all(16),
                     decoration: BoxDecoration(
-                      color: AppColors.lightVintagePaper,
+                      color: AppColors.darkCard,
                       borderRadius: BorderRadius.circular(12),
-                      border: Border.all(color: AppColors.lightBorder),
+                      border: Border.all(color: AppColors.darkBorder),
                     ),
                     child: Column(
                       crossAxisAlignment: CrossAxisAlignment.start,
                       children: [
-                        Text(
-                          _series.synopsisQuote,
-                          style: GoogleFonts.newsreader(
-                            fontSize: 15,
-                            fontStyle: FontStyle.italic,
-                            fontWeight: FontWeight.w600,
-                            color: AppColors.lightTextPrimary,
-                            height: 1.4,
+                        if (series.synopsisQuote.isNotEmpty)
+                          Text(
+                            series.synopsisQuote,
+                            style: GoogleFonts.newsreader(
+                              fontSize: 15,
+                              fontStyle: FontStyle.italic,
+                              fontWeight: FontWeight.w600,
+                              color: Colors.white,
+                              height: 1.4,
+                            ),
                           ),
-                        ),
-                        const SizedBox(height: 10),
+                        if (series.synopsisQuote.isNotEmpty)
+                          const SizedBox(height: 10),
                         Text(
-                          _series.fullSynopsis,
+                          series.fullSynopsis,
                           style: GoogleFonts.plusJakartaSans(
                             fontSize: 13,
-                            color: AppColors.lightTextSecondary,
+                            color: AppColors.darkTextSecondary,
                             height: 1.5,
                           ),
                         ),
@@ -283,14 +380,19 @@ class _SeriesDetailPageState extends State<SeriesDetailPage> {
                       Expanded(
                         child: ElevatedButton.icon(
                           onPressed: () {
-                            // Read first chapter or resume
-                            final firstCh = _series.chapters.first;
-                            context.push('/reader/${_series.id}?chapterId=${firstCh.id}');
+                            if (series.chapters.isEmpty) {
+                              ScaffoldMessenger.of(context).showSnackBar(
+                                const SnackBar(content: Text('Tác phẩm chưa có chương truyện nào được phát hành')),
+                              );
+                              return;
+                            }
+                            final firstCh = series.chapters.first;
+                            context.push('/reader/${series.id}?chapterId=${firstCh.id}');
                           },
                           icon: const Icon(Icons.play_circle_filled_rounded, size: 20),
                           label: Text(
-                            _series.readProgressChapter > 0
-                                ? 'ĐỌC TIẾP CHƯƠNG ${_series.readProgressChapter}'
+                            series.readProgressChapter > 0
+                                ? 'ĐỌC TIẾP CHƯƠNG ${series.readProgressChapter}'
                                 : 'ĐỌC CHƯƠNG ĐẦU',
                           ),
                           style: ElevatedButton.styleFrom(
@@ -302,12 +404,12 @@ class _SeriesDetailPageState extends State<SeriesDetailPage> {
                       IconButton(
                         onPressed: _toggleBookmark,
                         icon: Icon(
-                          _series.isBookmarked ? Icons.bookmark_added_rounded : Icons.bookmark_add_outlined,
-                          color: _series.isBookmarked ? AppColors.primary : AppColors.lightTextPrimary,
+                          series.isBookmarked ? Icons.bookmark_added_rounded : Icons.bookmark_add_outlined,
+                          color: series.isBookmarked ? AppColors.primary : Colors.white70,
                         ),
                         style: IconButton.styleFrom(
-                          backgroundColor: AppColors.lightSurface,
-                          side: const BorderSide(color: AppColors.lightBorder),
+                          backgroundColor: AppColors.darkSurface,
+                          side: const BorderSide(color: AppColors.darkBorder),
                           padding: const EdgeInsets.all(14),
                         ),
                       ),
@@ -321,47 +423,48 @@ class _SeriesDetailPageState extends State<SeriesDetailPage> {
                     mainAxisAlignment: MainAxisAlignment.spaceBetween,
                     children: [
                       Text(
-                        'Danh Sách Chương (${_series.chapters.length})',
+                        'Danh Sách Chương (${chaptersList.length})',
                         style: GoogleFonts.newsreader(
                           fontSize: 20,
                           fontWeight: FontWeight.w700,
-                          color: AppColors.lightTextPrimary,
+                          color: Colors.white,
                         ),
                       ),
-                      InkWell(
-                        onTap: () {
-                          setState(() {
-                            _isNewestFirst = !_isNewestFirst;
-                          });
-                        },
-                        borderRadius: BorderRadius.circular(8),
-                        child: Container(
-                          padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 5),
-                          decoration: BoxDecoration(
-                            color: AppColors.lightSurface,
-                            borderRadius: BorderRadius.circular(8),
-                            border: Border.all(color: AppColors.lightBorder),
-                          ),
-                          child: Row(
-                            children: [
-                              Icon(
-                                _isNewestFirst ? Icons.arrow_downward_rounded : Icons.arrow_upward_rounded,
-                                size: 14,
-                                color: AppColors.primary,
-                              ),
-                              const SizedBox(width: 4),
-                              Text(
-                                _isNewestFirst ? 'Mới nhất' : 'Cũ nhất',
-                                style: GoogleFonts.plusJakartaSans(
-                                  fontSize: 11,
-                                  fontWeight: FontWeight.w700,
-                                  color: AppColors.lightTextPrimary,
+                      if (chaptersList.isNotEmpty)
+                        InkWell(
+                          onTap: () {
+                            setState(() {
+                              _isNewestFirst = !_isNewestFirst;
+                            });
+                          },
+                          borderRadius: BorderRadius.circular(8),
+                          child: Container(
+                            padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 5),
+                            decoration: BoxDecoration(
+                              color: AppColors.darkSurface,
+                              borderRadius: BorderRadius.circular(8),
+                              border: Border.all(color: AppColors.darkBorder),
+                            ),
+                            child: Row(
+                              children: [
+                                Icon(
+                                  _isNewestFirst ? Icons.arrow_downward_rounded : Icons.arrow_upward_rounded,
+                                  size: 14,
+                                  color: AppColors.primary,
                                 ),
-                              ),
-                            ],
+                                const SizedBox(width: 4),
+                                Text(
+                                  _isNewestFirst ? 'Mới nhất' : 'Cũ nhất',
+                                  style: GoogleFonts.plusJakartaSans(
+                                    fontSize: 11,
+                                    fontWeight: FontWeight.w700,
+                                    color: Colors.white,
+                                  ),
+                                ),
+                              ],
+                            ),
                           ),
                         ),
-                      ),
                     ],
                   ),
 
@@ -371,19 +474,41 @@ class _SeriesDetailPageState extends State<SeriesDetailPage> {
             ),
           ),
 
-          // Chapter List Items
-          SliverPadding(
-            padding: const EdgeInsets.symmetric(horizontal: 20),
-            sliver: SliverList(
-              delegate: SliverChildBuilderDelegate(
-                (context, index) {
-                  final ch = chaptersList[index];
-                  return _buildChapterListItem(context, ch);
-                },
-                childCount: chaptersList.length,
+          // Chapter List Items or Empty
+          if (chaptersList.isEmpty)
+            SliverToBoxAdapter(
+              child: Center(
+                child: Padding(
+                  padding: const EdgeInsets.symmetric(vertical: 32),
+                  child: Column(
+                    children: [
+                      Icon(Icons.menu_book_rounded, size: 40, color: Colors.white30),
+                      const SizedBox(height: 8),
+                      Text(
+                        'Chưa có chương nào được phát hành',
+                        style: GoogleFonts.plusJakartaSans(
+                          fontSize: 13,
+                          color: AppColors.darkTextSecondary,
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+              ),
+            )
+          else
+            SliverPadding(
+              padding: const EdgeInsets.symmetric(horizontal: 20),
+              sliver: SliverList(
+                delegate: SliverChildBuilderDelegate(
+                  (context, index) {
+                    final ch = chaptersList[index];
+                    return _buildChapterListItem(context, series, ch);
+                  },
+                  childCount: chaptersList.length,
+                ),
               ),
             ),
-          ),
 
           const SliverToBoxAdapter(child: SizedBox(height: 40)),
         ],
@@ -487,13 +612,13 @@ class _SeriesDetailPageState extends State<SeriesDetailPage> {
     );
   }
 
-  Widget _buildChapterListItem(BuildContext context, ChapterItem chapter) {
+  Widget _buildChapterListItem(BuildContext context, SeriesItem series, ChapterItem chapter) {
     return Container(
       margin: const EdgeInsets.only(bottom: 10),
       decoration: BoxDecoration(
-        color: AppColors.lightSurface,
+        color: AppColors.darkSurface,
         borderRadius: BorderRadius.circular(12),
-        border: Border.all(color: AppColors.lightBorder),
+        border: Border.all(color: AppColors.darkBorder),
       ),
       child: ListTile(
         contentPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 4),
@@ -502,7 +627,7 @@ class _SeriesDetailPageState extends State<SeriesDetailPage> {
           style: GoogleFonts.newsreader(
             fontSize: 16,
             fontWeight: FontWeight.w600,
-            color: AppColors.lightTextPrimary,
+            color: Colors.white,
           ),
         ),
         subtitle: Row(
@@ -511,7 +636,7 @@ class _SeriesDetailPageState extends State<SeriesDetailPage> {
               '${chapter.releaseDate} • ${chapter.pageCount} trang',
               style: GoogleFonts.plusJakartaSans(
                 fontSize: 11,
-                color: AppColors.lightTextSecondary,
+                color: AppColors.darkTextSecondary,
               ),
             ),
             if (!chapter.isFree) ...[
@@ -547,7 +672,7 @@ class _SeriesDetailPageState extends State<SeriesDetailPage> {
           color: AppColors.primary,
         ),
         onTap: () {
-          context.push('/reader/${_series.id}?chapterId=${chapter.id}');
+          context.push('/reader/${series.id}?chapterId=${chapter.id}');
         },
       ),
     );

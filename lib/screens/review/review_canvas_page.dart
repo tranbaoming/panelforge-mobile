@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:go_router/go_router.dart';
 import 'package:google_fonts/google_fonts.dart';
 import '../../models/review_model.dart';
+import '../../services/preview_service.dart';
 import '../../theme/app_theme.dart';
 import '../../widgets/annotation_sheet.dart';
 import '../../widgets/panel_selection_detector.dart';
@@ -17,35 +18,65 @@ class ReviewCanvasPage extends StatefulWidget {
 }
 
 class _ReviewCanvasPageState extends State<ReviewCanvasPage> {
-  late ReviewManuscript _manuscript;
+  ReviewManuscript? _manuscript;
   String? _selectedPanelId;
   int _totalAnnotationCount = 0;
+  bool _isLoading = true;
+  String? _errorMessage;
 
   @override
   void initState() {
     super.initState();
-    _manuscript = MockReviewRepository.getActiveReview();
-    _recalculateAnnotations();
-    if (_manuscript.panels.isNotEmpty) {
-      _selectedPanelId = _manuscript.panels.first.id;
+    _fetchLiveManuscript();
+  }
+
+  Future<void> _fetchLiveManuscript() async {
+    setState(() {
+      _isLoading = true;
+      _errorMessage = null;
+    });
+
+    try {
+      final dto = await PreviewService().openPreview(widget.token);
+      if (mounted) {
+        final ms = ReviewManuscript.fromPreviewDto(dto, widget.token);
+        setState(() {
+          _manuscript = ms;
+          _isLoading = false;
+          _recalculateAnnotations();
+          if (ms.panels.isNotEmpty) {
+            _selectedPanelId = ms.panels.first.id;
+          }
+        });
+      }
+    } catch (e) {
+      debugPrint('[ReviewCanvas live load error] $e');
+      if (mounted) {
+        setState(() {
+          _isLoading = false;
+          _errorMessage = 'Không thể tải dữ liệu bản thảo từ máy chủ ($e)';
+        });
+      }
     }
   }
 
   void _recalculateAnnotations() {
+    if (_manuscript == null) return;
     int count = 0;
-    for (final p in _manuscript.panels) {
+    for (final p in _manuscript!.panels) {
       count += p.annotations.length;
     }
     _totalAnnotationCount = count;
   }
 
   void _openAnnotationSheet(ReviewPanel panel) {
+    if (_manuscript == null) return;
     AnnotationBottomSheet.show(
       context: context,
       panel: panel,
-      onSubmitAnnotation: (newAnnotation) {
+      onSubmitAnnotation: (newAnnotation) async {
         setState(() {
-          final updatedPanels = _manuscript.panels.map((p) {
+          final updatedPanels = _manuscript!.panels.map((p) {
             if (p.id == panel.id) {
               return p.copyWith(
                 annotations: [...p.annotations, newAnnotation],
@@ -54,30 +85,112 @@ class _ReviewCanvasPageState extends State<ReviewCanvasPage> {
             return p;
           }).toList();
 
-          _manuscript = _manuscript.copyWith(panels: updatedPanels);
+          _manuscript = _manuscript!.copyWith(panels: updatedPanels);
           _recalculateAnnotations();
         });
 
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(
-            content: Row(
-              children: [
-                const Icon(Icons.check_circle_rounded, color: AppColors.mint, size: 18),
-                const SizedBox(width: 8),
-                Text('Đã lưu góp ý cho Khung Tranh #${panel.panelNumber}!'),
-              ],
+        // Đồng bộ lên Backend API Preview: POST /api/preview/feedback
+        try {
+          await PreviewService().submitFeedback(
+            token: widget.token,
+            message: '[${newAnnotation.category.label}] ${newAnnotation.note}',
+            panelId: panel.id.startsWith('rev-') ? null : panel.id,
+          );
+        } catch (e) {
+          debugPrint('[Sync Feedback API Error] $e');
+        }
+
+        if (mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            SnackBar(
+              content: Row(
+                children: [
+                  const Icon(Icons.check_circle_rounded, color: AppColors.mint, size: 18),
+                  const SizedBox(width: 8),
+                  Text('Đã lưu góp ý cho Khung Tranh #${panel.panelNumber}!'),
+                ],
+              ),
+              backgroundColor: AppColors.darkSurface,
+              behavior: SnackBarBehavior.floating,
             ),
-            backgroundColor: AppColors.darkSurface,
-            behavior: SnackBarBehavior.floating,
-          ),
-        );
+          );
+        }
       },
     );
   }
 
   @override
   Widget build(BuildContext context) {
-    final watermarkText = '${_manuscript.recipientEmail} • BẢN REVIEW KHẨN';
+    if (_isLoading) {
+      return Scaffold(
+        backgroundColor: AppColors.darkBg,
+        appBar: AppBar(
+          backgroundColor: AppColors.darkBg,
+          elevation: 0,
+          leading: IconButton(
+            icon: const Icon(Icons.arrow_back_ios_new_rounded, color: Colors.white, size: 20),
+            onPressed: () => context.pop(),
+          ),
+        ),
+        body: const Center(
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              CircularProgressIndicator(color: AppColors.primary),
+              SizedBox(height: 16),
+              Text(
+                'Đang tải khung tranh và áp dụng watermark chìm...',
+                style: TextStyle(color: Colors.white70, fontSize: 13),
+              ),
+            ],
+          ),
+        ),
+      );
+    }
+
+    if (_manuscript == null) {
+      return Scaffold(
+        backgroundColor: AppColors.darkBg,
+        appBar: AppBar(
+          backgroundColor: AppColors.darkBg,
+          elevation: 0,
+          leading: IconButton(
+            icon: const Icon(Icons.arrow_back_ios_new_rounded, color: Colors.white, size: 20),
+            onPressed: () => context.pop(),
+          ),
+        ),
+        body: Center(
+          child: Padding(
+            padding: const EdgeInsets.all(24),
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                const Icon(Icons.image_not_supported_rounded, color: Colors.grey, size: 54),
+                const SizedBox(height: 16),
+                Text(
+                  _errorMessage ?? 'Không tìm thấy dữ liệu bản vẽ bản thảo.',
+                  textAlign: TextAlign.center,
+                  style: GoogleFonts.plusJakartaSans(color: Colors.white70, fontSize: 14),
+                ),
+                const SizedBox(height: 20),
+                ElevatedButton.icon(
+                  onPressed: _fetchLiveManuscript,
+                  icon: const Icon(Icons.refresh_rounded),
+                  label: const Text('Thử lại'),
+                  style: ElevatedButton.styleFrom(
+                    backgroundColor: AppColors.primary,
+                    foregroundColor: Colors.white,
+                  ),
+                ),
+              ],
+            ),
+          ),
+        ),
+      );
+    }
+
+    final manuscript = _manuscript!;
+    final watermarkText = '${manuscript.recipientEmail} • BẢN REVIEW KHẨN';
 
     return Scaffold(
       backgroundColor: AppColors.darkBg,
@@ -91,7 +204,7 @@ class _ReviewCanvasPageState extends State<ReviewCanvasPage> {
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
             Text(
-              _manuscript.seriesTitle,
+              manuscript.seriesTitle,
               style: GoogleFonts.newsreader(
                 fontSize: 16,
                 fontWeight: FontWeight.w700,
@@ -99,7 +212,7 @@ class _ReviewCanvasPageState extends State<ReviewCanvasPage> {
               ),
             ),
             Text(
-              _manuscript.chapterTitle,
+              manuscript.chapterTitle,
               style: GoogleFonts.plusJakartaSans(
                 fontSize: 11,
                 color: AppColors.darkTextSecondary,
@@ -146,7 +259,7 @@ class _ReviewCanvasPageState extends State<ReviewCanvasPage> {
                   const SizedBox(width: 8),
                   Expanded(
                     child: Text(
-                      'Watermark đang nhúng: ${_manuscript.recipientEmail}',
+                      'Watermark đang nhúng: ${manuscript.recipientEmail}',
                       style: GoogleFonts.plusJakartaSans(
                         fontSize: 10,
                         fontWeight: FontWeight.w700,
@@ -155,7 +268,7 @@ class _ReviewCanvasPageState extends State<ReviewCanvasPage> {
                     ),
                   ),
                   Text(
-                    '${_manuscript.panels.length} Khung Tranh',
+                    '${manuscript.panels.length} Khung Tranh',
                     style: GoogleFonts.plusJakartaSans(
                       fontSize: 10,
                       fontWeight: FontWeight.w600,
@@ -173,86 +286,107 @@ class _ReviewCanvasPageState extends State<ReviewCanvasPage> {
                 spacingX: 200,
                 spacingY: 90,
                 opacity: 0.14,
-                child: ListView.builder(
-                  physics: const BouncingScrollPhysics(),
-                  padding: const EdgeInsets.symmetric(vertical: 16),
-                  itemCount: _manuscript.panels.length,
-                  itemBuilder: (context, index) {
-                    final panel = _manuscript.panels[index];
-                    final isSelected = panel.id == _selectedPanelId;
+                child: manuscript.panels.isEmpty
+                    ? Center(
+                        child: Padding(
+                          padding: const EdgeInsets.all(24),
+                          child: Column(
+                            mainAxisSize: MainAxisSize.min,
+                            children: [
+                              const Icon(Icons.panorama_outlined, size: 48, color: Colors.white24),
+                              const SizedBox(height: 12),
+                              Text(
+                                'Bản thảo chưa có khung tranh nào',
+                                style: GoogleFonts.plusJakartaSans(
+                                  fontSize: 14,
+                                  color: Colors.white70,
+                                ),
+                              ),
+                            ],
+                          ),
+                        ),
+                      )
+                    : ListView.builder(
+                        physics: const BouncingScrollPhysics(),
+                        padding: const EdgeInsets.symmetric(vertical: 16),
+                        itemCount: manuscript.panels.length,
+                        itemBuilder: (context, index) {
+                          final panel = manuscript.panels[index];
+                          final isSelected = panel.id == _selectedPanelId;
 
-                    return PanelSelectionDetector(
-                      panel: panel,
-                      isSelected: isSelected,
-                      onTap: () {
-                        setState(() {
-                          _selectedPanelId = panel.id;
-                        });
-                      },
-                      onAnnotatePressed: () {
-                        _openAnnotationSheet(panel);
-                      },
-                    );
-                  },
-                ),
+                          return PanelSelectionDetector(
+                            panel: panel,
+                            isSelected: isSelected,
+                            onTap: () {
+                              setState(() {
+                                _selectedPanelId = panel.id;
+                              });
+                            },
+                            onAnnotatePressed: () {
+                              _openAnnotationSheet(panel);
+                            },
+                          );
+                        },
+                      ),
               ),
             ),
 
             // BOTTOM CONTROL BAR
-            Container(
-              padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
-              decoration: const BoxDecoration(
-                color: AppColors.darkSurface,
-                border: Border(
-                  top: BorderSide(color: AppColors.darkBorder),
+            if (manuscript.panels.isNotEmpty)
+              Container(
+                padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+                decoration: const BoxDecoration(
+                  color: AppColors.darkSurface,
+                  border: Border(
+                    top: BorderSide(color: AppColors.darkBorder),
+                  ),
+                ),
+                child: Row(
+                  children: [
+                    Expanded(
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        mainAxisSize: MainAxisSize.min,
+                        children: [
+                          Text(
+                            'Khung đang chọn:',
+                            style: GoogleFonts.plusJakartaSans(
+                              fontSize: 10,
+                              color: AppColors.darkTextSecondary,
+                            ),
+                          ),
+                          Text(
+                            _selectedPanelId != null
+                                ? 'PANEL #${manuscript.panels.firstWhere((p) => p.id == _selectedPanelId, orElse: () => manuscript.panels.first).panelNumber}'
+                                : 'Chưa chọn',
+                            style: GoogleFonts.plusJakartaSans(
+                              fontSize: 13,
+                              fontWeight: FontWeight.w800,
+                              color: Colors.white,
+                            ),
+                          ),
+                        ],
+                      ),
+                    ),
+                    ElevatedButton.icon(
+                      onPressed: () {
+                        final currentPanel = manuscript.panels.firstWhere(
+                          (p) => p.id == _selectedPanelId,
+                          orElse: () => manuscript.panels.first,
+                        );
+                        _openAnnotationSheet(currentPanel);
+                      },
+                      icon: const Icon(Icons.add_comment_rounded, size: 16),
+                      label: const Text('GÓP Ý PANEL NÀY'),
+                      style: ElevatedButton.styleFrom(
+                        backgroundColor: AppColors.primary,
+                        foregroundColor: Colors.white,
+                        padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+                      ),
+                    ),
+                  ],
                 ),
               ),
-              child: Row(
-                children: [
-                  Expanded(
-                    child: Column(
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      mainAxisSize: MainAxisSize.min,
-                      children: [
-                        Text(
-                          'Khung đang chọn:',
-                          style: GoogleFonts.plusJakartaSans(
-                            fontSize: 10,
-                            color: AppColors.darkTextSecondary,
-                          ),
-                        ),
-                        Text(
-                          _selectedPanelId != null
-                              ? 'PANEL #${_manuscript.panels.firstWhere((p) => p.id == _selectedPanelId).panelNumber}'
-                              : 'Chưa chọn',
-                          style: GoogleFonts.plusJakartaSans(
-                            fontSize: 13,
-                            fontWeight: FontWeight.w800,
-                            color: Colors.white,
-                          ),
-                        ),
-                      ],
-                    ),
-                  ),
-                  ElevatedButton.icon(
-                    onPressed: () {
-                      final currentPanel = _manuscript.panels.firstWhere(
-                        (p) => p.id == _selectedPanelId,
-                        orElse: () => _manuscript.panels.first,
-                      );
-                      _openAnnotationSheet(currentPanel);
-                    },
-                    icon: const Icon(Icons.add_comment_rounded, size: 16),
-                    label: const Text('GÓP Ý PANEL NÀY'),
-                    style: ElevatedButton.styleFrom(
-                      backgroundColor: AppColors.primary,
-                      foregroundColor: Colors.white,
-                      padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
-                    ),
-                  ),
-                ],
-              ),
-            ),
           ],
         ),
       ),

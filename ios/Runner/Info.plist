@@ -66,5 +66,9 @@
 		<string>UIInterfaceOrientationLandscapeLeft</string>
 		<string>UIInterfaceOrientationLandscapeRight</string>
 	</array>
+	<key>NSCameraUsageDescription</key>
+	<string>Ứng dụng cần quyền Camera để quét mã QR mở bản thảo xem thử.</string>
+	<key>NSMicrophoneUsageDescription</key>
+	<string>Ứng dụng cần quyền Micro để ghi âm nhận xét cho khung tranh.</string>
 </dict>
 </plist>
