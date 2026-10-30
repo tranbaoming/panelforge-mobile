@@ -21,6 +21,17 @@ enum ApiReadingDirection {
     }
     return ApiReadingDirection.rightToLeft;
   }
+
+  String get apiValue {
+    switch (this) {
+      case ApiReadingDirection.rightToLeft:
+        return 'RightToLeft';
+      case ApiReadingDirection.leftToRight:
+        return 'LeftToRight';
+      case ApiReadingDirection.vertical:
+        return 'Vertical';
+    }
+  }
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -72,15 +83,26 @@ class PublicChapterSummaryDto {
   final double chapterNumber;
   final String? title;
   final DateTime? publishedAt;
+  final bool isFree;
+  final bool isUnlocked;
+  final int priceCoins;
+  final String? cbzPackageUrl;
+  final String? manifestUrl;
 
   PublicChapterSummaryDto({
     required this.id,
     required this.chapterNumber,
     this.title,
     this.publishedAt,
+    this.isFree = true,
+    this.isUnlocked = true,
+    this.priceCoins = 0,
+    this.cbzPackageUrl,
+    this.manifestUrl,
   });
 
   factory PublicChapterSummaryDto.fromJson(Map<String, dynamic> json) {
+    final free = json['isFree'] as bool? ?? true;
     return PublicChapterSummaryDto(
       id: json['id']?.toString() ?? '',
       chapterNumber: (json['chapterNumber'] as num?)?.toDouble() ?? 1.0,
@@ -88,8 +110,31 @@ class PublicChapterSummaryDto {
       publishedAt: json['publishedAt'] != null
           ? DateTime.tryParse(json['publishedAt'].toString())
           : null,
+      isFree: free,
+      isUnlocked: json['isUnlocked'] as bool? ?? free,
+      priceCoins: (json['priceCoins'] as num?)?.toInt() ?? 0,
+      cbzPackageUrl: json['cbzPackageUrl']?.toString(),
+      manifestUrl: json['manifestUrl']?.toString(),
     );
   }
+
+  Map<String, dynamic> toJson() => {
+        'id': id,
+        'chapterNumber': chapterNumber,
+        if (title != null) 'title': title,
+        if (publishedAt != null) 'publishedAt': publishedAt!.toIso8601String(),
+        'isFree': isFree,
+        'isUnlocked': isUnlocked,
+        'priceCoins': priceCoins,
+        if (cbzPackageUrl != null) 'cbzPackageUrl': cbzPackageUrl,
+        if (manifestUrl != null) 'manifestUrl': manifestUrl,
+      };
+
+  String? get fullCbzPackageUrl =>
+      cbzPackageUrl != null ? ApiConfig.resolveUrl(cbzPackageUrl!) : null;
+
+  String? get fullManifestUrl =>
+      manifestUrl != null ? ApiConfig.resolveUrl(manifestUrl!) : null;
 
   String get displayTitle {
     final numStr = chapterNumber.toString().replaceAll(RegExp(r'\.0$'), '');
@@ -170,6 +215,11 @@ class PublicChapterReadDto {
   final String? title;
   final DateTime? publishedAt;
   final List<PublicPageDto> pages;
+  final bool isFree;
+  final bool isUnlocked;
+  final int priceCoins;
+  final String? cbzPackageUrl;
+  final String? manifestUrl;
 
   PublicChapterReadDto({
     required this.id,
@@ -180,10 +230,16 @@ class PublicChapterReadDto {
     this.title,
     this.publishedAt,
     required this.pages,
+    this.isFree = true,
+    this.isUnlocked = true,
+    this.priceCoins = 0,
+    this.cbzPackageUrl,
+    this.manifestUrl,
   });
 
   factory PublicChapterReadDto.fromJson(Map<String, dynamic> json) {
     final rawPages = json['pages'] as List<dynamic>? ?? [];
+    final free = json['isFree'] as bool? ?? true;
     return PublicChapterReadDto(
       id: json['id']?.toString() ?? '',
       seriesId: json['seriesId']?.toString() ?? '',
@@ -197,8 +253,35 @@ class PublicChapterReadDto {
       pages: rawPages
           .map((e) => PublicPageDto.fromJson(e as Map<String, dynamic>))
           .toList(),
+      isFree: free,
+      isUnlocked: json['isUnlocked'] as bool? ?? free,
+      priceCoins: (json['priceCoins'] as num?)?.toInt() ?? 0,
+      cbzPackageUrl: json['cbzPackageUrl']?.toString(),
+      manifestUrl: json['manifestUrl']?.toString(),
     );
   }
+
+  Map<String, dynamic> toJson() => {
+        'id': id,
+        'seriesId': seriesId,
+        'seriesTitle': seriesTitle,
+        'readingDirection': readingDirection.apiValue,
+        'chapterNumber': chapterNumber,
+        if (title != null) 'title': title,
+        if (publishedAt != null) 'publishedAt': publishedAt!.toIso8601String(),
+        'pages': pages.map((p) => {'id': p.id, 'pageNumber': p.pageNumber, 'imageUrl': p.relativeImageUrl}).toList(),
+        'isFree': isFree,
+        'isUnlocked': isUnlocked,
+        'priceCoins': priceCoins,
+        if (cbzPackageUrl != null) 'cbzPackageUrl': cbzPackageUrl,
+        if (manifestUrl != null) 'manifestUrl': manifestUrl,
+      };
+
+  String? get fullCbzPackageUrl =>
+      cbzPackageUrl != null ? ApiConfig.resolveUrl(cbzPackageUrl!) : null;
+
+  String? get fullManifestUrl =>
+      manifestUrl != null ? ApiConfig.resolveUrl(manifestUrl!) : null;
 
   String get displayTitle {
     final numStr = chapterNumber.toString().replaceAll(RegExp(r'\.0$'), '');
@@ -387,5 +470,90 @@ class PreviewFeedbackDto {
           : DateTime.now(),
     );
   }
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// MONETIZATION & WALLET DTOs (Thu phí người dùng)
+// ─────────────────────────────────────────────────────────────────────────────
+
+class UserWalletDto {
+  final int balanceCoins;
+  final bool isVip;
+  final DateTime? vipExpiresAt;
+
+  UserWalletDto({
+    required this.balanceCoins,
+    this.isVip = false,
+    this.vipExpiresAt,
+  });
+
+  factory UserWalletDto.fromJson(Map<String, dynamic> json) {
+    return UserWalletDto(
+      balanceCoins: (json['balanceCoins'] as num?)?.toInt() ?? 0,
+      isVip: json['isVip'] as bool? ?? false,
+      vipExpiresAt: json['vipExpiresAt'] != null
+          ? DateTime.tryParse(json['vipExpiresAt'].toString())
+          : null,
+    );
+  }
+
+  Map<String, dynamic> toJson() => {
+        'balanceCoins': balanceCoins,
+        'isVip': isVip,
+        if (vipExpiresAt != null) 'vipExpiresAt': vipExpiresAt!.toIso8601String(),
+      };
+}
+
+class UnlockChapterRequest {
+  final String chapterId;
+
+  UnlockChapterRequest({required this.chapterId});
+
+  factory UnlockChapterRequest.fromJson(Map<String, dynamic> json) {
+    return UnlockChapterRequest(
+      chapterId: json['chapterId']?.toString() ?? '',
+    );
+  }
+
+  Map<String, dynamic> toJson() => {
+        'chapterId': chapterId,
+      };
+}
+
+class UnlockChapterResponse {
+  final String chapterId;
+  final bool success;
+  final int remainingCoins;
+  final String? cbzDownloadUrl;
+  final String? message;
+
+  UnlockChapterResponse({
+    required this.chapterId,
+    required this.success,
+    required this.remainingCoins,
+    this.cbzDownloadUrl,
+    this.message,
+  });
+
+  factory UnlockChapterResponse.fromJson(Map<String, dynamic> json) {
+    return UnlockChapterResponse(
+      chapterId: json['chapterId']?.toString() ?? '',
+      success: json['success'] as bool? ?? false,
+      remainingCoins: (json['remainingCoins'] as num?)?.toInt() ?? 0,
+      cbzDownloadUrl: json['cbzDownloadUrl']?.toString() ?? json['cbzPackageUrl']?.toString(),
+      message: json['message']?.toString(),
+    );
+  }
+
+  Map<String, dynamic> toJson() => {
+        'chapterId': chapterId,
+        'success': success,
+        'remainingCoins': remainingCoins,
+        if (cbzDownloadUrl != null) 'cbzDownloadUrl': cbzDownloadUrl,
+        if (message != null) 'message': message,
+      };
+
+  String? get fullCbzDownloadUrl =>
+      cbzDownloadUrl != null ? ApiConfig.resolveUrl(cbzDownloadUrl!) : null;
 }
 

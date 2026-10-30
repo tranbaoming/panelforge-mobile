@@ -81,6 +81,10 @@ class ChapterItem {
   final String releaseDate;
   final int pageCount;
   final bool isFree;
+  final bool isUnlocked;
+  final int priceCoins;
+  final String? cbzPackageUrl;
+  final String? manifestUrl;
   final List<ComicPageData> pages;
 
   const ChapterItem({
@@ -90,6 +94,10 @@ class ChapterItem {
     required this.releaseDate,
     required this.pageCount,
     this.isFree = true,
+    this.isUnlocked = true,
+    this.priceCoins = 0,
+    this.cbzPackageUrl,
+    this.manifestUrl,
     required this.pages,
   });
 
@@ -102,6 +110,11 @@ class ChapterItem {
           ? '${dto.publishedAt!.day.toString().padLeft(2, '0')}/${dto.publishedAt!.month.toString().padLeft(2, '0')}/${dto.publishedAt!.year}'
           : 'Vừa phát hành',
       pageCount: 0,
+      isFree: dto.isFree,
+      isUnlocked: dto.isUnlocked,
+      priceCoins: dto.priceCoins,
+      cbzPackageUrl: dto.cbzPackageUrl,
+      manifestUrl: dto.manifestUrl,
       pages: const [],
     );
   }
@@ -115,7 +128,40 @@ class ChapterItem {
           ? '${dto.publishedAt!.day.toString().padLeft(2, '0')}/${dto.publishedAt!.month.toString().padLeft(2, '0')}/${dto.publishedAt!.year}'
           : 'Đang mở đọc',
       pageCount: dto.pages.length,
+      isFree: dto.isFree,
+      isUnlocked: dto.isUnlocked,
+      priceCoins: dto.priceCoins,
+      cbzPackageUrl: dto.cbzPackageUrl,
+      manifestUrl: dto.manifestUrl,
       pages: dto.pages.map((p) => ComicPageData.fromPublicPage(p)).toList(),
+    );
+  }
+
+  ChapterItem copyWith({
+    String? id,
+    int? number,
+    String? title,
+    String? releaseDate,
+    int? pageCount,
+    bool? isFree,
+    bool? isUnlocked,
+    int? priceCoins,
+    String? cbzPackageUrl,
+    String? manifestUrl,
+    List<ComicPageData>? pages,
+  }) {
+    return ChapterItem(
+      id: id ?? this.id,
+      number: number ?? this.number,
+      title: title ?? this.title,
+      releaseDate: releaseDate ?? this.releaseDate,
+      pageCount: pageCount ?? this.pageCount,
+      isFree: isFree ?? this.isFree,
+      isUnlocked: isUnlocked ?? this.isUnlocked,
+      priceCoins: priceCoins ?? this.priceCoins,
+      cbzPackageUrl: cbzPackageUrl ?? this.cbzPackageUrl,
+      manifestUrl: manifestUrl ?? this.manifestUrl,
+      pages: pages ?? this.pages,
     );
   }
 }
