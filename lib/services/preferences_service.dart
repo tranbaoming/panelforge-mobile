@@ -7,6 +7,7 @@ class PreferencesService {
   static const String _keyReaderTheme = 'panelforge_reader_theme';
   static const String _keyBookmarks = 'panelforge_bookmarks';
   static const String _keyRecentTokens = 'panelforge_recent_tokens';
+  static const String _keyOfflineChapters = 'panelforge_offline_chapters';
 
   static SharedPreferences? _prefs;
 
@@ -92,6 +93,31 @@ class PreferencesService {
     final clean = token.trim();
     final current = getRecentReviewTokens().where((t) => t != clean).toList();
     await _prefs?.setStringList(_keyRecentTokens, current);
+  }
+
+  // ─── Offline Downloaded Chapters ──────────────────────────────────────────
+  static Set<String> getOfflineChapterIds() {
+    final list = _prefs?.getStringList(_keyOfflineChapters) ?? [];
+    return list.toSet();
+  }
+
+  static Future<void> addOfflineChapterId(String chapterId) async {
+    final clean = chapterId.trim();
+    if (clean.isEmpty) return;
+    final current = getOfflineChapterIds();
+    current.add(clean);
+    await _prefs?.setStringList(_keyOfflineChapters, current.toList());
+  }
+
+  static Future<void> removeOfflineChapterId(String chapterId) async {
+    final clean = chapterId.trim();
+    final current = getOfflineChapterIds();
+    current.remove(clean);
+    await _prefs?.setStringList(_keyOfflineChapters, current.toList());
+  }
+
+  static bool isChapterDownloaded(String chapterId) {
+    return getOfflineChapterIds().contains(chapterId.trim());
   }
 }
 

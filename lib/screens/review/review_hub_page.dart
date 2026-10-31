@@ -80,7 +80,7 @@ class _ReviewHubPageState extends State<ReviewHubPage> {
       if (!mounted) return;
       setState(() => _isValidating = false);
       ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text('Lỗi kết nối máy chủ: $e')),
+        const SnackBar(content: Text('Không thể kết nối đến máy chủ. Vui lòng kiểm tra lại kết nối mạng.')),
       );
     }
   }
@@ -288,7 +288,7 @@ class _ReviewHubPageState extends State<ReviewHubPage> {
                                   child: CircularProgressIndicator(strokeWidth: 2, color: Colors.white),
                                 )
                               : const Icon(Icons.lock_open_rounded, size: 18),
-                          label: Text(_isValidating ? 'ĐANG KẾT NỐI SERVER...' : 'XÁC THỰC & MỞ LỜI MỜI REVIEW'),
+                          label: Text(_isValidating ? 'ĐANG XÁC THỰC BẢN THẢO...' : 'XÁC THỰC & MỞ LỜI MỜI REVIEW'),
                           style: ElevatedButton.styleFrom(
                             backgroundColor: AppColors.primary,
                             padding: const EdgeInsets.symmetric(vertical: 14),

@@ -54,7 +54,7 @@ class _ReviewCanvasPageState extends State<ReviewCanvasPage> {
       if (mounted) {
         setState(() {
           _isLoading = false;
-          _errorMessage = 'Không thể tải dữ liệu bản thảo từ máy chủ ($e)';
+          _errorMessage = 'Không thể tải dữ liệu bản thảo. Vui lòng kiểm tra lại kết nối mạng.';
         });
       }
     }

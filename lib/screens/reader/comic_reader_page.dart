@@ -88,7 +88,7 @@ class _ComicReaderPageState extends State<ComicReaderPage> {
       if (mounted) {
         setState(() {
           _isLoading = false;
-          _errorMessage = 'Không thể tải nội dung chương truyện từ máy chủ ($e).';
+          _errorMessage = 'Không thể tải nội dung chương truyện. Vui lòng kiểm tra lại kết nối mạng.';
         });
       }
     }
@@ -121,7 +121,7 @@ class _ComicReaderPageState extends State<ComicReaderPage> {
           _isLoading = false;
         });
         ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text('Lỗi khi mở chương: $e')),
+          const SnackBar(content: Text('Không thể mở chương truyện. Vui lòng kiểm tra lại kết nối mạng.')),
         );
       }
     }

@@ -105,7 +105,7 @@ class ApiClient {
         e.type == DioExceptionType.receiveTimeout) {
       message = 'Hết thời gian chờ kết nối tới máy chủ. Vui lòng kiểm tra lại mạng.';
     } else if (e.type == DioExceptionType.connectionError) {
-      message = 'Không thể kết nối đến máy chủ (${ApiConfig.baseUrl}). Hãy chắc chắn backend đang chạy.';
+      message = 'Không thể kết nối đến máy chủ. Vui lòng kiểm tra lại kết nối mạng hoặc thiết lập máy chủ.';
     }
 
     return ApiException(message, statusCode: status, data: resData);

@@ -46,7 +46,7 @@ class _SeriesDetailPageState extends State<SeriesDetailPage> {
       if (mounted) {
         setState(() {
           _isLoading = false;
-          _errorMessage = 'Không thể tải chi tiết tác phẩm từ máy chủ.';
+          _errorMessage = 'Không thể tải thông tin tác phẩm. Vui lòng kiểm tra lại kết nối mạng.';
         });
       }
     }
@@ -106,7 +106,11 @@ class _SeriesDetailPageState extends State<SeriesDetailPage> {
             child: Column(
               mainAxisSize: MainAxisSize.min,
               children: [
-                const Icon(Icons.menu_book_outlined, size: 48, color: Colors.grey),
+                Icon(
+                  _errorMessage != null ? Icons.cloud_off_rounded : Icons.menu_book_outlined,
+                  size: 48,
+                  color: AppColors.darkTextSecondary,
+                ),
                 const SizedBox(height: 16),
                 Text(
                   _errorMessage ?? 'Không tìm thấy tác phẩm này trên hệ thống.',

@@ -83,7 +83,7 @@ class _ReviewInvitePageState extends State<ReviewInvitePage> {
       if (mounted) {
         setState(() {
           _isLoading = false;
-          _errorMessage = 'Không thể kết nối đến máy chủ để xác thực token ($e)';
+          _errorMessage = 'Không thể kết nối đến máy chủ để xác thực bản thảo. Vui lòng kiểm tra lại kết nối mạng.';
         });
       }
     }

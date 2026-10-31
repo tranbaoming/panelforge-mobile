@@ -481,7 +481,7 @@ class UserWalletDto {
   final bool isVip;
   final DateTime? vipExpiresAt;
 
-  UserWalletDto({
+  const UserWalletDto({
     required this.balanceCoins,
     this.isVip = false,
     this.vipExpiresAt,
@@ -507,7 +507,7 @@ class UserWalletDto {
 class UnlockChapterRequest {
   final String chapterId;
 
-  UnlockChapterRequest({required this.chapterId});
+  const UnlockChapterRequest({required this.chapterId});
 
   factory UnlockChapterRequest.fromJson(Map<String, dynamic> json) {
     return UnlockChapterRequest(
@@ -527,7 +527,7 @@ class UnlockChapterResponse {
   final String? cbzDownloadUrl;
   final String? message;
 
-  UnlockChapterResponse({
+  const UnlockChapterResponse({
     required this.chapterId,
     required this.success,
     required this.remainingCoins,

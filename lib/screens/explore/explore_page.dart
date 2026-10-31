@@ -21,6 +21,7 @@ class _ExplorePageState extends State<ExplorePage> {
   late final TextEditingController _searchController;
   bool _isLoading = false;
   bool _isLiveBackend = false;
+  bool _hasError = false;
 
   @override
   void initState() {
@@ -30,7 +31,10 @@ class _ExplorePageState extends State<ExplorePage> {
   }
 
   Future<void> _fetchCatalog() async {
-    setState(() => _isLoading = true);
+    setState(() {
+      _isLoading = true;
+      _hasError = false;
+    });
     try {
       final res = await CatalogService().getSeries(
         search: _searchQuery.isEmpty ? null : _searchQuery,
@@ -40,6 +44,7 @@ class _ExplorePageState extends State<ExplorePage> {
           _allSeries = res.items.map((e) => SeriesItem.fromPublicDto(e)).toList();
           _isLiveBackend = true;
           _isLoading = false;
+          _hasError = false;
         });
       }
     } catch (e) {
@@ -49,9 +54,19 @@ class _ExplorePageState extends State<ExplorePage> {
           _allSeries = [];
           _isLiveBackend = false;
           _isLoading = false;
+          _hasError = true;
         });
       }
     }
+  }
+
+  void _clearFilters() {
+    _searchController.clear();
+    setState(() {
+      _searchQuery = '';
+      _selectedFormat = null;
+    });
+    _fetchCatalog();
   }
 
   void _showServerConfigDialog() {
@@ -63,7 +78,7 @@ class _ExplorePageState extends State<ExplorePage> {
           backgroundColor: AppColors.darkSurface,
           shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
           title: Text(
-            'Kết Nối Backend PanelForge',
+            'Cấu Hình Máy Chủ',
             style: GoogleFonts.newsreader(fontWeight: FontWeight.w700, fontSize: 18, color: Colors.white),
           ),
           content: Column(
@@ -71,7 +86,7 @@ class _ExplorePageState extends State<ExplorePage> {
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
               Text(
-                'Địa chỉ Backend API (.NET 8):',
+                'Địa chỉ máy chủ API:',
                 style: GoogleFonts.plusJakartaSans(fontSize: 12, color: AppColors.darkTextSecondary),
               ),
               const SizedBox(height: 8),
@@ -107,7 +122,7 @@ class _ExplorePageState extends State<ExplorePage> {
                   ),
                   const SizedBox(width: 8),
                   Text(
-                    _isLiveBackend ? 'Đã kết nối API (.NET)' : 'Chưa có kết nối máy chủ',
+                    _isLiveBackend ? 'Đã kết nối máy chủ' : 'Chưa có kết nối máy chủ',
                     style: GoogleFonts.plusJakartaSans(
                       fontSize: 12,
                       fontWeight: FontWeight.w600,
@@ -194,7 +209,7 @@ class _ExplorePageState extends State<ExplorePage> {
                               ),
                               const SizedBox(width: 8),
                               Text(
-                                _isLiveBackend ? 'PANELFORGE • LIVE API' : 'PANELFORGE',
+                                _isLiveBackend ? 'PANELFORGE • TRỰC TUYẾN' : 'PANELFORGE',
                                 style: GoogleFonts.plusJakartaSans(
                                   fontSize: 11,
                                   fontWeight: FontWeight.w800,
@@ -311,6 +326,7 @@ class _ExplorePageState extends State<ExplorePage> {
 
             if (_isLoading && _allSeries.isEmpty)
               SliverFillRemaining(
+                hasScrollBody: false,
                 child: Center(
                   child: Column(
                     mainAxisSize: MainAxisSize.min,
@@ -318,42 +334,211 @@ class _ExplorePageState extends State<ExplorePage> {
                       const CircularProgressIndicator(color: AppColors.primary),
                       const SizedBox(height: 16),
                       Text(
-                        'Đang tải danh mục truyện từ server...',
+                        'Đang tải danh mục tác phẩm...',
                         style: GoogleFonts.plusJakartaSans(color: AppColors.darkTextSecondary, fontSize: 13),
                       ),
                     ],
                   ),
                 ),
               )
-            else if (_allSeries.isEmpty)
+            else if (_hasError && _allSeries.isEmpty)
+              // Khi gặp lỗi kết nối mạng / không gọi được Backend (Error State)
               SliverFillRemaining(
+                hasScrollBody: false,
                 child: Center(
                   child: Padding(
-                    padding: const EdgeInsets.all(24.0),
+                    padding: const EdgeInsets.symmetric(horizontal: 32, vertical: 24),
                     child: Column(
                       mainAxisSize: MainAxisSize.min,
                       children: [
-                        const Icon(Icons.auto_stories_outlined, size: 54, color: AppColors.darkTextSecondary),
-                        const SizedBox(height: 14),
+                        Container(
+                          width: 80,
+                          height: 80,
+                          decoration: BoxDecoration(
+                            color: AppColors.darkSurface,
+                            shape: BoxShape.circle,
+                            border: Border.all(color: AppColors.darkBorder),
+                          ),
+                          child: const Icon(
+                            Icons.cloud_off_rounded,
+                            size: 40,
+                            color: AppColors.darkTextSecondary,
+                          ),
+                        ),
+                        const SizedBox(height: 18),
                         Text(
-                          'Chưa có truyện nào được phát hành',
-                          style: GoogleFonts.newsreader(fontSize: 18, fontWeight: FontWeight.w700, color: Colors.white),
+                          'Không thể kết nối đến máy chủ',
+                          textAlign: TextAlign.center,
+                          style: GoogleFonts.newsreader(
+                            fontSize: 20,
+                            fontWeight: FontWeight.w700,
+                            color: Colors.white,
+                          ),
                         ),
                         const SizedBox(height: 8),
                         Text(
-                          'Hãy chắc chắn backend PanelForge.API đang chạy hoặc kéo xuống để tải lại danh mục.',
+                          'Đã xảy ra sự cố khi tải dữ liệu. Vui lòng kiểm tra lại kết nối mạng hoặc thiết lập máy chủ của bạn.',
                           textAlign: TextAlign.center,
-                          style: GoogleFonts.plusJakartaSans(fontSize: 12, color: AppColors.darkTextSecondary),
+                          style: GoogleFonts.plusJakartaSans(
+                            fontSize: 13,
+                            height: 1.4,
+                            color: AppColors.darkTextSecondary,
+                          ),
                         ),
-                        const SizedBox(height: 16),
+                        const SizedBox(height: 20),
                         ElevatedButton.icon(
                           onPressed: _fetchCatalog,
-                          icon: const Icon(Icons.refresh_rounded, size: 16),
-                          label: const Text('Tải lại'),
+                          icon: const Icon(Icons.refresh_rounded, size: 18),
+                          label: const Text(
+                            'Thử lại',
+                            style: TextStyle(fontWeight: FontWeight.w700),
+                          ),
                           style: ElevatedButton.styleFrom(
                             backgroundColor: AppColors.primary,
                             foregroundColor: Colors.white,
-                            shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
+                            padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 12),
+                            shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
+                          ),
+                        ),
+                        const SizedBox(height: 8),
+                        TextButton.icon(
+                          onPressed: _showServerConfigDialog,
+                          icon: const Icon(Icons.settings_outlined, size: 16, color: AppColors.darkTextSecondary),
+                          label: Text(
+                            'Cấu hình máy chủ',
+                            style: GoogleFonts.plusJakartaSans(
+                              fontSize: 13,
+                              color: AppColors.darkTextSecondary,
+                              decoration: TextDecoration.underline,
+                            ),
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+                ),
+              )
+            else if (_allSeries.isEmpty)
+              // Khi danh sách truyện rỗng (chưa có truyện xuất bản)
+              SliverFillRemaining(
+                hasScrollBody: false,
+                child: Center(
+                  child: Padding(
+                    padding: const EdgeInsets.symmetric(horizontal: 32, vertical: 24),
+                    child: Column(
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        Container(
+                          width: 80,
+                          height: 80,
+                          decoration: BoxDecoration(
+                            color: AppColors.darkSurface,
+                            shape: BoxShape.circle,
+                            border: Border.all(color: AppColors.darkBorder),
+                          ),
+                          child: const Icon(
+                            Icons.auto_stories_outlined,
+                            size: 40,
+                            color: AppColors.darkTextSecondary,
+                          ),
+                        ),
+                        const SizedBox(height: 18),
+                        Text(
+                          'Chưa có tác phẩm nào được phát hành',
+                          textAlign: TextAlign.center,
+                          style: GoogleFonts.newsreader(
+                            fontSize: 20,
+                            fontWeight: FontWeight.w700,
+                            color: Colors.white,
+                          ),
+                        ),
+                        const SizedBox(height: 8),
+                        Text(
+                          'Các bộ truyện mới đang trong quá trình hoàn thiện và sẽ sớm ra mắt. Hãy kéo xuống hoặc bấm làm mới để cập nhật danh mục mới nhất.',
+                          textAlign: TextAlign.center,
+                          style: GoogleFonts.plusJakartaSans(
+                            fontSize: 13,
+                            height: 1.4,
+                            color: AppColors.darkTextSecondary,
+                          ),
+                        ),
+                        const SizedBox(height: 20),
+                        ElevatedButton.icon(
+                          onPressed: _fetchCatalog,
+                          icon: const Icon(Icons.refresh_rounded, size: 18),
+                          label: const Text(
+                            'Làm mới',
+                            style: TextStyle(fontWeight: FontWeight.w700),
+                          ),
+                          style: ElevatedButton.styleFrom(
+                            backgroundColor: AppColors.primary,
+                            foregroundColor: Colors.white,
+                            padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 12),
+                            shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+                ),
+              )
+            else if (_filteredSeries.isEmpty)
+              // Khi người dùng đang nhập từ khóa tìm kiếm hoặc chọn bộ lọc nhưng không có kết quả
+              SliverFillRemaining(
+                hasScrollBody: false,
+                child: Center(
+                  child: Padding(
+                    padding: const EdgeInsets.symmetric(horizontal: 32, vertical: 24),
+                    child: Column(
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        Container(
+                          width: 80,
+                          height: 80,
+                          decoration: BoxDecoration(
+                            color: AppColors.darkSurface,
+                            shape: BoxShape.circle,
+                            border: Border.all(color: AppColors.darkBorder),
+                          ),
+                          child: const Icon(
+                            Icons.search_off_rounded,
+                            size: 40,
+                            color: AppColors.darkTextSecondary,
+                          ),
+                        ),
+                        const SizedBox(height: 18),
+                        Text(
+                          'Không tìm thấy tác phẩm phù hợp',
+                          textAlign: TextAlign.center,
+                          style: GoogleFonts.newsreader(
+                            fontSize: 20,
+                            fontWeight: FontWeight.w700,
+                            color: Colors.white,
+                          ),
+                        ),
+                        const SizedBox(height: 8),
+                        Text(
+                          'Không có bộ truyện nào khớp với từ khóa hoặc bộ lọc hiện tại của bạn.',
+                          textAlign: TextAlign.center,
+                          style: GoogleFonts.plusJakartaSans(
+                            fontSize: 13,
+                            height: 1.4,
+                            color: AppColors.darkTextSecondary,
+                          ),
+                        ),
+                        const SizedBox(height: 20),
+                        ElevatedButton.icon(
+                          onPressed: _clearFilters,
+                          icon: const Icon(Icons.clear_all_rounded, size: 18),
+                          label: const Text(
+                            'Xóa bộ lọc',
+                            style: TextStyle(fontWeight: FontWeight.w700),
+                          ),
+                          style: ElevatedButton.styleFrom(
+                            backgroundColor: AppColors.primary,
+                            foregroundColor: Colors.white,
+                            padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 12),
+                            shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
                           ),
                         ),
                       ],
