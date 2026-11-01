@@ -1,4 +1,5 @@
 import '../models/api_dtos.dart';
+import '../models/comic_package_models.dart';
 import 'api_client.dart';
 
 class PreviewService {
@@ -18,23 +19,36 @@ class PreviewService {
     return PreviewChapterDto.fromJson(response.data as Map<String, dynamic>);
   }
 
-  /// Gửi phản hồi / góp ý cho trang hoặc khung tranh cụ thể
-  /// POST /api/preview/feedback với body: { token, message, pageId, panelId }
-  Future<PreviewFeedbackDto> submitFeedback({
-    required String token,
-    required String message,
+  /// Gửi phản hồi / góp ý cho trang, khung tranh hoặc vùng thoại cụ thể
+  /// POST /api/preview/feedback với body: PreviewFeedbackRequest hoặc { token, message, pageId, panelId, textRegionId, bounds }
+  Future<PreviewFeedbackDto> submitFeedback(
+    dynamic requestOrToken, {
+    String? message,
     String? pageId,
     String? panelId,
+    String? textRegionId,
+    NormalizedBounds? bounds,
   }) async {
-    final data = <String, dynamic>{
-      'token': token.trim(),
-      'message': message.trim(),
-    };
-    if (pageId != null && pageId.isNotEmpty) {
-      data['pageId'] = pageId;
-    }
-    if (panelId != null && panelId.isNotEmpty) {
-      data['panelId'] = panelId;
+    final Map<String, dynamic> data;
+    if (requestOrToken is PreviewFeedbackRequest) {
+      data = requestOrToken.toJson();
+    } else {
+      data = <String, dynamic>{
+        'token': requestOrToken.toString().trim(),
+        'message': (message ?? '').trim(),
+      };
+      if (pageId != null && pageId.isNotEmpty) {
+        data['pageId'] = pageId;
+      }
+      if (panelId != null && panelId.isNotEmpty) {
+        data['panelId'] = panelId;
+      }
+      if (textRegionId != null && textRegionId.isNotEmpty) {
+        data['textRegionId'] = textRegionId;
+      }
+      if (bounds != null) {
+        data['bounds'] = bounds.toJson();
+      }
     }
 
     final response = await _client.post(

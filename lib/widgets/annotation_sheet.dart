@@ -5,23 +5,30 @@ import 'package:flutter/material.dart';
 import 'package:google_fonts/google_fonts.dart';
 import 'package:path_provider/path_provider.dart';
 import 'package:record/record.dart';
+import '../models/comic_package_models.dart';
 import '../models/review_model.dart';
 import '../theme/app_theme.dart';
 import 'sketch_drawing_dialog.dart';
 
 class AnnotationBottomSheet extends StatefulWidget {
   final ReviewPanel panel;
+  final TextRegion? selectedTextRegion;
+  final Offset? initialPoint;
   final ValueChanged<AnnotationItem> onSubmitAnnotation;
 
   const AnnotationBottomSheet({
     super.key,
     required this.panel,
+    this.selectedTextRegion,
+    this.initialPoint,
     required this.onSubmitAnnotation,
   });
 
   static Future<AnnotationItem?> show({
     required BuildContext context,
     required ReviewPanel panel,
+    TextRegion? selectedTextRegion,
+    Offset? initialPoint,
     required ValueChanged<AnnotationItem> onSubmitAnnotation,
   }) {
     return showModalBottomSheet<AnnotationItem>(
@@ -31,6 +38,8 @@ class AnnotationBottomSheet extends StatefulWidget {
       barrierColor: Colors.black.withValues(alpha: 0.75),
       builder: (context) => AnnotationBottomSheet(
         panel: panel,
+        selectedTextRegion: selectedTextRegion,
+        initialPoint: initialPoint,
         onSubmitAnnotation: onSubmitAnnotation,
       ),
     );
@@ -45,6 +54,7 @@ class _AnnotationBottomSheetState extends State<AnnotationBottomSheet>
   late AnimationController _radarAnimController;
   late TextEditingController _noteController;
 
+  TextRegion? _selectedTextRegion;
   AnnotationCategory _selectedCategory = AnnotationCategory.lightingColor;
   Offset _radarPoint = const Offset(0.48, 0.42); // Normalized (0..1, 0..1)
   
@@ -66,6 +76,21 @@ class _AnnotationBottomSheetState extends State<AnnotationBottomSheet>
   @override
   void initState() {
     super.initState();
+    _selectedTextRegion = widget.selectedTextRegion;
+    if (widget.initialPoint != null) {
+      _radarPoint = widget.initialPoint!;
+    } else if (widget.selectedTextRegion != null) {
+      final b = widget.selectedTextRegion!.bounds;
+      _radarPoint = Offset(
+        (b.x + b.w / 2).clamp(0.05, 0.95),
+        (b.y + b.h / 2).clamp(0.05, 0.95),
+      );
+    }
+
+    if (widget.selectedTextRegion != null) {
+      _selectedCategory = AnnotationCategory.dialogue;
+    }
+
     _radarAnimController = AnimationController(
       vsync: this,
       duration: const Duration(milliseconds: 1400),
@@ -207,6 +232,7 @@ class _AnnotationBottomSheetState extends State<AnnotationBottomSheet>
     final newAnnotation = AnnotationItem(
       id: 'ann-${DateTime.now().millisecondsSinceEpoch}',
       panelId: widget.panel.id,
+      textRegionId: _selectedTextRegion?.id,
       category: _selectedCategory,
       note: _noteController.text.trim().isEmpty
           ? 'Góp ý bằng ${_hasAudioRecorded ? "ghi âm giọng nói" : "phác thảo"}'
@@ -434,6 +460,81 @@ class _AnnotationBottomSheetState extends State<AnnotationBottomSheet>
                           constraints: const BoxConstraints(),
                         ),
                       ],
+                    ),
+
+                    const SizedBox(height: 10),
+
+                    // MỤC TIÊU GHIM GÓP Ý (Khung tranh hoặc Vùng thoại)
+                    Container(
+                      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+                      decoration: BoxDecoration(
+                        color: _selectedTextRegion != null
+                            ? AppColors.primary.withValues(alpha: 0.12)
+                            : AppColors.darkCard,
+                        borderRadius: BorderRadius.circular(10),
+                        border: Border.all(
+                          color: _selectedTextRegion != null
+                              ? AppColors.primary.withValues(alpha: 0.5)
+                              : AppColors.darkBorder,
+                        ),
+                      ),
+                      child: Row(
+                        children: [
+                          Icon(
+                            _selectedTextRegion != null
+                                ? Icons.chat_bubble_outline_rounded
+                                : Icons.crop_square_rounded,
+                            size: 16,
+                            color: _selectedTextRegion != null ? AppColors.primary : Colors.white70,
+                          ),
+                          const SizedBox(width: 8),
+                          Expanded(
+                            child: Column(
+                              crossAxisAlignment: CrossAxisAlignment.start,
+                              children: [
+                                Text(
+                                  _selectedTextRegion != null
+                                      ? 'MỤC TIÊU: VÙNG THOẠI #${_selectedTextRegion!.id} (${_selectedTextRegion!.type.toUpperCase()})'
+                                      : 'MỤC TIÊU: KHUNG TRANH #${widget.panel.panelNumber}',
+                                  style: GoogleFonts.plusJakartaSans(
+                                    fontSize: 11,
+                                    fontWeight: FontWeight.w800,
+                                    color: _selectedTextRegion != null ? AppColors.primary : Colors.white,
+                                  ),
+                                ),
+                                const SizedBox(height: 2),
+                                Text(
+                                  'Tọa độ ghim: [${(_radarPoint.dx * 100).toStringAsFixed(1)}%, ${(_radarPoint.dy * 100).toStringAsFixed(1)}%]',
+                                  style: GoogleFonts.plusJakartaSans(
+                                    fontSize: 10,
+                                    color: AppColors.darkTextSecondary,
+                                  ),
+                                ),
+                              ],
+                            ),
+                          ),
+                          if (_selectedTextRegion != null)
+                            InkWell(
+                              onTap: () {
+                                setState(() {
+                                  _selectedTextRegion = null;
+                                });
+                              },
+                              borderRadius: BorderRadius.circular(12),
+                              child: Padding(
+                                padding: const EdgeInsets.all(4),
+                                child: Text(
+                                  'Bỏ chọn',
+                                  style: GoogleFonts.plusJakartaSans(
+                                    fontSize: 11,
+                                    fontWeight: FontWeight.w700,
+                                    color: AppColors.primary,
+                                  ),
+                                ),
+                              ),
+                            ),
+                        ],
+                      ),
                     ),
 
                     const SizedBox(height: 14),

@@ -1,6 +1,7 @@
 import 'package:cached_network_image/cached_network_image.dart';
 import 'package:flutter/material.dart';
 import 'package:google_fonts/google_fonts.dart';
+import '../models/comic_package_models.dart';
 import '../models/review_model.dart';
 import '../theme/app_theme.dart';
 
@@ -9,6 +10,8 @@ class PanelSelectionDetector extends StatelessWidget {
   final bool isSelected;
   final VoidCallback onTap;
   final VoidCallback? onAnnotatePressed;
+  final ValueChanged<TextRegion>? onTextRegionTap;
+  final ValueChanged<Offset>? onCanvasPointTap;
 
   const PanelSelectionDetector({
     super.key,
@@ -16,6 +19,8 @@ class PanelSelectionDetector extends StatelessWidget {
     required this.isSelected,
     required this.onTap,
     this.onAnnotatePressed,
+    this.onTextRegionTap,
+    this.onCanvasPointTap,
   });
 
   @override
@@ -138,107 +143,220 @@ class PanelSelectionDetector extends StatelessWidget {
                 ),
               ),
 
-              // Visual Panel Canvas Simulation
+              // Visual Panel Canvas Simulation with interactive LayoutBuilder
               AspectRatio(
                 aspectRatio: panel.aspectRatio,
-                child: Stack(
-                  children: [
-                    // Simulated inking & comic sketch background
-                    _buildPanelCanvas(context),
+                child: LayoutBuilder(
+                  builder: (context, constraints) {
+                    final W = constraints.maxWidth;
+                    final H = constraints.maxHeight;
 
-                    // Speech bubble simulation
-                    Positioned(
-                      top: 14,
-                      left: 14,
-                      right: 14,
-                      child: Container(
-                        padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
-                        decoration: BoxDecoration(
-                          color: Colors.black.withValues(alpha: 0.75),
-                          borderRadius: BorderRadius.circular(8),
-                          border: Border.all(
-                            color: Colors.white.withValues(alpha: 0.15),
-                          ),
-                        ),
-                        child: Text(
-                          panel.dialogue,
-                          style: GoogleFonts.newsreader(
-                            fontSize: 13,
-                            fontStyle: FontStyle.italic,
-                            color: Colors.white,
-                          ),
-                        ),
-                      ),
-                    ),
+                    return Stack(
+                      children: [
+                        // Simulated inking & comic sketch background
+                        _buildPanelCanvas(context),
 
-                    // Inking notes callout at bottom
-                    Positioned(
-                      bottom: 12,
-                      left: 14,
-                      right: 14,
-                      child: Container(
-                        padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
-                        decoration: BoxDecoration(
-                          color: AppColors.darkCard.withValues(alpha: 0.85),
-                          borderRadius: BorderRadius.circular(6),
-                          border: Border.all(
-                            color: AppColors.darkBorder.withValues(alpha: 0.8),
+                        // Interactive canvas tap detector
+                        Positioned.fill(
+                          child: GestureDetector(
+                            behavior: HitTestBehavior.opaque,
+                            onTapDown: (details) {
+                              final local = details.localPosition;
+                              final normalizedPoint = Offset(
+                                (local.dx / W).clamp(0.0, 1.0),
+                                (local.dy / H).clamp(0.0, 1.0),
+                              );
+
+                              // Check if tap falls within any TextRegion
+                              TextRegion? hitRegion;
+                              for (final r in panel.textRegions) {
+                                if (r.bounds.containsPoint(normalizedPoint.dx, normalizedPoint.dy)) {
+                                  hitRegion = r;
+                                  break;
+                                }
+                              }
+
+                              if (hitRegion != null) {
+                                onTextRegionTap?.call(hitRegion);
+                              } else if (onCanvasPointTap != null) {
+                                onCanvasPointTap!.call(normalizedPoint);
+                              } else {
+                                onTap();
+                              }
+                            },
                           ),
                         ),
-                        child: Row(
-                          children: [
-                            const Icon(
-                              Icons.brush_outlined,
-                              size: 13,
-                              color: AppColors.primary,
-                            ),
-                            const SizedBox(width: 6),
-                            Expanded(
-                              child: Text(
-                                panel.inkingNotes,
-                                maxLines: 1,
-                                overflow: TextOverflow.ellipsis,
-                                style: GoogleFonts.plusJakartaSans(
-                                  fontSize: 10,
-                                  color: AppColors.darkTextSecondary,
+
+                        // Speech bubble simulation (fallback if no text regions)
+                        if (panel.textRegions.isEmpty && panel.dialogue.isNotEmpty)
+                          Positioned(
+                            top: 14,
+                            left: 14,
+                            right: 14,
+                            child: IgnorePointer(
+                              child: Container(
+                                padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+                                decoration: BoxDecoration(
+                                  color: Colors.black.withValues(alpha: 0.75),
+                                  borderRadius: BorderRadius.circular(8),
+                                  border: Border.all(
+                                    color: Colors.white.withValues(alpha: 0.15),
+                                  ),
+                                ),
+                                child: Text(
+                                  panel.dialogue,
+                                  style: GoogleFonts.newsreader(
+                                    fontSize: 13,
+                                    fontStyle: FontStyle.italic,
+                                    color: Colors.white,
+                                  ),
                                 ),
                               ),
                             ),
-                          ],
-                        ),
-                      ),
-                    ),
+                          ),
 
-                    // Annotation Pins on the panel
-                    ...panel.annotations.map((ann) {
-                      return Positioned(
-                        left: ann.normalizedPoint.dx * 280, // approximate width scale
-                        top: ann.normalizedPoint.dy * 160,
-                        child: _buildAnnotationPin(ann),
-                      );
-                    }),
+                        // Highlightable Text Regions (Speech, Thought, Narration)
+                        ...panel.textRegions.map((region) {
+                          final rb = region.bounds;
+                          final rx = rb.x * W;
+                          final ry = rb.y * H;
+                          final rw = rb.w * W;
+                          final rh = rb.h * H;
 
-                    // Quick Tap Feedback if selected
-                    if (isSelected)
-                      Positioned(
-                        bottom: 48,
-                        right: 14,
-                        child: ElevatedButton.icon(
-                          onPressed: onAnnotatePressed,
-                          icon: const Icon(Icons.add_comment_rounded, size: 14),
-                          label: const Text('Thêm góp ý'),
-                          style: ElevatedButton.styleFrom(
-                            backgroundColor: primaryColor,
-                            foregroundColor: Colors.white,
-                            padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
-                            textStyle: GoogleFonts.plusJakartaSans(
-                              fontSize: 12,
-                              fontWeight: FontWeight.w700,
+                          Color regionColor;
+                          switch (region.type.toLowerCase()) {
+                            case 'narration':
+                              regionColor = const Color(0xFFF59E0B); // Amber
+                              break;
+                            case 'thought':
+                              regionColor = const Color(0xFF10B981); // Mint
+                              break;
+                            case 'sfx':
+                              regionColor = AppColors.primary;
+                              break;
+                            case 'speech':
+                            default:
+                              regionColor = const Color(0xFF3B82F6); // Blue
+                              break;
+                          }
+
+                          return Positioned(
+                            left: rx,
+                            top: ry,
+                            width: rw.clamp(32.0, W),
+                            height: rh.clamp(24.0, H),
+                            child: GestureDetector(
+                              behavior: HitTestBehavior.opaque,
+                              onTap: () {
+                                onTextRegionTap?.call(region);
+                              },
+                              child: Container(
+                                decoration: BoxDecoration(
+                                  color: regionColor.withValues(alpha: 0.18),
+                                  borderRadius: BorderRadius.circular(8),
+                                  border: Border.all(
+                                    color: regionColor.withValues(alpha: 0.8),
+                                    width: 1.5,
+                                  ),
+                                ),
+                                child: Align(
+                                  alignment: Alignment.topLeft,
+                                  child: Container(
+                                    padding: const EdgeInsets.symmetric(horizontal: 5, vertical: 2),
+                                    decoration: BoxDecoration(
+                                      color: regionColor.withValues(alpha: 0.9),
+                                      borderRadius: const BorderRadius.only(
+                                        topLeft: Radius.circular(6),
+                                        bottomRight: Radius.circular(6),
+                                      ),
+                                    ),
+                                    child: Text(
+                                      '#${region.id} (${region.type.toUpperCase()})',
+                                      style: GoogleFonts.plusJakartaSans(
+                                        fontSize: 9,
+                                        fontWeight: FontWeight.w800,
+                                        color: Colors.white,
+                                      ),
+                                    ),
+                                  ),
+                                ),
+                              ),
+                            ),
+                          );
+                        }),
+
+                        // Inking notes callout at bottom
+                        Positioned(
+                          bottom: 12,
+                          left: 14,
+                          right: 14,
+                          child: IgnorePointer(
+                            child: Container(
+                              padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
+                              decoration: BoxDecoration(
+                                color: AppColors.darkCard.withValues(alpha: 0.85),
+                                borderRadius: BorderRadius.circular(6),
+                                border: Border.all(
+                                  color: AppColors.darkBorder.withValues(alpha: 0.8),
+                                ),
+                              ),
+                              child: Row(
+                                children: [
+                                  const Icon(
+                                    Icons.brush_outlined,
+                                    size: 13,
+                                    color: AppColors.primary,
+                                  ),
+                                  const SizedBox(width: 6),
+                                  Expanded(
+                                    child: Text(
+                                      panel.inkingNotes,
+                                      maxLines: 1,
+                                      overflow: TextOverflow.ellipsis,
+                                      style: GoogleFonts.plusJakartaSans(
+                                        fontSize: 10,
+                                        color: AppColors.darkTextSecondary,
+                                      ),
+                                    ),
+                                  ),
+                                ],
+                              ),
                             ),
                           ),
                         ),
-                      ),
-                  ],
+
+                        // Annotation Pins on the panel with exact normalized layout
+                        ...panel.annotations.map((ann) {
+                          return Positioned(
+                            left: (ann.normalizedPoint.dx * W) - 10,
+                            top: (ann.normalizedPoint.dy * H) - 10,
+                            child: _buildAnnotationPin(ann),
+                          );
+                        }),
+
+                        // Quick Tap Feedback if selected
+                        if (isSelected)
+                          Positioned(
+                            bottom: 48,
+                            right: 14,
+                            child: ElevatedButton.icon(
+                              onPressed: onAnnotatePressed,
+                              icon: const Icon(Icons.add_comment_rounded, size: 14),
+                              label: const Text('Thêm góp ý'),
+                              style: ElevatedButton.styleFrom(
+                                backgroundColor: primaryColor,
+                                foregroundColor: Colors.white,
+                                padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+                                textStyle: GoogleFonts.plusJakartaSans(
+                                  fontSize: 12,
+                                  fontWeight: FontWeight.w700,
+                                ),
+                              ),
+                            ),
+                          ),
+                      ],
+                    );
+                  },
                 ),
               ),
             ],

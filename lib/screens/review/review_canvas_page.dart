@@ -1,6 +1,8 @@
 import 'package:flutter/material.dart';
 import 'package:go_router/go_router.dart';
 import 'package:google_fonts/google_fonts.dart';
+import '../../models/api_dtos.dart';
+import '../../models/comic_package_models.dart';
 import '../../models/review_model.dart';
 import '../../services/preview_service.dart';
 import '../../theme/app_theme.dart';
@@ -69,11 +71,17 @@ class _ReviewCanvasPageState extends State<ReviewCanvasPage> {
     _totalAnnotationCount = count;
   }
 
-  void _openAnnotationSheet(ReviewPanel panel) {
+  void _openAnnotationSheet(
+    ReviewPanel panel, {
+    TextRegion? selectedTextRegion,
+    Offset? point,
+  }) {
     if (_manuscript == null) return;
     AnnotationBottomSheet.show(
       context: context,
       panel: panel,
+      selectedTextRegion: selectedTextRegion,
+      initialPoint: point,
       onSubmitAnnotation: (newAnnotation) async {
         setState(() {
           final updatedPanels = _manuscript!.panels.map((p) {
@@ -89,25 +97,39 @@ class _ReviewCanvasPageState extends State<ReviewCanvasPage> {
           _recalculateAnnotations();
         });
 
-        // Đồng bộ lên Backend API Preview: POST /api/preview/feedback
+        // Đồng bộ lên Backend API Preview: POST /api/preview/feedback qua PreviewFeedbackRequest
         try {
-          await PreviewService().submitFeedback(
+          final request = PreviewFeedbackRequest(
             token: widget.token,
-            message: '[${newAnnotation.category.label}] ${newAnnotation.note}',
+            message: '[${newAnnotation.category.label}] ${newAnnotation.note}'
+                '${newAnnotation.textRegionId != null ? " [Vùng thoại: #${newAnnotation.textRegionId}]" : ""}'
+                ' [Tọa độ: (${(newAnnotation.normalizedPoint.dx * 100).toStringAsFixed(1)}%, ${(newAnnotation.normalizedPoint.dy * 100).toStringAsFixed(1)}%)]',
+            pageId: panel.pageId,
             panelId: panel.id.startsWith('rev-') ? null : panel.id,
+            textRegionId: newAnnotation.textRegionId,
+            bounds: NormalizedBounds(
+              x: newAnnotation.normalizedPoint.dx,
+              y: newAnnotation.normalizedPoint.dy,
+              w: 0.1,
+              h: 0.1,
+            ),
           );
+          await PreviewService().submitFeedback(request);
         } catch (e) {
           debugPrint('[Sync Feedback API Error] $e');
         }
 
         if (mounted) {
+          final targetDesc = newAnnotation.textRegionId != null
+              ? 'Vùng Thoại #${newAnnotation.textRegionId}'
+              : 'Khung Tranh #${panel.panelNumber}';
           ScaffoldMessenger.of(context).showSnackBar(
             SnackBar(
               content: Row(
                 children: [
                   const Icon(Icons.check_circle_rounded, color: AppColors.mint, size: 18),
                   const SizedBox(width: 8),
-                  Text('Đã lưu góp ý cho Khung Tranh #${panel.panelNumber}!'),
+                  Text('Đã lưu góp ý cho $targetDesc!'),
                 ],
               ),
               backgroundColor: AppColors.darkSurface,
@@ -324,6 +346,18 @@ class _ReviewCanvasPageState extends State<ReviewCanvasPage> {
                             },
                             onAnnotatePressed: () {
                               _openAnnotationSheet(panel);
+                            },
+                            onTextRegionTap: (region) {
+                              setState(() {
+                                _selectedPanelId = panel.id;
+                              });
+                              _openAnnotationSheet(panel, selectedTextRegion: region);
+                            },
+                            onCanvasPointTap: (point) {
+                              setState(() {
+                                _selectedPanelId = panel.id;
+                              });
+                              _openAnnotationSheet(panel, point: point);
                             },
                           );
                         },

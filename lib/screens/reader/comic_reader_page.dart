@@ -139,14 +139,15 @@ class _ComicReaderPageState extends ConsumerState<ComicReaderPage> {
         cbzUrl: targetChapter.cbzPackageUrl,
       );
 
+      final loadedPackage = package;
       ChapterItem currentChapter = targetChapter;
       var readingMode = _readingMode;
 
-      if (package.manifest.pageFiles.isNotEmpty && isDownloaded) {
+      if (loadedPackage.manifest.pageFiles.isNotEmpty && isDownloaded) {
         // Nạp các trang trực tiếp từ file offline
         final offlinePages = <ComicPageData>[];
-        for (int i = 0; i < package.manifest.pageFiles.length; i++) {
-          final filePath = package.getPageFilePath(i);
+        for (int i = 0; i < loadedPackage.manifest.pageFiles.length; i++) {
+          final filePath = loadedPackage.getPageFilePath(i);
           offlinePages.add(
             ComicPageData(
               pageNumber: i + 1,
@@ -173,19 +174,19 @@ class _ComicReaderPageState extends ConsumerState<ComicReaderPage> {
       }
 
       String? selectedLang = _selectedLanguage;
-      if (package.availableLanguages.isNotEmpty) {
-        selectedLang ??= package.availableLanguages.first;
+      if (loadedPackage.availableLanguages.isNotEmpty) {
+        selectedLang ??= loadedPackage.availableLanguages.first;
       }
 
       if (mounted) {
         setState(() {
           _series = series;
           _currentChapter = currentChapter;
-          _loadedPackage = package;
+          _loadedPackage = loadedPackage;
           _selectedLanguage = selectedLang;
           _isOfflinePackage = isDownloaded;
           _readingMode = readingMode;
-          _webtoonTileSpacing = package.manifest.webtoonTileSpacing;
+          _webtoonTileSpacing = loadedPackage.manifest.webtoonTileSpacing;
           _isLoading = false;
           _currentPage = 1;
         });

@@ -167,6 +167,7 @@ class AdaptiveWebtoonViewState extends State<AdaptiveWebtoonView> {
       child: CustomScrollView(
         controller: _scrollController,
         physics: const BouncingScrollPhysics(),
+        // ignore: deprecated_member_use
         cacheExtent: 1000.0, // Pre-cache up to 1000px ahead to prevent lag
         slivers: [
           SliverPadding(

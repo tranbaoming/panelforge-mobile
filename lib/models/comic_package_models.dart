@@ -23,6 +23,42 @@ class NormalizedBounds {
     );
   }
 
+  /// Phân tích linh hoạt từ Map hoặc chuỗi (JSON hoặc "x,y,w,h")
+  static NormalizedBounds? tryParse(dynamic val) {
+    if (val == null) return null;
+    if (val is NormalizedBounds) return val;
+    if (val is Map<String, dynamic>) {
+      return NormalizedBounds.fromJson(val);
+    }
+    if (val is String) {
+      final trimmed = val.trim();
+      if (trimmed.isEmpty || trimmed == '{}' || trimmed == '[]') return null;
+      if (trimmed.startsWith('{') && trimmed.endsWith('}')) {
+        try {
+          final decoded = jsonDecode(trimmed);
+          if (decoded is Map<String, dynamic>) {
+            return NormalizedBounds.fromJson(decoded);
+          }
+        } catch (_) {}
+      }
+      final parts = trimmed.split(',').map((p) => double.tryParse(p.trim())).toList();
+      if (parts.length == 4 && parts.every((p) => p != null)) {
+        return NormalizedBounds(
+          x: parts[0]!,
+          y: parts[1]!,
+          w: parts[2]!,
+          h: parts[3]!,
+        );
+      }
+    }
+    return null;
+  }
+
+  /// Kiểm tra xem điểm chuẩn hóa (px, py) có nằm trong khung này không
+  bool containsPoint(double px, double py) {
+    return px >= x && px <= (x + w) && py >= y && py <= (y + h);
+  }
+
   Map<String, dynamic> toJson() => {
         'x': x,
         'y': y,

@@ -219,4 +219,111 @@ void main() {
       expect(manifest.pageFiles, ['001.webp']);
     });
   });
+
+  group('NormalizedBounds Flexible Parsing & Geometry Suite', () {
+    test('tryParse parses Map, JSON string, and CSV string correctly', () {
+      // From Map
+      final fromMap = NormalizedBounds.tryParse({'x': 0.1, 'y': 0.2, 'w': 0.3, 'h': 0.4});
+      expect(fromMap?.x, 0.1);
+      expect(fromMap?.y, 0.2);
+      expect(fromMap?.w, 0.3);
+      expect(fromMap?.h, 0.4);
+
+      // From JSON string
+      final fromJsonStr = NormalizedBounds.tryParse('{"x": 0.05, "y": 0.15, "w": 0.45, "h": 0.55}');
+      expect(fromJsonStr?.x, 0.05);
+      expect(fromJsonStr?.w, 0.45);
+
+      // From CSV string
+      final fromCsv = NormalizedBounds.tryParse('0.1, 0.2, 0.3, 0.4');
+      expect(fromCsv?.x, 0.1);
+      expect(fromCsv?.h, 0.4);
+
+      // Null and empty
+      expect(NormalizedBounds.tryParse(null), isNull);
+      expect(NormalizedBounds.tryParse(''), isNull);
+      expect(NormalizedBounds.tryParse('{}'), isNull);
+    });
+
+    test('containsPoint detects internal and external coordinates', () {
+      const bounds = NormalizedBounds(x: 0.1, y: 0.2, w: 0.4, h: 0.4); // x: 0.1..0.5, y: 0.2..0.6
+      expect(bounds.containsPoint(0.2, 0.3), isTrue);
+      expect(bounds.containsPoint(0.1, 0.2), isTrue); // On corner
+      expect(bounds.containsPoint(0.5, 0.6), isTrue); // On opposite corner
+      expect(bounds.containsPoint(0.05, 0.3), isFalse); // Left
+      expect(bounds.containsPoint(0.6, 0.3), isFalse); // Right
+      expect(bounds.containsPoint(0.3, 0.1), isFalse); // Top
+      expect(bounds.containsPoint(0.3, 0.7), isFalse); // Bottom
+    });
+  });
+
+  group('Reviewer & Feedback DTOs Test Suite', () {
+    test('PreviewFeedbackRequest serializes correctly with panel, textRegion, and bounds', () {
+      const req = PreviewFeedbackRequest(
+        token: 'REV-TOKEN-123',
+        message: '[Lỗi nét] Nét vẽ bị răng cưa',
+        pageId: 'page-1',
+        panelId: 'panel-99',
+        textRegionId: 'text-bubble-1',
+        bounds: NormalizedBounds(x: 0.1, y: 0.2, w: 0.3, h: 0.4),
+      );
+
+      final json = req.toJson();
+      expect(json['token'], 'REV-TOKEN-123');
+      expect(json['message'], contains('[Lỗi nét]'));
+      expect(json['pageId'], 'page-1');
+      expect(json['panelId'], 'panel-99');
+      expect(json['textRegionId'], 'text-bubble-1');
+      expect(json['bounds']['x'], 0.1);
+      expect(json['bounds']['w'], 0.3);
+    });
+
+    test('PreviewChapterDto with textRegions and panels maps correctly to ReviewManuscript', () {
+      final dto = PreviewChapterDto(
+        chapterId: 'chap-10',
+        seriesTitle: 'Đại Chiến Khung Tranh',
+        chapterNumber: 1.0,
+        readingDirection: ApiReadingDirection.leftToRight,
+        recipientEmail: 'reviewer@panelforge.app',
+        watermarkText: 'CONFIDENTIAL',
+        expiresAt: DateTime.now().add(const Duration(hours: 24)),
+        chapterVersion: 1,
+        pages: [
+          PreviewPageDto(
+            pageId: 'page-1',
+            pageNumber: 1,
+            assetReferenceId: 'asset-1',
+            versionNumber: 1,
+            relativeImageUrl: '/images/p1.webp',
+            panels: [
+              PreviewPanelDto(
+                panelId: 'panel-1',
+                panelNumber: 1,
+                boundingBox: '0.0, 0.0, 0.5, 0.5',
+              ),
+              PreviewPanelDto(
+                panelId: 'panel-2',
+                panelNumber: 2,
+                boundingBox: '0.5, 0.0, 0.5, 0.5',
+              ),
+            ],
+            textRegions: [
+              const TextRegion(
+                id: 'tr-1',
+                pageIndex: 0,
+                type: 'speech',
+                bounds: NormalizedBounds(x: 0.1, y: 0.1, w: 0.2, h: 0.2),
+              ),
+            ],
+          ),
+        ],
+      );
+
+      expect(dto.pages.length, 1);
+      expect(dto.pages.first.panels.length, 2);
+      expect(dto.pages.first.textRegions.length, 1);
+      expect(dto.pages.first.panels.first.bounds, isNotNull);
+      expect(dto.pages.first.panels.first.bounds?.w, 0.5);
+    });
+  });
 }

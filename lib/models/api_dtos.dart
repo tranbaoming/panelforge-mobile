@@ -1,4 +1,5 @@
 import '../services/api_config.dart';
+import 'comic_package_models.dart';
 
 /// Hướng đọc chuẩn theo backend ReadingDirection
 enum ApiReadingDirection {
@@ -329,18 +330,26 @@ class PreviewPanelDto {
   final String panelId;
   final int panelNumber;
   final String boundingBox;
+  final NormalizedBounds? _explicitBounds;
+
+  NormalizedBounds? get bounds => _explicitBounds ?? NormalizedBounds.tryParse(boundingBox);
 
   PreviewPanelDto({
     required this.panelId,
     required this.panelNumber,
     required this.boundingBox,
-  });
+    NormalizedBounds? bounds,
+  }) : _explicitBounds = bounds;
 
   factory PreviewPanelDto.fromJson(Map<String, dynamic> json) {
+    final rawBox = json['boundingBox']?.toString() ?? '';
     return PreviewPanelDto(
       panelId: json['panelId']?.toString() ?? '',
       panelNumber: (json['panelNumber'] as num?)?.toInt() ?? 1,
-      boundingBox: json['boundingBox']?.toString() ?? '',
+      boundingBox: rawBox,
+      bounds: json['bounds'] is Map<String, dynamic>
+          ? NormalizedBounds.fromJson(json['bounds'] as Map<String, dynamic>)
+          : NormalizedBounds.tryParse(rawBox),
     );
   }
 }
@@ -352,6 +361,7 @@ class PreviewPageDto {
   final int versionNumber;
   final String relativeImageUrl;
   final List<PreviewPanelDto> panels;
+  final List<TextRegion> textRegions;
 
   PreviewPageDto({
     required this.pageId,
@@ -360,10 +370,12 @@ class PreviewPageDto {
     required this.versionNumber,
     required this.relativeImageUrl,
     required this.panels,
+    this.textRegions = const [],
   });
 
   factory PreviewPageDto.fromJson(Map<String, dynamic> json) {
     final rawPanels = json['panels'] as List<dynamic>? ?? [];
+    final rawTextRegions = json['textRegions'] as List<dynamic>? ?? [];
     return PreviewPageDto(
       pageId: json['pageId']?.toString() ?? '',
       pageNumber: (json['pageNumber'] as num?)?.toInt() ?? 1,
@@ -372,6 +384,9 @@ class PreviewPageDto {
       relativeImageUrl: json['imageUrl']?.toString() ?? '',
       panels: rawPanels
           .map((e) => PreviewPanelDto.fromJson(e as Map<String, dynamic>))
+          .toList(),
+      textRegions: rawTextRegions
+          .map((e) => TextRegion.fromJson(e as Map<String, dynamic>))
           .toList(),
     );
   }
@@ -390,6 +405,10 @@ class PreviewChapterDto {
   final DateTime expiresAt;
   final int chapterVersion;
   final List<PreviewPageDto> pages;
+  final String? cbzPackageUrl;
+  final String? manifestUrl;
+  final List<PanelInfo> panels;
+  final List<TextRegion> textRegions;
 
   PreviewChapterDto({
     required this.chapterId,
@@ -402,10 +421,16 @@ class PreviewChapterDto {
     required this.expiresAt,
     required this.chapterVersion,
     required this.pages,
+    this.cbzPackageUrl,
+    this.manifestUrl,
+    this.panels = const [],
+    this.textRegions = const [],
   });
 
   factory PreviewChapterDto.fromJson(Map<String, dynamic> json) {
     final rawPages = json['pages'] as List<dynamic>? ?? [];
+    final rawPanels = (json['panels'] ?? json['metadata']?['panels']) as List<dynamic>? ?? [];
+    final rawTextRegions = (json['textRegions'] ?? json['metadata']?['textRegions']) as List<dynamic>? ?? [];
     return PreviewChapterDto(
       chapterId: json['chapterId']?.toString() ?? '',
       seriesTitle: json['seriesTitle']?.toString() ?? 'Bản Thảo Độc Quyền',
@@ -421,6 +446,14 @@ class PreviewChapterDto {
       pages: rawPages
           .map((e) => PreviewPageDto.fromJson(e as Map<String, dynamic>))
           .toList(),
+      cbzPackageUrl: json['cbzPackageUrl']?.toString(),
+      manifestUrl: json['manifestUrl']?.toString(),
+      panels: rawPanels
+          .map((e) => PanelInfo.fromJson(e as Map<String, dynamic>))
+          .toList(),
+      textRegions: rawTextRegions
+          .map((e) => TextRegion.fromJson(e as Map<String, dynamic>))
+          .toList(),
     );
   }
 
@@ -430,6 +463,34 @@ class PreviewChapterDto {
     if (isExpired) return Duration.zero;
     return expiresAt.difference(DateTime.now());
   }
+}
+
+/// DTO gửi phản hồi/góp ý bản thảo cho backend .NET 8 (kèm tọa độ khung/vùng thoại)
+class PreviewFeedbackRequest {
+  final String token;
+  final String message;
+  final String? pageId;
+  final String? panelId;
+  final String? textRegionId;
+  final NormalizedBounds? bounds;
+
+  const PreviewFeedbackRequest({
+    required this.token,
+    required this.message,
+    this.pageId,
+    this.panelId,
+    this.textRegionId,
+    this.bounds,
+  });
+
+  Map<String, dynamic> toJson() => {
+        'token': token.trim(),
+        'message': message.trim(),
+        if (pageId != null && pageId!.isNotEmpty) 'pageId': pageId,
+        if (panelId != null && panelId!.isNotEmpty) 'panelId': panelId,
+        if (textRegionId != null && textRegionId!.isNotEmpty) 'textRegionId': textRegionId,
+        if (bounds != null) 'bounds': bounds!.toJson(),
+      };
 }
 
 class PreviewFeedbackDto {

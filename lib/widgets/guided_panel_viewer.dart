@@ -117,8 +117,11 @@ class _GuidedPanelViewerState extends State<GuidedPanelViewer>
     final tx = (W / 2) - (cx * scale);
     final ty = (H / 2) - (cy * scale);
 
+    // ignore: deprecated_member_use
     return Matrix4.identity()
+      // ignore: deprecated_member_use
       ..translate(tx, ty)
+      // ignore: deprecated_member_use
       ..scale(scale);
   }
 
