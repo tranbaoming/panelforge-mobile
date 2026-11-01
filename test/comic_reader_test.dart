@@ -1,5 +1,4 @@
 import 'package:flutter/material.dart';
-import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'package:panelforge/models/comic_model.dart';
@@ -154,6 +153,73 @@ void main() {
 
       // Verify the translation overlay text is rendered
       expect(find.text('Bản dịch tiếng Việt chuẩn Comic Package v1.0'), findsOneWidget);
+    });
+
+    testWidgets('Guided Panel Reading mode navigates panels smoothly', (tester) async {
+      final panels = [
+        PanelInfo(
+          id: 'p-1',
+          pageIndex: 0,
+          readingOrder: 1,
+          bounds: const NormalizedBounds(x: 0.05, y: 0.05, w: 0.4, h: 0.4),
+        ),
+        PanelInfo(
+          id: 'p-2',
+          pageIndex: 0,
+          readingOrder: 2,
+          bounds: const NormalizedBounds(x: 0.55, y: 0.05, w: 0.4, h: 0.4),
+        ),
+      ];
+
+      final testChapter = ChapterItem(
+        id: 'chap-1',
+        number: 1,
+        title: 'Chương 1',
+        releaseDate: '01/01/2026',
+        pageCount: 1,
+        pages: [
+          ComicPageData(
+            pageNumber: 1,
+            title: 'Trang 1',
+            imageUrl: 'https://example.com/001.webp',
+            panels: const [],
+          ),
+        ],
+      );
+
+      final manifest = ComicManifest(
+        version: '1.0',
+        seriesId: 'ser-1',
+        chapterId: 'chap-1',
+        readingDirection: 'LTR',
+        pageFiles: ['001.webp'],
+      );
+
+      final package = LoadedComicPackage(
+        manifest: manifest,
+        panels: panels,
+        localDirectoryPath: '/tmp/test_pkg',
+      );
+
+      await tester.pumpWidget(
+        MaterialApp(
+          home: Scaffold(
+            body: ReadingModeSwitcher(
+              chapter: testChapter,
+              mode: ReadingMode.ltr,
+              themeMode: ReaderThemeMode.night,
+              initialPage: 1,
+              isGuidedPanelMode: true,
+              package: package,
+              onPageChanged: (_) {},
+              onTapScreen: () {},
+            ),
+          ),
+        ),
+      );
+
+      // Verify GuidedPanelViewer floating badge is displayed
+      expect(find.text('Khung 1 / 2'), findsOneWidget);
     });
   });
 }

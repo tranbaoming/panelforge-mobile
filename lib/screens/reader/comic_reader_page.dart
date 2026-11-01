@@ -11,6 +11,7 @@ import '../../services/preferences_service.dart';
 import '../../theme/app_theme.dart';
 import '../../widgets/interactive_scrubber.dart';
 import '../../widgets/reading_mode_switcher.dart';
+import '../../widgets/text_region_detail_sheet.dart';
 import '../../widgets/unlock_chapter_bottom_sheet.dart';
 import '../../widgets/wallet_topup_dialog.dart';
 
@@ -42,6 +43,8 @@ class _ComicReaderPageState extends ConsumerState<ComicReaderPage> {
 
   ReadingMode _readingMode = ReadingMode.ltr;
   ReaderThemeMode _themeMode = ReaderThemeMode.night;
+  bool _isGuidedPanelMode = false;
+  double _webtoonTileSpacing = 0.0;
   bool _showHud = true;
   int _currentPage = 1;
 
@@ -182,6 +185,7 @@ class _ComicReaderPageState extends ConsumerState<ComicReaderPage> {
           _selectedLanguage = selectedLang;
           _isOfflinePackage = isDownloaded;
           _readingMode = readingMode;
+          _webtoonTileSpacing = package.manifest.webtoonTileSpacing;
           _isLoading = false;
           _currentPage = 1;
         });
@@ -323,6 +327,16 @@ class _ComicReaderPageState extends ConsumerState<ComicReaderPage> {
               initialPage: _currentPage,
               package: _loadedPackage,
               selectedLanguage: _selectedLanguage,
+              isGuidedPanelMode: _isGuidedPanelMode,
+              webtoonTileSpacing: _webtoonTileSpacing,
+              onRegionTap: (region) {
+                TextRegionDetailSheet.show(
+                  context,
+                  region: region,
+                  activeLanguage: _selectedLanguage ?? 'vi',
+                  package: _loadedPackage,
+                );
+              },
               onPageChanged: (newPage) {
                 setState(() => _currentPage = newPage);
               },
@@ -531,6 +545,34 @@ class _ComicReaderPageState extends ConsumerState<ComicReaderPage> {
                     }).toList(),
                   ),
 
+                  // Guided Panel Mode Toggle Button
+                  if (_readingMode != ReadingMode.webtoon)
+                    IconButton(
+                      icon: Icon(
+                        _isGuidedPanelMode ? Icons.crop_free_rounded : Icons.crop_square_rounded,
+                        size: 20,
+                        color: _isGuidedPanelMode ? AppColors.primary : hudTextColor,
+                      ),
+                      tooltip: _isGuidedPanelMode
+                          ? 'Tắt đọc từng khung tranh'
+                          : 'Bật đọc từng khung tranh (Guided Panel Mode)',
+                      onPressed: () {
+                        setState(() {
+                          _isGuidedPanelMode = !_isGuidedPanelMode;
+                        });
+                        ScaffoldMessenger.of(context).showSnackBar(
+                          SnackBar(
+                            content: Text(
+                              _isGuidedPanelMode
+                                  ? 'Đã bật chế độ đọc từng khung tranh (Guided Panel Mode)'
+                                  : 'Đã chuyển về chế độ đọc trang toàn cảnh',
+                            ),
+                            duration: const Duration(seconds: 2),
+                          ),
+                        );
+                      },
+                    ),
+
                   // Table of Contents Drawer Button
                   IconButton(
                     icon: const Icon(Icons.menu_book_rounded),
@@ -623,6 +665,53 @@ class _ComicReaderPageState extends ConsumerState<ComicReaderPage> {
                       );
                     }).toList(),
                   ),
+
+                  // Cài đặt khoảng cách khung tranh Webtoon (Adaptive Webtoon Spacing)
+                  if (_readingMode == ReadingMode.webtoon) ...[
+                    const SizedBox(height: 8),
+                    Row(
+                      mainAxisAlignment: MainAxisAlignment.center,
+                      children: [
+                        Text(
+                          'Khoảng cách khung:',
+                          style: GoogleFonts.plusJakartaSans(
+                            fontSize: 11,
+                            color: hudTextColor.withValues(alpha: 0.7),
+                            fontWeight: FontWeight.w600,
+                          ),
+                        ),
+                        const SizedBox(width: 8),
+                        ...[0.0, 8.0, 16.0, 24.0].map((spacing) {
+                          final isSelected = _webtoonTileSpacing == spacing;
+                          return Padding(
+                            padding: const EdgeInsets.symmetric(horizontal: 3),
+                            child: InkWell(
+                              onTap: () => setState(() => _webtoonTileSpacing = spacing),
+                              borderRadius: BorderRadius.circular(12),
+                              child: Container(
+                                padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
+                                decoration: BoxDecoration(
+                                  color: isSelected ? AppColors.primary : AppColors.darkCard,
+                                  borderRadius: BorderRadius.circular(12),
+                                  border: Border.all(
+                                    color: isSelected ? AppColors.primary : AppColors.darkBorder,
+                                  ),
+                                ),
+                                child: Text(
+                                  '${spacing.toInt()}px',
+                                  style: GoogleFonts.plusJakartaSans(
+                                    fontSize: 10,
+                                    fontWeight: isSelected ? FontWeight.w800 : FontWeight.w500,
+                                    color: isSelected ? Colors.white : AppColors.darkTextSecondary,
+                                  ),
+                                ),
+                              ),
+                            ),
+                          );
+                        }),
+                      ],
+                    ),
+                  ],
 
                   const SizedBox(height: 10),
 
