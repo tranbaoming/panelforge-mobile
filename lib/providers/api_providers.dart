@@ -17,6 +17,13 @@ export '../services/cbz_package_service.dart'
         chapterDownloadStatusProvider,
         downloadedChaptersProvider;
 
+export '../services/monetization_service.dart'
+    show
+        MonetizationService,
+        monetizationServiceProvider,
+        walletNotifierProvider,
+        unlockedChaptersProvider;
+
 final apiClientProvider = Provider<ApiClient>((ref) {
   return ApiClient();
 });

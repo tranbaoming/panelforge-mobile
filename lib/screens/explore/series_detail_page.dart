@@ -1,21 +1,25 @@
 import 'package:flutter/material.dart';
+import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 import 'package:google_fonts/google_fonts.dart';
 import '../../models/comic_model.dart';
+import '../../providers/api_providers.dart';
 import '../../theme/app_theme.dart';
 import '../../services/catalog_service.dart';
 import '../../services/preferences_service.dart';
+import '../../widgets/unlock_chapter_bottom_sheet.dart';
+import '../../widgets/wallet_chip.dart';
 
-class SeriesDetailPage extends StatefulWidget {
+class SeriesDetailPage extends ConsumerStatefulWidget {
   final String seriesId;
 
   const SeriesDetailPage({super.key, required this.seriesId});
 
   @override
-  State<SeriesDetailPage> createState() => _SeriesDetailPageState();
+  ConsumerState<SeriesDetailPage> createState() => _SeriesDetailPageState();
 }
 
-class _SeriesDetailPageState extends State<SeriesDetailPage> {
+class _SeriesDetailPageState extends ConsumerState<SeriesDetailPage> {
   SeriesItem? _series;
   bool _isLoading = true;
   String? _errorMessage;
@@ -67,6 +71,74 @@ class _SeriesDetailPageState extends State<SeriesDetailPage> {
           duration: const Duration(seconds: 2),
         ),
       );
+    }
+  }
+
+  bool _isChapterUnlocked(ChapterItem chapter) {
+    if (chapter.isFree) return true;
+    final wallet = ref.watch(walletNotifierProvider).asData?.value;
+    if (wallet?.isVip ?? false) return true;
+    final unlockedIds = ref.watch(unlockedChaptersProvider);
+    if (unlockedIds.contains(chapter.id)) return true;
+    return chapter.isUnlocked;
+  }
+
+  void _onChapterTap(SeriesItem series, ChapterItem chapter) {
+    final unlocked = _isChapterUnlocked(chapter);
+    if (unlocked) {
+      context.push('/reader/${series.id}?chapterId=${chapter.id}');
+    } else {
+      UnlockChapterBottomSheet.show(
+        context,
+        chapter: chapter,
+        onUnlocked: () {
+          setState(() {});
+        },
+      );
+    }
+  }
+
+  Future<void> _downloadChapter(ChapterItem chapter) async {
+    final cbzService = ref.read(cbzPackageServiceProvider);
+    try {
+      ref.read(downloadStatusProvider.notifier).setStatus(chapter.id, DownloadStatus.downloading);
+      await cbzService.downloadAndExtractCbzPackage(
+        chapterId: chapter.id,
+        customDownloadUrl: chapter.cbzPackageUrl,
+        onProgress: (p, received, total) {
+          ref.read(downloadProgressProvider.notifier).setProgress(chapter.id, p);
+        },
+        onStatusChanged: (status) {
+          ref.read(downloadStatusProvider.notifier).setStatus(chapter.id, status);
+        },
+      );
+      ref.read(downloadedChaptersProvider.notifier).add(chapter.id);
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            backgroundColor: AppColors.darkSurface,
+            content: Row(
+              children: [
+                const Icon(Icons.check_circle_rounded, color: AppColors.mint, size: 20),
+                const SizedBox(width: 8),
+                Expanded(
+                  child: Text(
+                    'Đã tải gói truyện offline: ${chapter.title}',
+                    style: const TextStyle(color: Colors.white),
+                  ),
+                ),
+              ],
+            ),
+          ),
+        );
+      }
+    } catch (e) {
+      ref.read(downloadStatusProvider.notifier).setStatus(chapter.id, DownloadStatus.failed);
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text('Lỗi khi tải gói offline: $e')),
+        );
+      }
     }
   }
 
@@ -168,6 +240,11 @@ class _SeriesDetailPageState extends State<SeriesDetailPage> {
               onPressed: () => context.pop(),
             ),
             actions: [
+              const Padding(
+                padding: EdgeInsets.symmetric(vertical: 10),
+                child: WalletChip(),
+              ),
+              const SizedBox(width: 8),
               IconButton(
                 icon: Icon(
                   series.isBookmarked ? Icons.bookmark_rounded : Icons.bookmark_border_rounded,
@@ -617,6 +694,13 @@ class _SeriesDetailPageState extends State<SeriesDetailPage> {
   }
 
   Widget _buildChapterListItem(BuildContext context, SeriesItem series, ChapterItem chapter) {
+    final unlocked = _isChapterUnlocked(chapter);
+    final downloaded = ref.watch(downloadedChaptersProvider).contains(chapter.id);
+    final downloadStatus = ref.watch(chapterDownloadStatusProvider(chapter.id));
+    final downloadProgress = ref.watch(chapterDownloadProgressProvider(chapter.id));
+    final isDownloading = downloadStatus == DownloadStatus.downloading ||
+        downloadStatus == DownloadStatus.extracting;
+
     return Container(
       margin: const EdgeInsets.only(bottom: 10),
       decoration: BoxDecoration(
@@ -643,41 +727,100 @@ class _SeriesDetailPageState extends State<SeriesDetailPage> {
                 color: AppColors.darkTextSecondary,
               ),
             ),
-            if (!chapter.isFree) ...[
-              const SizedBox(width: 8),
+            const SizedBox(width: 8),
+            if (chapter.isFree)
               Container(
                 padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
                 decoration: BoxDecoration(
-                  color: AppColors.amber.withValues(alpha: 0.15),
+                  color: AppColors.mint.withValues(alpha: 0.15),
                   borderRadius: BorderRadius.circular(4),
+                  border: Border.all(color: AppColors.mint.withValues(alpha: 0.3)),
+                ),
+                child: Text(
+                  'FREE',
+                  style: GoogleFonts.plusJakartaSans(
+                    fontSize: 9,
+                    fontWeight: FontWeight.w800,
+                    color: AppColors.mint,
+                    letterSpacing: 0.5,
+                  ),
+                ),
+              )
+            else if (!unlocked)
+              Container(
+                padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+                decoration: BoxDecoration(
+                  color: AppColors.primary.withValues(alpha: 0.15),
+                  borderRadius: BorderRadius.circular(4),
+                  border: Border.all(color: AppColors.primary.withValues(alpha: 0.3)),
                 ),
                 child: Row(
                   mainAxisSize: MainAxisSize.min,
                   children: [
-                    const Icon(Icons.lock_rounded, size: 10, color: AppColors.amber),
+                    const Icon(Icons.lock_rounded, size: 10, color: AppColors.primary),
                     const SizedBox(width: 3),
                     Text(
-                      'Khóa',
+                      '${chapter.priceCoins > 0 ? chapter.priceCoins : 50} Coins',
                       style: GoogleFonts.plusJakartaSans(
                         fontSize: 9,
-                        fontWeight: FontWeight.w700,
-                        color: AppColors.amber,
+                        fontWeight: FontWeight.w800,
+                        color: AppColors.primary,
                       ),
                     ),
                   ],
                 ),
               ),
-            ],
           ],
         ),
-        trailing: const Icon(
-          Icons.arrow_forward_ios_rounded,
-          size: 14,
-          color: AppColors.primary,
+        trailing: Row(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            if (unlocked) ...[
+              if (isDownloading)
+                Padding(
+                  padding: const EdgeInsets.all(8.0),
+                  child: SizedBox(
+                    width: 20,
+                    height: 20,
+                    child: CircularProgressIndicator(
+                      value: downloadProgress > 0 ? downloadProgress : null,
+                      strokeWidth: 2,
+                      color: AppColors.primary,
+                    ),
+                  ),
+                )
+              else if (downloaded)
+                const Tooltip(
+                  message: 'Đã lưu offline',
+                  child: Padding(
+                    padding: EdgeInsets.all(8.0),
+                    child: Icon(
+                      Icons.check_circle_rounded,
+                      size: 20,
+                      color: AppColors.mint,
+                    ),
+                  ),
+                )
+              else
+                IconButton(
+                  tooltip: 'Tải CBZ Offline',
+                  icon: const Icon(
+                    Icons.download_for_offline_outlined,
+                    size: 20,
+                    color: Colors.white70,
+                  ),
+                  onPressed: () => _downloadChapter(chapter),
+                ),
+              const SizedBox(width: 4),
+            ],
+            Icon(
+              unlocked ? Icons.arrow_forward_ios_rounded : Icons.lock_outline_rounded,
+              size: 14,
+              color: unlocked ? AppColors.primary : AppColors.darkTextSecondary,
+            ),
+          ],
         ),
-        onTap: () {
-          context.push('/reader/${series.id}?chapterId=${chapter.id}');
-        },
+        onTap: () => _onChapterTap(series, chapter),
       ),
     );
   }

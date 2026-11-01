@@ -6,6 +6,7 @@ import '../../theme/app_theme.dart';
 import '../../services/api_config.dart';
 import '../../services/catalog_service.dart';
 import '../../services/preferences_service.dart';
+import '../../widgets/wallet_chip.dart';
 
 class ExplorePage extends StatefulWidget {
   const ExplorePage({super.key});
@@ -194,57 +195,70 @@ class _ExplorePageState extends State<ExplorePage> {
                   child: Row(
                     mainAxisAlignment: MainAxisAlignment.spaceBetween,
                     children: [
-                      Column(
-                        crossAxisAlignment: CrossAxisAlignment.start,
+                      Expanded(
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            Row(
+                              children: [
+                                Container(
+                                  width: 10,
+                                  height: 10,
+                                  decoration: BoxDecoration(
+                                    color: _isLiveBackend ? AppColors.mint : AppColors.primary,
+                                    shape: BoxShape.circle,
+                                  ),
+                                ),
+                                const SizedBox(width: 8),
+                                Flexible(
+                                  child: Text(
+                                    _isLiveBackend ? 'PANELFORGE • TRỰC TUYẾN' : 'PANELFORGE',
+                                    style: GoogleFonts.plusJakartaSans(
+                                      fontSize: 11,
+                                      fontWeight: FontWeight.w800,
+                                      letterSpacing: 2.0,
+                                      color: _isLiveBackend ? AppColors.mint : AppColors.primary,
+                                    ),
+                                    overflow: TextOverflow.ellipsis,
+                                  ),
+                                ),
+                              ],
+                            ),
+                            const SizedBox(height: 2),
+                            Text(
+                              'Khám Phá Truyện Tranh',
+                              style: GoogleFonts.newsreader(
+                                fontSize: 26,
+                                fontWeight: FontWeight.w700,
+                                color: Colors.white,
+                                letterSpacing: -0.5,
+                              ),
+                              overflow: TextOverflow.ellipsis,
+                            ),
+                          ],
+                        ),
+                      ),
+                      const SizedBox(width: 12),
+                      Row(
                         children: [
-                          Row(
-                            children: [
-                              Container(
-                                width: 10,
-                                height: 10,
-                                decoration: BoxDecoration(
-                                  color: _isLiveBackend ? AppColors.mint : AppColors.primary,
-                                  shape: BoxShape.circle,
-                                ),
-                              ),
-                              const SizedBox(width: 8),
-                              Text(
-                                _isLiveBackend ? 'PANELFORGE • TRỰC TUYẾN' : 'PANELFORGE',
-                                style: GoogleFonts.plusJakartaSans(
-                                  fontSize: 11,
-                                  fontWeight: FontWeight.w800,
-                                  letterSpacing: 2.0,
-                                  color: _isLiveBackend ? AppColors.mint : AppColors.primary,
-                                ),
-                              ),
-                            ],
-                          ),
-                          const SizedBox(height: 2),
-                          Text(
-                            'Khám Phá Truyện Tranh',
-                            style: GoogleFonts.newsreader(
-                              fontSize: 26,
-                              fontWeight: FontWeight.w700,
-                              color: Colors.white,
-                              letterSpacing: -0.5,
+                          const WalletChip(),
+                          const SizedBox(width: 8),
+                          IconButton(
+                            icon: _isLoading
+                                ? const SizedBox(
+                                    width: 18,
+                                    height: 18,
+                                    child: CircularProgressIndicator(strokeWidth: 2, color: AppColors.primary),
+                                  )
+                                : const Icon(Icons.tune_rounded),
+                            onPressed: _showServerConfigDialog,
+                            style: IconButton.styleFrom(
+                              backgroundColor: AppColors.darkSurface,
+                              foregroundColor: Colors.white,
+                              side: const BorderSide(color: AppColors.darkBorder),
                             ),
                           ),
                         ],
-                      ),
-                      IconButton(
-                        icon: _isLoading
-                            ? const SizedBox(
-                                width: 18,
-                                height: 18,
-                                child: CircularProgressIndicator(strokeWidth: 2, color: AppColors.primary),
-                              )
-                            : const Icon(Icons.tune_rounded),
-                        onPressed: _showServerConfigDialog,
-                        style: IconButton.styleFrom(
-                          backgroundColor: AppColors.darkSurface,
-                          foregroundColor: Colors.white,
-                          side: const BorderSide(color: AppColors.darkBorder),
-                        ),
                       ),
                     ],
                   ),

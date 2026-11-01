@@ -1,7 +1,9 @@
+import 'dart:io';
 import 'package:cached_network_image/cached_network_image.dart';
 import 'package:flutter/material.dart';
 import 'package:google_fonts/google_fonts.dart';
 import '../models/comic_model.dart';
+import '../models/comic_package_models.dart';
 import '../theme/app_theme.dart';
 
 class ReadingModeSwitcher extends StatefulWidget {
@@ -11,6 +13,8 @@ class ReadingModeSwitcher extends StatefulWidget {
   final int initialPage;
   final ValueChanged<int> onPageChanged;
   final VoidCallback onTapScreen;
+  final LoadedComicPackage? package;
+  final String? selectedLanguage;
 
   const ReadingModeSwitcher({
     super.key,
@@ -20,6 +24,8 @@ class ReadingModeSwitcher extends StatefulWidget {
     this.initialPage = 1,
     required this.onPageChanged,
     required this.onTapScreen,
+    this.package,
+    this.selectedLanguage,
   });
 
   @override
@@ -171,7 +177,7 @@ class ReadingModeSwitcherState extends State<ReadingModeSwitcher> {
       itemBuilder: (context, index) {
         final actualIndex = isRtl ? (pages.length - 1 - index) : index;
         final page = pages[actualIndex];
-        return _buildComicSinglePage(page, surfaceColor, textColor);
+        return _buildComicSinglePage(actualIndex, page, surfaceColor, textColor);
       },
     );
   }
@@ -188,13 +194,13 @@ class ReadingModeSwitcherState extends State<ReadingModeSwitcher> {
         final page = pages[index];
         return Container(
           margin: const EdgeInsets.only(bottom: 24),
-          child: _buildComicSinglePage(page, surfaceColor, textColor),
+          child: _buildComicSinglePage(index, page, surfaceColor, textColor),
         );
       },
     );
   }
 
-  Widget _buildComicSinglePage(ComicPageData page, Color surfaceColor, Color textColor) {
+  Widget _buildComicSinglePage(int pageIndex, ComicPageData page, Color surfaceColor, Color textColor) {
     return Center(
       child: Container(
         constraints: const BoxConstraints(maxWidth: 580),
@@ -249,40 +255,28 @@ class ReadingModeSwitcherState extends State<ReadingModeSwitcher> {
               ),
             ),
 
-            // Content: Either real Page Image (CachedNetworkImage) or simulated panels
+            // Content: Either real Page Image (network/local) or simulated panels
             Padding(
               padding: const EdgeInsets.all(12),
               child: page.imageUrl != null && page.imageUrl!.isNotEmpty
                   ? ClipRRect(
                       borderRadius: BorderRadius.circular(8),
-                      child: CachedNetworkImage(
-                        imageUrl: page.imageUrl!,
-                        fit: BoxFit.contain,
-                        placeholder: (context, url) => Container(
-                          height: 400,
-                          color: Colors.black12,
-                          child: const Center(
-                            child: CircularProgressIndicator(color: AppColors.primary),
-                          ),
-                        ),
-                        errorWidget: (context, url, error) => Container(
-                          height: 280,
-                          color: Colors.black12,
-                          padding: const EdgeInsets.all(16),
-                          child: Center(
-                            child: Column(
-                              mainAxisAlignment: MainAxisAlignment.center,
-                              children: [
-                                const Icon(Icons.broken_image_rounded, size: 40, color: Colors.white54),
-                                const SizedBox(height: 8),
-                                Text(
-                                  'Không thể tải ảnh trang truyện từ server',
-                                  style: GoogleFonts.plusJakartaSans(color: Colors.white70, fontSize: 12),
+                      child: LayoutBuilder(
+                        builder: (context, constraints) {
+                          return Stack(
+                            children: [
+                              _buildImageContent(page.imageUrl!),
+                              if (widget.package != null && widget.selectedLanguage != null)
+                                Positioned.fill(
+                                  child: _buildTextRegionsOverlay(
+                                    pageIndex,
+                                    constraints.maxWidth,
+                                    constraints.maxWidth * 1.4,
+                                  ),
                                 ),
-                              ],
-                            ),
-                          ),
-                        ),
+                            ],
+                          );
+                        },
                       ),
                     )
                   : Column(
@@ -382,6 +376,122 @@ class ReadingModeSwitcherState extends State<ReadingModeSwitcher> {
           ],
         ),
       ),
+    );
+  }
+
+  Widget _buildImageContent(String pathOrUrl) {
+    final isNetwork = pathOrUrl.startsWith('http://') || pathOrUrl.startsWith('https://');
+    if (isNetwork) {
+      return CachedNetworkImage(
+        imageUrl: pathOrUrl,
+        fit: BoxFit.contain,
+        placeholder: (context, url) => Container(
+          height: 400,
+          color: Colors.black12,
+          child: const Center(
+            child: CircularProgressIndicator(color: AppColors.primary),
+          ),
+        ),
+        errorWidget: (context, url, error) => _buildImageErrorWidget(),
+      );
+    }
+
+    final file = File(pathOrUrl);
+    if (file.existsSync()) {
+      return Image.file(
+        file,
+        fit: BoxFit.contain,
+        errorBuilder: (context, error, stackTrace) => _buildImageErrorWidget(),
+      );
+    }
+
+    if (pathOrUrl.startsWith('file://')) {
+      final sanitized = pathOrUrl.replaceFirst('file://', '');
+      final altFile = File(sanitized);
+      if (altFile.existsSync()) {
+        return Image.file(
+          altFile,
+          fit: BoxFit.contain,
+          errorBuilder: (context, error, stackTrace) => _buildImageErrorWidget(),
+        );
+      }
+    }
+
+    return _buildImageErrorWidget();
+  }
+
+  Widget _buildImageErrorWidget() {
+    return Container(
+      height: 280,
+      color: Colors.black12,
+      padding: const EdgeInsets.all(16),
+      child: Center(
+        child: Column(
+          mainAxisAlignment: MainAxisAlignment.center,
+          children: [
+            const Icon(Icons.broken_image_rounded, size: 40, color: Colors.white54),
+            const SizedBox(height: 8),
+            Text(
+              'Không thể tải ảnh trang truyện',
+              style: GoogleFonts.plusJakartaSans(color: Colors.white70, fontSize: 12),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  Widget _buildTextRegionsOverlay(int pageIndex, double containerWidth, double containerHeight) {
+    if (widget.package == null || widget.selectedLanguage == null) return const SizedBox.shrink();
+    final regions = widget.package!.getTextRegionsForPage(pageIndex);
+    if (regions.isEmpty) return const SizedBox.shrink();
+
+    return Stack(
+      children: regions.map((region) {
+        final translation = widget.package!.getTranslation(widget.selectedLanguage!, region.id);
+        if (translation == null || translation.text.isEmpty) return const SizedBox.shrink();
+
+        final bounds = region.bounds;
+        final left = bounds.x * containerWidth;
+        final top = bounds.y * containerHeight;
+        final width = bounds.w * containerWidth;
+        final height = bounds.h * containerHeight;
+
+        return Positioned(
+          left: left,
+          top: top,
+          width: width,
+          height: height,
+          child: Container(
+            padding: const EdgeInsets.all(4),
+            decoration: BoxDecoration(
+              color: Colors.white.withValues(alpha: 0.94),
+              borderRadius: BorderRadius.circular(6),
+              border: Border.all(color: AppColors.primary, width: 1.2),
+              boxShadow: [
+                BoxShadow(
+                  color: Colors.black.withValues(alpha: 0.35),
+                  blurRadius: 6,
+                  offset: const Offset(1, 2),
+                ),
+              ],
+            ),
+            child: Center(
+              child: Text(
+                translation.text,
+                style: GoogleFonts.plusJakartaSans(
+                  fontSize: 11,
+                  fontWeight: FontWeight.w700,
+                  color: Colors.black87,
+                ),
+                textAlign: TextAlign.center,
+                maxLines: 4,
+                overflow: TextOverflow.ellipsis,
+              ),
+            ),
+          ),
+        );
+      }).toList(),
     );
   }
 }

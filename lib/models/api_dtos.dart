@@ -557,3 +557,129 @@ class UnlockChapterResponse {
       cbzDownloadUrl != null ? ApiConfig.resolveUrl(cbzDownloadUrl!) : null;
 }
 
+class SubscribeVipRequest {
+  final String plan; // 'monthly' | 'yearly'
+
+  const SubscribeVipRequest({required this.plan});
+
+  factory SubscribeVipRequest.fromJson(Map<String, dynamic> json) {
+    return SubscribeVipRequest(
+      plan: json['plan']?.toString() ?? 'monthly',
+    );
+  }
+
+  Map<String, dynamic> toJson() => {'plan': plan};
+}
+
+class SubscribeVipResponse {
+  final bool success;
+  final bool isVip;
+  final DateTime? vipExpiresAt;
+  final int remainingCoins;
+  final String? message;
+
+  const SubscribeVipResponse({
+    required this.success,
+    required this.isVip,
+    this.vipExpiresAt,
+    required this.remainingCoins,
+    this.message,
+  });
+
+  factory SubscribeVipResponse.fromJson(Map<String, dynamic> json) {
+    return SubscribeVipResponse(
+      success: json['success'] as bool? ?? false,
+      isVip: json['isVip'] as bool? ?? false,
+      vipExpiresAt: json['vipExpiresAt'] != null
+          ? DateTime.tryParse(json['vipExpiresAt'].toString())
+          : null,
+      remainingCoins: (json['remainingCoins'] as num?)?.toInt() ?? 0,
+      message: json['message']?.toString(),
+    );
+  }
+
+  Map<String, dynamic> toJson() => {
+        'success': success,
+        'isVip': isVip,
+        if (vipExpiresAt != null) 'vipExpiresAt': vipExpiresAt!.toIso8601String(),
+        'remainingCoins': remainingCoins,
+        if (message != null) 'message': message,
+      };
+}
+
+class TopupRequest {
+  final int coinsAmount;
+  final int amountVnd;
+  final String paymentMethod; // 'vietqr' | 'momo' | 'bank'
+
+  const TopupRequest({
+    required this.coinsAmount,
+    required this.amountVnd,
+    this.paymentMethod = 'vietqr',
+  });
+
+  factory TopupRequest.fromJson(Map<String, dynamic> json) {
+    return TopupRequest(
+      coinsAmount: (json['coinsAmount'] as num?)?.toInt() ?? 0,
+      amountVnd: (json['amountVnd'] as num?)?.toInt() ?? 0,
+      paymentMethod: json['paymentMethod']?.toString() ?? 'vietqr',
+    );
+  }
+
+  Map<String, dynamic> toJson() => {
+        'coinsAmount': coinsAmount,
+        'amountVnd': amountVnd,
+        'paymentMethod': paymentMethod,
+      };
+}
+
+class TopupResponse {
+  final String orderId;
+  final int coins;
+  final int amountVnd;
+  final String? qrCodeUrl;
+  final String? bankName;
+  final String? accountNumber;
+  final String? accountName;
+  final String? transferContent;
+  final bool isCompleted;
+
+  const TopupResponse({
+    required this.orderId,
+    required this.coins,
+    required this.amountVnd,
+    this.qrCodeUrl,
+    this.bankName,
+    this.accountNumber,
+    this.accountName,
+    this.transferContent,
+    this.isCompleted = false,
+  });
+
+  factory TopupResponse.fromJson(Map<String, dynamic> json) {
+    return TopupResponse(
+      orderId: json['orderId']?.toString() ?? '',
+      coins: (json['coins'] as num?)?.toInt() ?? 0,
+      amountVnd: (json['amountVnd'] as num?)?.toInt() ?? 0,
+      qrCodeUrl: json['qrCodeUrl']?.toString(),
+      bankName: json['bankName']?.toString() ?? 'Vietcombank',
+      accountNumber: json['accountNumber']?.toString() ?? '9876543210',
+      accountName: json['accountName']?.toString() ?? 'PANELFORGE COMICS',
+      transferContent: json['transferContent']?.toString() ?? 'PFCOINS ${json['orderId'] ?? ''}',
+      isCompleted: json['isCompleted'] as bool? ?? false,
+    );
+  }
+
+  Map<String, dynamic> toJson() => {
+        'orderId': orderId,
+        'coins': coins,
+        'amountVnd': amountVnd,
+        if (qrCodeUrl != null) 'qrCodeUrl': qrCodeUrl,
+        if (bankName != null) 'bankName': bankName,
+        if (accountNumber != null) 'accountNumber': accountNumber,
+        if (accountName != null) 'accountName': accountName,
+        if (transferContent != null) 'transferContent': transferContent,
+        'isCompleted': isCompleted,
+      };
+}
+
