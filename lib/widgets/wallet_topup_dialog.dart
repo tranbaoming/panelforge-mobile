@@ -82,10 +82,28 @@ class _WalletTopupDialogState extends ConsumerState<WalletTopupDialog>
         });
       }
     } catch (e) {
+      debugPrint('[WalletTopupDialog QR error] $e');
       if (mounted) {
-        setState(() => _isLoadingQr = false);
+        setState(() {
+          _isLoadingQr = false;
+          _topupData = null;
+        });
         ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(content: Text('Không thể tạo mã thanh toán. Vui lòng thử lại.')),
+          const SnackBar(
+            backgroundColor: AppColors.darkSurface,
+            content: Row(
+              children: [
+                Icon(Icons.cloud_off_rounded, color: AppColors.rose, size: 20),
+                SizedBox(width: 10),
+                Expanded(
+                  child: Text(
+                    'Không thể kết nối đến máy chủ thanh toán. Vui lòng kiểm tra lại kết nối mạng hoặc thử lại sau.',
+                    style: TextStyle(color: Colors.white),
+                  ),
+                ),
+              ],
+            ),
+          ),
         );
       }
     }
@@ -209,14 +227,30 @@ class _WalletTopupDialogState extends ConsumerState<WalletTopupDialog>
                                 children: [
                                   const Icon(Icons.monetization_on_rounded, size: 14, color: AppColors.primary),
                                   const SizedBox(width: 4),
-                                  Text(
-                                    '$currentCoins Coins',
-                                    style: GoogleFonts.plusJakartaSans(
-                                      fontSize: 12,
-                                      fontWeight: FontWeight.w800,
-                                      color: AppColors.primary,
+                                  if (walletState.isLoading)
+                                    const SizedBox(
+                                      width: 12,
+                                      height: 12,
+                                      child: CircularProgressIndicator(strokeWidth: 2, color: AppColors.primary),
+                                    )
+                                  else if (walletState.hasError)
+                                    Text(
+                                      'Chưa kết nối',
+                                      style: GoogleFonts.plusJakartaSans(
+                                        fontSize: 11,
+                                        fontWeight: FontWeight.w700,
+                                        color: AppColors.rose,
+                                      ),
+                                    )
+                                  else
+                                    Text(
+                                      '$currentCoins Coins',
+                                      style: GoogleFonts.plusJakartaSans(
+                                        fontSize: 12,
+                                        fontWeight: FontWeight.w800,
+                                        color: AppColors.primary,
+                                      ),
                                     ),
-                                  ),
                                 ],
                               ),
                             ),

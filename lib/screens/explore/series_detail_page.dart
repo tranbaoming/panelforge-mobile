@@ -22,6 +22,7 @@ class SeriesDetailPage extends ConsumerStatefulWidget {
 class _SeriesDetailPageState extends ConsumerState<SeriesDetailPage> {
   SeriesItem? _series;
   bool _isLoading = true;
+  bool _isLiveBackend = false;
   String? _errorMessage;
   bool _isNewestFirst = false;
 
@@ -43,15 +44,19 @@ class _SeriesDetailPageState extends ConsumerState<SeriesDetailPage> {
         setState(() {
           _series = SeriesItem.fromPublicDetailDto(detail).copyWith(isBookmarked: bookmarked);
           _isLoading = false;
+          _isLiveBackend = true;
         });
+        ref.read(isServerConnectedProvider.notifier).state = true;
       }
     } catch (e) {
       debugPrint('[SeriesDetail API Error] $e');
       if (mounted) {
         setState(() {
           _isLoading = false;
+          _isLiveBackend = false;
           _errorMessage = 'Không thể tải thông tin tác phẩm. Vui lòng kiểm tra lại kết nối mạng.';
         });
+        ref.read(isServerConnectedProvider.notifier).state = false;
       }
     }
   }
@@ -240,11 +245,13 @@ class _SeriesDetailPageState extends ConsumerState<SeriesDetailPage> {
               onPressed: () => context.pop(),
             ),
             actions: [
-              const Padding(
-                padding: EdgeInsets.symmetric(vertical: 10),
-                child: WalletChip(),
-              ),
-              const SizedBox(width: 8),
+              if (_isLiveBackend) ...[
+                const Padding(
+                  padding: EdgeInsets.symmetric(vertical: 10),
+                  child: WalletChip(isServerConnected: true),
+                ),
+                const SizedBox(width: 8),
+              ],
               IconButton(
                 icon: Icon(
                   series.isBookmarked ? Icons.bookmark_rounded : Icons.bookmark_border_rounded,

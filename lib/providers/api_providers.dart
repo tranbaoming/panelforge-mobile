@@ -36,6 +36,19 @@ final previewServiceProvider = Provider<PreviewService>((ref) {
   return PreviewService(client: ref.watch(apiClientProvider));
 });
 
+class ServerConnectedNotifier extends Notifier<bool> {
+  @override
+  bool build() => false;
+
+  @override
+  set state(bool value) => super.state = value;
+  void setConnected(bool value) => state = value;
+}
+
+/// Provider kiểm tra trạng thái kết nối máy chủ thực tế (true khi kết nối thành công)
+final isServerConnectedProvider =
+    NotifierProvider<ServerConnectedNotifier, bool>(ServerConnectedNotifier.new);
+
 /// Provider tải danh sách Series phát hành từ backend
 final publicCatalogProvider = FutureProvider.family<PagedCatalogResult, ({String? search, String? genre})>((ref, filter) async {
   final catalogService = ref.watch(catalogServiceProvider);

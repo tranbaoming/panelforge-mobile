@@ -1,3 +1,4 @@
+import 'package:dio/dio.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
@@ -7,6 +8,40 @@ import 'package:panelforge/providers/api_providers.dart';
 import 'package:panelforge/services/preferences_service.dart';
 import 'package:panelforge/widgets/unlock_chapter_bottom_sheet.dart';
 import 'package:panelforge/widgets/wallet_chip.dart';
+
+Dio createMockDio() {
+  final dio = Dio();
+  dio.interceptors.add(InterceptorsWrapper(
+    onRequest: (options, handler) {
+      if (options.path.endsWith('/api/wallet/me')) {
+        return handler.resolve(Response(
+          requestOptions: options,
+          statusCode: 200,
+          data: {'balanceCoins': 150, 'isVip': false},
+        ));
+      }
+      if (options.path.endsWith('/api/wallet/topup')) {
+        return handler.resolve(Response(
+          requestOptions: options,
+          statusCode: 200,
+          data: {
+            'orderId': 'order-123',
+            'coins': 500,
+            'amountVnd': 90000,
+            'qrCodeUrl': 'https://img.vietqr.io/image/970436-123-compact2.png',
+            'bankName': 'Vietcombank',
+            'accountNo': '123456789',
+            'accountName': 'PANELFORGE JSC',
+            'description': 'NAP500 PF123',
+            'expiresAt': DateTime.now().add(const Duration(minutes: 15)).toIso8601String(),
+          },
+        ));
+      }
+      return handler.next(options);
+    },
+  ));
+  return dio;
+}
 
 void main() {
   TestWidgetsFlutterBinding.ensureInitialized();
@@ -19,8 +54,14 @@ void main() {
   });
 
   group('MonetizationService & Wallet Tests', () {
-    test('getMyWallet retrieves balance and VIP state', () async {
+    test('getMyWallet throws when backend is offline/unreachable', () async {
       final service = MonetizationService();
+      expect(() => service.getMyWallet(), throwsA(isA<Exception>()));
+    });
+
+    test('getMyWallet retrieves balance and VIP state when backend responds', () async {
+      final mockDio = createMockDio();
+      final service = MonetizationService(dio: mockDio);
       final wallet = await service.getMyWallet();
 
       expect(wallet.balanceCoins, 150);
@@ -78,8 +119,17 @@ void main() {
       expect(PreferencesService.getLocalBalanceCoins(), 301);
     });
 
-    test('requestTopup and completeTopup generate VietQR and add coins to wallet', () async {
+    test('requestTopup throws when backend is offline/unreachable', () async {
       final service = MonetizationService();
+      expect(
+        () => service.requestTopup(coinsAmount: 500, amountVnd: 90000),
+        throwsA(isA<Exception>()),
+      );
+    });
+
+    test('requestTopup and completeTopup generate VietQR and add coins to wallet when online', () async {
+      final mockDio = createMockDio();
+      final service = MonetizationService(dio: mockDio);
       final topup = await service.requestTopup(coinsAmount: 500, amountVnd: 90000);
 
       expect(topup.coins, 500);
@@ -98,12 +148,32 @@ void main() {
   });
 
   group('Monetization Widgets & Dialogs Tests', () {
-    testWidgets('WalletChip displays coins and opens WalletTopupDialog on tap', (WidgetTester tester) async {
+    testWidgets('WalletChip hides completely (SizedBox.shrink) when offline or disconnected', (WidgetTester tester) async {
       await tester.pumpWidget(
         const ProviderScope(
           child: MaterialApp(
             home: Scaffold(
-              body: Center(child: WalletChip()),
+              body: Center(child: WalletChip(isServerConnected: false)),
+            ),
+          ),
+        ),
+      );
+      await tester.pumpAndSettle();
+
+      expect(find.text('150'), findsNothing);
+      expect(find.byIcon(Icons.monetization_on_rounded), findsNothing);
+    });
+
+    testWidgets('WalletChip displays coins and opens WalletTopupDialog on tap when server is connected', (WidgetTester tester) async {
+      final mockDio = createMockDio();
+      await tester.pumpWidget(
+        ProviderScope(
+          overrides: [
+            monetizationServiceProvider.overrideWithValue(MonetizationService(dio: mockDio)),
+          ],
+          child: const MaterialApp(
+            home: Scaffold(
+              body: Center(child: WalletChip(isServerConnected: true)),
             ),
           ),
         ),
@@ -121,10 +191,10 @@ void main() {
       expect(find.text('Ví ForgeCoins & Gói VIP'), findsOneWidget);
       expect(find.text('Nạp ForgeCoins'), findsOneWidget);
       expect(find.text('Gói VIP Pass'), findsOneWidget);
-      expect(find.text('Tạo Mã Thanh Toán VietQR'), findsOneWidget);
     });
 
     testWidgets('UnlockChapterBottomSheet displays price, balance and unlocks chapter', (WidgetTester tester) async {
+      final mockDio = createMockDio();
       const chapter = ChapterItem(
         id: 'ch-test-10',
         number: 10,
@@ -141,6 +211,9 @@ void main() {
 
       await tester.pumpWidget(
         ProviderScope(
+          overrides: [
+            monetizationServiceProvider.overrideWithValue(MonetizationService(dio: mockDio)),
+          ],
           child: MaterialApp(
             home: Scaffold(
               body: Builder(

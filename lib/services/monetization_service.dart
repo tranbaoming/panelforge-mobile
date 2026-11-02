@@ -9,11 +9,12 @@ import 'preferences_service.dart';
 class MonetizationService {
   final ApiClient _client;
 
-  MonetizationService({ApiClient? client}) : _client = client ?? ApiClient();
+  MonetizationService({ApiClient? client, Dio? dio})
+      : _client = client ?? (dio != null ? ApiClient(customDio: dio) : ApiClient());
 
   Dio get _dio => _client.dio;
 
-  /// Lấy thông tin ví và trạng thái VIP của người dùng hiện tại
+  /// Lấy thông tin ví và trạng thái VIP của người dùng hiện tại từ máy chủ
   Future<UserWalletDto> getMyWallet() async {
     try {
       final response = await _dio.get('/api/wallet/me');
@@ -27,20 +28,11 @@ class MonetizationService {
         );
         return wallet;
       }
+      throw ApiException('Máy chủ phản hồi không hợp lệ (${response.statusCode})');
     } catch (e) {
-      debugPrint('[MonetizationService] API /api/wallet/me chưa sẵn sàng hoặc offline: $e');
+      debugPrint('[MonetizationService] API /api/wallet/me thất bại: $e');
+      rethrow;
     }
-
-    // Fallback thông minh: Dùng ví lưu trữ cục bộ
-    final balance = PreferencesService.getLocalBalanceCoins();
-    final isVip = PreferencesService.getLocalIsVip();
-    final vipExpiresAt = PreferencesService.getLocalVipExpiresAt();
-
-    return UserWalletDto(
-      balanceCoins: balance,
-      isVip: isVip,
-      vipExpiresAt: vipExpiresAt,
-    );
   }
 
   /// Mở khóa một chương truyện bằng ForgeCoins hoặc đặc quyền VIP
@@ -142,7 +134,7 @@ class MonetizationService {
     );
   }
 
-  /// Tạo yêu cầu nạp ForgeCoins (trả về thông tin chuyển khoản VietQR)
+  /// Tạo yêu cầu nạp ForgeCoins (trả về thông tin chuyển khoản VietQR từ máy chủ)
   Future<TopupResponse> requestTopup({
     required int coinsAmount,
     required int amountVnd,
@@ -160,28 +152,11 @@ class MonetizationService {
       if (response.statusCode == 200 && response.data != null) {
         return TopupResponse.fromJson(response.data as Map<String, dynamic>);
       }
+      throw ApiException('Máy chủ phản hồi không hợp lệ (${response.statusCode})');
     } catch (e) {
-      debugPrint('[MonetizationService] API /api/wallet/topup fallback: $e');
+      debugPrint('[MonetizationService] API /api/wallet/topup thất bại: $e');
+      rethrow;
     }
-
-    // Fallback tạo mã giao dịch VietQR hợp lệ
-    final orderId = 'PF${DateTime.now().millisecondsSinceEpoch.toString().substring(5)}';
-    final content = 'PF $orderId';
-    // Link VietQR chuẩn ngân hàng
-    final qrUrl =
-        'https://img.vietqr.io/image/970436-9876543210-compact2.png?amount=$amountVnd&addInfo=${Uri.encodeComponent(content)}&accountName=PANELFORGE%20COMICS';
-
-    return TopupResponse(
-      orderId: orderId,
-      coins: coinsAmount,
-      amountVnd: amountVnd,
-      qrCodeUrl: qrUrl,
-      bankName: 'Vietcombank',
-      accountNumber: '9876543210',
-      accountName: 'PANELFORGE COMICS',
-      transferContent: content,
-      isCompleted: false,
-    );
   }
 
   /// Xác nhận hoàn tất thanh toán nạp tiền và cộng Coins vào ví
@@ -222,15 +197,9 @@ final monetizationServiceProvider = Provider<MonetizationService>((ref) {
 class WalletNotifier extends Notifier<AsyncValue<UserWalletDto>> {
   @override
   AsyncValue<UserWalletDto> build() {
-    // Tải thông tin ví ban đầu
+    // Ban đầu tải ví từ server; khi chưa kết nối thành công thì giữ trạng thái Loading/Error
     _loadInitialWallet();
-    return AsyncData(
-      UserWalletDto(
-        balanceCoins: PreferencesService.getLocalBalanceCoins(),
-        isVip: PreferencesService.getLocalIsVip(),
-        vipExpiresAt: PreferencesService.getLocalVipExpiresAt(),
-      ),
-    );
+    return const AsyncLoading();
   }
 
   Future<void> _loadInitialWallet() async {

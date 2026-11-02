@@ -144,7 +144,7 @@ class PreferencesService {
 
   // ─── Local Wallet & VIP Cache ─────────────────────────────────────────────
   static int getLocalBalanceCoins() {
-    return _prefs?.getInt(_keyWalletBalance) ?? 150;
+    return _prefs?.getInt(_keyWalletBalance) ?? 0;
   }
 
   static Future<void> setLocalBalanceCoins(int coins) async {

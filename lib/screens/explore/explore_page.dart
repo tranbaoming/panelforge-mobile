@@ -1,21 +1,23 @@
 import 'package:flutter/material.dart';
+import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 import 'package:google_fonts/google_fonts.dart';
 import '../../models/comic_model.dart';
+import '../../providers/api_providers.dart';
 import '../../theme/app_theme.dart';
 import '../../services/api_config.dart';
 import '../../services/catalog_service.dart';
 import '../../services/preferences_service.dart';
 import '../../widgets/wallet_chip.dart';
 
-class ExplorePage extends StatefulWidget {
+class ExplorePage extends ConsumerStatefulWidget {
   const ExplorePage({super.key});
 
   @override
-  State<ExplorePage> createState() => _ExplorePageState();
+  ConsumerState<ExplorePage> createState() => _ExplorePageState();
 }
 
-class _ExplorePageState extends State<ExplorePage> {
+class _ExplorePageState extends ConsumerState<ExplorePage> {
   List<SeriesItem> _allSeries = [];
   String _searchQuery = '';
   ComicFormat? _selectedFormat;
@@ -47,6 +49,8 @@ class _ExplorePageState extends State<ExplorePage> {
           _isLoading = false;
           _hasError = false;
         });
+        ref.read(isServerConnectedProvider.notifier).state = true;
+        ref.read(walletNotifierProvider.notifier).refresh();
       }
     } catch (e) {
       debugPrint('[Catalog Load Error] $e');
@@ -57,6 +61,7 @@ class _ExplorePageState extends State<ExplorePage> {
           _isLoading = false;
           _hasError = true;
         });
+        ref.read(isServerConnectedProvider.notifier).state = false;
       }
     }
   }
@@ -149,6 +154,7 @@ class _ExplorePageState extends State<ExplorePage> {
                 await PreferencesService.setCustomBaseUrl(ipController.text.trim());
                 if (context.mounted) Navigator.of(context).pop();
                 _fetchCatalog();
+                ref.read(walletNotifierProvider.notifier).refresh();
               },
               child: const Text('Lưu & Thử kết nối'),
             ),
@@ -241,8 +247,10 @@ class _ExplorePageState extends State<ExplorePage> {
                       const SizedBox(width: 12),
                       Row(
                         children: [
-                          const WalletChip(),
-                          const SizedBox(width: 8),
+                          if (_isLiveBackend) ...[
+                            const WalletChip(isServerConnected: true),
+                            const SizedBox(width: 8),
+                          ],
                           IconButton(
                             icon: _isLoading
                                 ? const SizedBox(
