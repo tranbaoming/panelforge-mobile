@@ -4,6 +4,7 @@ import 'package:google_fonts/google_fonts.dart';
 import '../models/comic_model.dart';
 import '../providers/api_providers.dart';
 import '../theme/app_theme.dart';
+import 'auth_modal_sheet.dart';
 import 'wallet_topup_dialog.dart';
 
 class UnlockChapterBottomSheet extends ConsumerStatefulWidget {
@@ -41,6 +42,27 @@ class _UnlockChapterBottomSheetState extends ConsumerState<UnlockChapterBottomSh
   String? _errorMessage;
 
   Future<void> _handleUnlock(int price) async {
+    // Nếu đang là Guest, yêu cầu đăng nhập trước khi dùng ForgeCoins
+    if (ref.read(authStateProvider).isGuest) {
+      Navigator.of(context).pop();
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          backgroundColor: AppColors.darkSurface,
+          shape: RoundedRectangleBorder(
+            borderRadius: BorderRadius.circular(12),
+            side: const BorderSide(color: AppColors.primary),
+          ),
+          behavior: SnackBarBehavior.floating,
+          content: Text(
+            'Vui lòng đăng nhập tài khoản Độc giả để mở khóa chương bằng ForgeCoins.',
+            style: GoogleFonts.plusJakartaSans(fontSize: 12.5, color: Colors.white),
+          ),
+        ),
+      );
+      AuthModalSheet.show(context);
+      return;
+    }
+
     setState(() {
       _isUnlocking = true;
       _errorMessage = null;
@@ -155,13 +177,13 @@ class _UnlockChapterBottomSheetState extends ConsumerState<UnlockChapterBottomSh
                     ),
                     const SizedBox(height: 2),
                     Text(
-                      'Chương ${widget.chapter.number}: ${widget.chapter.title}',
-                      maxLines: 1,
-                      overflow: TextOverflow.ellipsis,
+                      widget.chapter.title,
                       style: GoogleFonts.plusJakartaSans(
                         fontSize: 13,
                         color: AppColors.darkTextSecondary,
                       ),
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
                     ),
                   ],
                 ),
@@ -172,10 +194,10 @@ class _UnlockChapterBottomSheetState extends ConsumerState<UnlockChapterBottomSh
 
           // Price & Balance Card
           Container(
-            padding: const EdgeInsets.all(16),
+            padding: const EdgeInsets.all(14),
             decoration: BoxDecoration(
               color: AppColors.darkCard,
-              borderRadius: BorderRadius.circular(16),
+              borderRadius: BorderRadius.circular(14),
               border: Border.all(color: AppColors.darkBorder),
             ),
             child: Column(
@@ -184,20 +206,17 @@ class _UnlockChapterBottomSheetState extends ConsumerState<UnlockChapterBottomSh
                   mainAxisAlignment: MainAxisAlignment.spaceBetween,
                   children: [
                     Text(
-                      'Giá mở khóa:',
-                      style: GoogleFonts.plusJakartaSans(
-                        fontSize: 14,
-                        color: AppColors.darkTextSecondary,
-                      ),
+                      'Giá mở khóa chương:',
+                      style: GoogleFonts.plusJakartaSans(fontSize: 13, color: AppColors.darkTextSecondary),
                     ),
                     Row(
                       children: [
-                        const Icon(Icons.monetization_on_rounded, size: 18, color: AppColors.primary),
-                        const SizedBox(width: 6),
+                        const Icon(Icons.monetization_on_rounded, color: AppColors.primary, size: 16),
+                        const SizedBox(width: 4),
                         Text(
-                          isVip ? 'Miễn phí (VIP)' : '$price Coins',
+                          '$price Coins',
                           style: GoogleFonts.plusJakartaSans(
-                            fontSize: 16,
+                            fontSize: 15,
                             fontWeight: FontWeight.w800,
                             color: isVip ? AppColors.mint : AppColors.primary,
                           ),
@@ -206,33 +225,38 @@ class _UnlockChapterBottomSheetState extends ConsumerState<UnlockChapterBottomSh
                     ),
                   ],
                 ),
-                const Divider(color: AppColors.darkBorder, height: 24),
+                const Divider(color: AppColors.darkBorder, height: 20),
                 Row(
                   mainAxisAlignment: MainAxisAlignment.spaceBetween,
                   children: [
                     Text(
-                      'Số dư ví của bạn:',
-                      style: GoogleFonts.plusJakartaSans(
-                        fontSize: 14,
-                        color: AppColors.darkTextSecondary,
-                      ),
+                      'Số dư ví hiện tại:',
+                      style: GoogleFonts.plusJakartaSans(fontSize: 13, color: AppColors.darkTextSecondary),
                     ),
                     Row(
                       children: [
-                        Icon(
-                          Icons.account_balance_wallet_rounded,
-                          size: 16,
-                          color: hasEnoughCoins ? AppColors.mint : AppColors.amber,
-                        ),
-                        const SizedBox(width: 6),
                         Text(
                           '$currentCoins Coins',
                           style: GoogleFonts.plusJakartaSans(
-                            fontSize: 15,
+                            fontSize: 14,
                             fontWeight: FontWeight.w700,
-                            color: hasEnoughCoins ? Colors.white : AppColors.amber,
+                            color: hasEnoughCoins ? Colors.white : AppColors.rose,
                           ),
                         ),
+                        if (isVip) ...[
+                          const SizedBox(width: 6),
+                          Container(
+                            padding: const EdgeInsets.symmetric(horizontal: 5, vertical: 1.5),
+                            decoration: BoxDecoration(
+                              color: AppColors.mint,
+                              borderRadius: BorderRadius.circular(4),
+                            ),
+                            child: const Text(
+                              'VIP',
+                              style: TextStyle(fontSize: 9, fontWeight: FontWeight.w900, color: Colors.black),
+                            ),
+                          ),
+                        ],
                       ],
                     ),
                   ],

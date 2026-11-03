@@ -1,3 +1,4 @@
+import 'dart:convert';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'api_config.dart';
 
@@ -12,6 +13,12 @@ class PreferencesService {
   static const String _keyWalletBalance = 'panelforge_wallet_balance';
   static const String _keyIsVip = 'panelforge_is_vip';
   static const String _keyVipExpiresAt = 'panelforge_vip_expires_at';
+
+  // ─── Authentication & Session Keys ─────────────────────────────────────────
+  static const String _keyAuthUser = 'panelforge_auth_user';
+  static const String _keyRememberDeviceToken = 'panelforge_remember_device_token';
+  static const String _keyIsRestrictedReader = 'panelforge_is_restricted_reader';
+  static const String _keyRestrictionNotice = 'panelforge_restriction_notice';
 
   static SharedPreferences? _prefs;
 
@@ -176,6 +183,61 @@ class PreferencesService {
     } else {
       await _prefs?.remove(_keyVipExpiresAt);
     }
+  }
+
+  // ─── Authentication & Session Storage ───────────────────────────────────────
+  static Map<String, dynamic>? getAuthUser() {
+    final str = _prefs?.getString(_keyAuthUser);
+    if (str == null || str.isEmpty) return null;
+    try {
+      final decoded = jsonDecode(str);
+      if (decoded is Map<String, dynamic>) {
+        return decoded;
+      }
+    } catch (_) {}
+    return null;
+  }
+
+  static Future<void> saveAuthUser(Map<String, dynamic> userMap) async {
+    await _prefs?.setString(_keyAuthUser, jsonEncode(userMap));
+  }
+
+  static String? getRememberDeviceToken() {
+    return _prefs?.getString(_keyRememberDeviceToken);
+  }
+
+  static Future<void> setRememberDeviceToken(String? token) async {
+    if (token == null || token.trim().isEmpty) {
+      await _prefs?.remove(_keyRememberDeviceToken);
+    } else {
+      await _prefs?.setString(_keyRememberDeviceToken, token.trim());
+    }
+  }
+
+  static bool getIsRestrictedReader() {
+    return _prefs?.getBool(_keyIsRestrictedReader) ?? false;
+  }
+
+  static Future<void> setIsRestrictedReader(bool isRestricted) async {
+    await _prefs?.setBool(_keyIsRestrictedReader, isRestricted);
+  }
+
+  static String? getRestrictionNotice() {
+    return _prefs?.getString(_keyRestrictionNotice);
+  }
+
+  static Future<void> setRestrictionNotice(String? notice) async {
+    if (notice == null || notice.trim().isEmpty) {
+      await _prefs?.remove(_keyRestrictionNotice);
+    } else {
+      await _prefs?.setString(_keyRestrictionNotice, notice.trim());
+    }
+  }
+
+  static Future<void> clearAuthSession() async {
+    await _prefs?.remove(_keyAuthUser);
+    await _prefs?.remove(_keyIsRestrictedReader);
+    await _prefs?.remove(_keyRestrictionNotice);
   }
 }
 

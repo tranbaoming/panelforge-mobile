@@ -1,10 +1,16 @@
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../models/api_dtos.dart';
+import '../models/auth_models.dart';
 import '../models/comic_package_models.dart';
 import '../services/api_client.dart';
+import '../services/auth_service.dart';
 import '../services/catalog_service.dart';
 import '../services/cbz_package_service.dart';
+import '../services/preferences_service.dart';
 import '../services/preview_service.dart';
+
+export '../models/auth_models.dart';
+export '../services/auth_service.dart';
 
 export '../services/cbz_package_service.dart'
     show
@@ -79,4 +85,53 @@ final loadedComicPackageProvider = FutureProvider.family<LoadedComicPackage, ({S
     cbzUrl: args.cbzUrl,
   );
 });
+
+// ─── Authentication & Session Providers ─────────────────────────────────────
+final authServiceProvider = Provider<AuthService>((ref) {
+  final client = ref.watch(apiClientProvider);
+  return AuthService(client: client);
+});
+
+class AuthNotifier extends Notifier<AuthState> {
+  @override
+  AuthState build() {
+    AuthService.onAuthStateChanged = (newState) {
+      state = newState;
+    };
+    ref.onDispose(() {
+      AuthService.onAuthStateChanged = null;
+    });
+
+    final cachedUser = PreferencesService.getAuthUser();
+    if (cachedUser != null) {
+      try {
+        final user = AuthUser.fromJson(cachedUser);
+        final isRestricted = PreferencesService.getIsRestrictedReader();
+        final notice = PreferencesService.getRestrictionNotice();
+        return AuthState(
+          role: isRestricted ? MobileAuthRole.restrictedReader : MobileAuthRole.reader,
+          user: user,
+          restrictionNotice: notice,
+        );
+      } catch (_) {}
+    }
+    // Mặc định ban đầu khi chưa có phiên Reader hợp lệ: unauthenticated (hiển thị LoginPage)
+    return AuthState.unauthenticated();
+  }
+
+  void continueAsGuest() {
+    state = AuthState.guest();
+  }
+
+  void setUnauthenticated() {
+    state = AuthState.unauthenticated();
+  }
+
+  void updateState(AuthState newState) {
+    state = newState;
+  }
+}
+
+final authStateProvider = NotifierProvider<AuthNotifier, AuthState>(AuthNotifier.new);
+
 

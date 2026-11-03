@@ -5,9 +5,10 @@ import 'package:google_fonts/google_fonts.dart';
 import '../../models/comic_model.dart';
 import '../../providers/api_providers.dart';
 import '../../theme/app_theme.dart';
-import '../../services/api_config.dart';
 import '../../services/catalog_service.dart';
-import '../../services/preferences_service.dart';
+import '../../widgets/logout_dialog.dart';
+import '../../widgets/reader_profile_sheet.dart';
+import '../../widgets/server_config_dialog.dart';
 import '../../widgets/wallet_chip.dart';
 
 class ExplorePage extends ConsumerStatefulWidget {
@@ -76,90 +77,11 @@ class _ExplorePageState extends ConsumerState<ExplorePage> {
   }
 
   void _showServerConfigDialog() {
-    final ipController = TextEditingController(text: ApiConfig.baseUrl);
-    showDialog(
-      context: context,
-      builder: (context) {
-        return AlertDialog(
-          backgroundColor: AppColors.darkSurface,
-          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
-          title: Text(
-            'Cấu Hình Máy Chủ',
-            style: GoogleFonts.newsreader(fontWeight: FontWeight.w700, fontSize: 18, color: Colors.white),
-          ),
-          content: Column(
-            mainAxisSize: MainAxisSize.min,
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              Text(
-                'Địa chỉ máy chủ API:',
-                style: GoogleFonts.plusJakartaSans(fontSize: 12, color: AppColors.darkTextSecondary),
-              ),
-              const SizedBox(height: 8),
-              TextField(
-                controller: ipController,
-                decoration: InputDecoration(
-                  filled: true,
-                  fillColor: AppColors.darkCard,
-                  border: OutlineInputBorder(
-                    borderRadius: BorderRadius.circular(10),
-                    borderSide: const BorderSide(color: AppColors.darkBorder),
-                  ),
-                  enabledBorder: OutlineInputBorder(
-                    borderRadius: BorderRadius.circular(10),
-                    borderSide: const BorderSide(color: AppColors.darkBorder),
-                  ),
-                  hintText: 'http://10.0.2.2:5044',
-                  hintStyle: const TextStyle(color: Colors.white38),
-                  isDense: true,
-                ),
-                style: GoogleFonts.plusJakartaSans(fontSize: 13, color: Colors.white),
-              ),
-              const SizedBox(height: 14),
-              Row(
-                children: [
-                  Container(
-                    width: 10,
-                    height: 10,
-                    decoration: BoxDecoration(
-                      color: _isLiveBackend ? AppColors.mint : AppColors.amber,
-                      shape: BoxShape.circle,
-                    ),
-                  ),
-                  const SizedBox(width: 8),
-                  Text(
-                    _isLiveBackend ? 'Đã kết nối máy chủ' : 'Chưa có kết nối máy chủ',
-                    style: GoogleFonts.plusJakartaSans(
-                      fontSize: 12,
-                      fontWeight: FontWeight.w600,
-                      color: _isLiveBackend ? AppColors.mint : AppColors.amber,
-                    ),
-                  ),
-                ],
-              ),
-            ],
-          ),
-          actions: [
-            TextButton(
-              onPressed: () => Navigator.of(context).pop(),
-              child: const Text('Đóng', style: TextStyle(color: Colors.white70)),
-            ),
-            ElevatedButton(
-              style: ElevatedButton.styleFrom(
-                backgroundColor: AppColors.primary,
-                foregroundColor: Colors.white,
-                shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
-              ),
-              onPressed: () async {
-                await PreferencesService.setCustomBaseUrl(ipController.text.trim());
-                if (context.mounted) Navigator.of(context).pop();
-                _fetchCatalog();
-                ref.read(walletNotifierProvider.notifier).refresh();
-              },
-              child: const Text('Lưu & Thử kết nối'),
-            ),
-          ],
-        );
+    ServerConfigDialog.show(
+      context,
+      onSaved: () {
+        _fetchCatalog();
+        ref.read(walletNotifierProvider.notifier).refresh();
       },
     );
   }
@@ -185,6 +107,8 @@ class _ExplorePageState extends ConsumerState<ExplorePage> {
 
   @override
   Widget build(BuildContext context) {
+    final authState = ref.watch(authStateProvider);
+
     return Scaffold(
       backgroundColor: AppColors.darkBg,
       body: SafeArea(
@@ -202,67 +126,149 @@ class _ExplorePageState extends ConsumerState<ExplorePage> {
                     mainAxisAlignment: MainAxisAlignment.spaceBetween,
                     children: [
                       Expanded(
-                        child: Column(
-                          crossAxisAlignment: CrossAxisAlignment.start,
-                          children: [
-                            Row(
-                              children: [
-                                Container(
-                                  width: 10,
-                                  height: 10,
-                                  decoration: BoxDecoration(
-                                    color: _isLiveBackend ? AppColors.mint : AppColors.primary,
-                                    shape: BoxShape.circle,
-                                  ),
-                                ),
-                                const SizedBox(width: 8),
-                                Flexible(
-                                  child: Text(
-                                    _isLiveBackend ? 'PANELFORGE • TRỰC TUYẾN' : 'PANELFORGE',
-                                    style: GoogleFonts.plusJakartaSans(
-                                      fontSize: 11,
-                                      fontWeight: FontWeight.w800,
-                                      letterSpacing: 2.0,
+                        child: GestureDetector(
+                          onLongPress: _showServerConfigDialog,
+                          child: Column(
+                            crossAxisAlignment: CrossAxisAlignment.start,
+                            children: [
+                              Row(
+                                children: [
+                                  Container(
+                                    width: 10,
+                                    height: 10,
+                                    decoration: BoxDecoration(
                                       color: _isLiveBackend ? AppColors.mint : AppColors.primary,
+                                      shape: BoxShape.circle,
                                     ),
-                                    overflow: TextOverflow.ellipsis,
                                   ),
-                                ),
-                              ],
-                            ),
-                            const SizedBox(height: 2),
-                            Text(
-                              'Khám Phá Truyện Tranh',
-                              style: GoogleFonts.newsreader(
-                                fontSize: 26,
-                                fontWeight: FontWeight.w700,
-                                color: Colors.white,
-                                letterSpacing: -0.5,
+                                  const SizedBox(width: 8),
+                                  Flexible(
+                                    child: Text(
+                                      _isLiveBackend ? 'PANELFORGE • TRỰC TUYẾN' : 'PANELFORGE',
+                                      style: GoogleFonts.plusJakartaSans(
+                                        fontSize: 11,
+                                        fontWeight: FontWeight.w800,
+                                        letterSpacing: 2.0,
+                                        color: _isLiveBackend ? AppColors.mint : AppColors.primary,
+                                      ),
+                                      overflow: TextOverflow.ellipsis,
+                                    ),
+                                  ),
+                                ],
                               ),
-                              overflow: TextOverflow.ellipsis,
-                            ),
-                          ],
+                              const SizedBox(height: 2),
+                              Text(
+                                'Khám Phá Truyện Tranh',
+                                style: GoogleFonts.newsreader(
+                                  fontSize: 26,
+                                  fontWeight: FontWeight.w700,
+                                  color: Colors.white,
+                                  letterSpacing: -0.5,
+                                ),
+                                overflow: TextOverflow.ellipsis,
+                              ),
+                            ],
+                          ),
                         ),
                       ),
                       const SizedBox(width: 12),
                       Row(
                         children: [
                           if (_isLiveBackend) ...[
-                            const WalletChip(isServerConnected: true),
-                            const SizedBox(width: 8),
+                            if (authState.isGuest) ...[
+                              InkWell(
+                                onTap: () => context.push('/login'),
+                                borderRadius: BorderRadius.circular(20),
+                                child: Container(
+                                  padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
+                                  decoration: BoxDecoration(
+                                    color: AppColors.darkSurface,
+                                    borderRadius: BorderRadius.circular(20),
+                                    border: Border.all(color: AppColors.primary.withValues(alpha: 0.8), width: 1),
+                                  ),
+                                  child: Row(
+                                    mainAxisSize: MainAxisSize.min,
+                                    children: [
+                                      const Icon(Icons.login_rounded, color: AppColors.primary, size: 14),
+                                      const SizedBox(width: 4),
+                                      Text(
+                                        'Đăng nhập',
+                                        style: GoogleFonts.plusJakartaSans(
+                                          fontSize: 12,
+                                          fontWeight: FontWeight.w700,
+                                          color: AppColors.primary,
+                                        ),
+                                      ),
+                                    ],
+                                  ),
+                                ),
+                              ),
+                              const SizedBox(width: 8),
+                            ] else ...[
+                              const WalletChip(isServerConnected: true),
+                              const SizedBox(width: 8),
+                              InkWell(
+                                onTap: () => ReaderProfileSheet.show(context),
+                                borderRadius: BorderRadius.circular(20),
+                                child: Container(
+                                  padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+                                  decoration: BoxDecoration(
+                                    color: AppColors.darkSurface,
+                                    borderRadius: BorderRadius.circular(20),
+                                    border: Border.all(
+                                      color: authState.isRestricted
+                                          ? AppColors.amber.withValues(alpha: 0.6)
+                                          : AppColors.darkBorder,
+                                    ),
+                                  ),
+                                  child: Row(
+                                    mainAxisSize: MainAxisSize.min,
+                                    children: [
+                                      CircleAvatar(
+                                        radius: 11,
+                                        backgroundColor: authState.isRestricted
+                                            ? AppColors.amber
+                                            : AppColors.primary,
+                                        child: Text(
+                                          authState.user != null && authState.user!.fullName.isNotEmpty
+                                              ? authState.user!.fullName.substring(0, 1).toUpperCase()
+                                              : 'R',
+                                          style: const TextStyle(
+                                            fontSize: 10,
+                                            fontWeight: FontWeight.w800,
+                                            color: Colors.white,
+                                          ),
+                                        ),
+                                      ),
+                                      const SizedBox(width: 6),
+                                      ConstrainedBox(
+                                        constraints: const BoxConstraints(maxWidth: 80),
+                                        child: Text(
+                                          authState.user?.fullName.split(' ').first ?? 'Reader',
+                                          style: GoogleFonts.plusJakartaSans(
+                                            fontSize: 12,
+                                            fontWeight: FontWeight.w700,
+                                            color: Colors.white,
+                                          ),
+                                          overflow: TextOverflow.ellipsis,
+                                        ),
+                                      ),
+                                      const SizedBox(width: 2),
+                                      const Icon(Icons.arrow_drop_down_rounded,
+                                          color: AppColors.darkTextSecondary, size: 16),
+                                    ],
+                                  ),
+                                ),
+                              ),
+                              const SizedBox(width: 8),
+                            ],
                           ],
                           IconButton(
-                            icon: _isLoading
-                                ? const SizedBox(
-                                    width: 18,
-                                    height: 18,
-                                    child: CircularProgressIndicator(strokeWidth: 2, color: AppColors.primary),
-                                  )
-                                : const Icon(Icons.tune_rounded),
-                            onPressed: _showServerConfigDialog,
+                            icon: const Icon(Icons.logout_rounded, color: AppColors.primary, size: 20),
+                            tooltip: 'Đăng xuất',
+                            onPressed: () => showLogoutConfirmDialog(context, ref),
                             style: IconButton.styleFrom(
                               backgroundColor: AppColors.darkSurface,
-                              foregroundColor: Colors.white,
                               side: const BorderSide(color: AppColors.darkBorder),
                             ),
                           ),
@@ -420,19 +426,6 @@ class _ExplorePageState extends ConsumerState<ExplorePage> {
                             foregroundColor: Colors.white,
                             padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 12),
                             shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
-                          ),
-                        ),
-                        const SizedBox(height: 8),
-                        TextButton.icon(
-                          onPressed: _showServerConfigDialog,
-                          icon: const Icon(Icons.settings_outlined, size: 16, color: AppColors.darkTextSecondary),
-                          label: Text(
-                            'Cấu hình máy chủ',
-                            style: GoogleFonts.plusJakartaSans(
-                              fontSize: 13,
-                              color: AppColors.darkTextSecondary,
-                              decoration: TextDecoration.underline,
-                            ),
                           ),
                         ),
                       ],

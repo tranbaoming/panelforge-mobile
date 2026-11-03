@@ -3,6 +3,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:google_fonts/google_fonts.dart';
 import '../providers/api_providers.dart';
 import '../theme/app_theme.dart';
+import 'auth_modal_sheet.dart';
 import 'wallet_topup_dialog.dart';
 
 /// Chip hiển thị số dư ForgeCoins và huy hiệu VIP trên AppBar
@@ -28,7 +29,28 @@ class WalletChip extends ConsumerWidget {
         final isVip = wallet.isVip;
 
         return InkWell(
-          onTap: () => WalletTopupDialog.show(context),
+          onTap: () {
+            final authState = ref.read(authStateProvider);
+            if (authState.isGuest) {
+              ScaffoldMessenger.of(context).showSnackBar(
+                SnackBar(
+                  backgroundColor: AppColors.darkSurface,
+                  shape: RoundedRectangleBorder(
+                    borderRadius: BorderRadius.circular(12),
+                    side: const BorderSide(color: AppColors.primary),
+                  ),
+                  behavior: SnackBarBehavior.floating,
+                  content: Text(
+                    'Vui lòng đăng nhập tài khoản Độc giả để nạp và quản lý Ví ForgeCoins.',
+                    style: GoogleFonts.plusJakartaSans(fontSize: 12.5, color: Colors.white),
+                  ),
+                ),
+              );
+              AuthModalSheet.show(context);
+            } else {
+              WalletTopupDialog.show(context);
+            }
+          },
           borderRadius: BorderRadius.circular(20),
           child: Container(
             padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 5),

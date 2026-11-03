@@ -15,13 +15,52 @@ void main() {
   });
 
   group('PanelForge App UI & Navigation Automated Tests', () {
-    testWidgets('Renders app in Dark Obsidian theme and displays Explore Screen', (WidgetTester tester) async {
+    Future<void> enterExploreAsGuest(WidgetTester tester) async {
       await tester.pumpWidget(
         const ProviderScope(
           child: PanelForgeApp(),
         ),
       );
       await tester.pumpAndSettle();
+
+      final guestBtn = find.text('Tiếp tục với tư cách Khách (Guest)');
+      if (guestBtn.evaluate().isNotEmpty) {
+        await tester.ensureVisible(guestBtn);
+        await tester.pumpAndSettle();
+        await tester.tap(guestBtn);
+        await tester.pumpAndSettle();
+      }
+    }
+
+    testWidgets('App initially displays LoginPage when unauthenticated and routes to Explore after choosing Guest', (WidgetTester tester) async {
+      await tester.pumpWidget(
+        const ProviderScope(
+          child: PanelForgeApp(),
+        ),
+      );
+      await tester.pumpAndSettle();
+
+      // Verify that LoginPage is shown first
+      expect(find.text('Đăng Nhập Độc Giả'), findsOneWidget);
+      expect(find.text('Tiếp tục với tư cách Khách (Guest)'), findsOneWidget);
+      // Bottom navigation bar should NOT be shown on LoginPage
+      expect(find.text('Review & Cộng Tác'), findsNothing);
+
+      // Scroll to button and tap continue as Guest
+      final guestBtn = find.text('Tiếp tục với tư cách Khách (Guest)');
+      await tester.ensureVisible(guestBtn);
+      await tester.pumpAndSettle();
+      await tester.tap(guestBtn);
+      await tester.pumpAndSettle();
+
+      // Now ExplorePage is shown with bottom nav
+      expect(find.text('Khám Phá Truyện Tranh'), findsOneWidget);
+      expect(find.text('Khám Phá'), findsOneWidget);
+      expect(find.text('Review & Cộng Tác'), findsOneWidget);
+    });
+
+    testWidgets('Renders app in Dark Obsidian theme and displays Explore Screen', (WidgetTester tester) async {
+      await enterExploreAsGuest(tester);
 
       // Verify Brand Header
       expect(find.text('PANELFORGE'), findsOneWidget);
@@ -40,20 +79,16 @@ void main() {
       // Verify Error State elements when backend is disconnected in test
       expect(find.text('Không thể kết nối đến máy chủ'), findsOneWidget);
       expect(find.text('Thử lại'), findsOneWidget);
-      expect(find.text('Cấu hình máy chủ'), findsOneWidget);
+      // Verify Logout action button is directly visible on header
+      expect(find.byIcon(Icons.logout_rounded), findsWidgets);
     });
 
-    testWidgets('Tapping Cấu hình máy chủ opens configuration dialog', (WidgetTester tester) async {
-      await tester.pumpWidget(
-        const ProviderScope(
-          child: PanelForgeApp(),
-        ),
-      );
-      await tester.pumpAndSettle();
+    testWidgets('Long pressing Brand Header opens configuration dialog', (WidgetTester tester) async {
+      await enterExploreAsGuest(tester);
 
-      final configButton = find.text('Cấu hình máy chủ');
-      expect(configButton, findsOneWidget);
-      await tester.tap(configButton);
+      final brandHeader = find.text('Khám Phá Truyện Tranh');
+      expect(brandHeader, findsOneWidget);
+      await tester.longPress(brandHeader);
       await tester.pumpAndSettle();
 
       expect(find.text('Cấu Hình Máy Chủ'), findsOneWidget);
@@ -66,12 +101,7 @@ void main() {
     });
 
     testWidgets('Tapping format filter chips updates selection', (WidgetTester tester) async {
-      await tester.pumpWidget(
-        const ProviderScope(
-          child: PanelForgeApp(),
-        ),
-      );
-      await tester.pumpAndSettle();
+      await enterExploreAsGuest(tester);
 
       // Tap on Manga chip
       final mangaChip = find.text('Manga');
@@ -87,12 +117,7 @@ void main() {
     });
 
     testWidgets('Search bar responds to text input', (WidgetTester tester) async {
-      await tester.pumpWidget(
-        const ProviderScope(
-          child: PanelForgeApp(),
-        ),
-      );
-      await tester.pumpAndSettle();
+      await enterExploreAsGuest(tester);
 
       final searchField = find.byType(TextField).first;
       await tester.enterText(searchField, 'Solo Leveling');
@@ -102,12 +127,7 @@ void main() {
     });
 
     testWidgets('Navigates smoothly to Review Hub tab and verifies Dark Obsidian UI elements', (WidgetTester tester) async {
-      await tester.pumpWidget(
-        const ProviderScope(
-          child: PanelForgeApp(),
-        ),
-      );
-      await tester.pumpAndSettle();
+      await enterExploreAsGuest(tester);
 
       // Tap on 'Review & Cộng Tác' nav item
       final reviewTab = find.text('Review & Cộng Tác');

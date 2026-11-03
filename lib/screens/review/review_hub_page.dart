@@ -1,21 +1,23 @@
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
+import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 import 'package:google_fonts/google_fonts.dart';
 import '../../services/api_client.dart';
 import '../../services/preferences_service.dart';
 import '../../services/preview_service.dart';
 import '../../theme/app_theme.dart';
+import '../../widgets/logout_dialog.dart';
 import '../../widgets/qr_scanner_dialog.dart';
 
-class ReviewHubPage extends StatefulWidget {
+class ReviewHubPage extends ConsumerStatefulWidget {
   const ReviewHubPage({super.key});
 
   @override
-  State<ReviewHubPage> createState() => _ReviewHubPageState();
+  ConsumerState<ReviewHubPage> createState() => _ReviewHubPageState();
 }
 
-class _ReviewHubPageState extends State<ReviewHubPage> {
+class _ReviewHubPageState extends ConsumerState<ReviewHubPage> {
   final TextEditingController _linkController = TextEditingController();
   List<String> _recentTokens = [];
   bool _isValidating = false;
@@ -135,6 +137,7 @@ class _ReviewHubPageState extends State<ReviewHubPage> {
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
                     Row(
+                      mainAxisAlignment: MainAxisAlignment.spaceBetween,
                       children: [
                         Container(
                           padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
@@ -158,6 +161,15 @@ class _ReviewHubPageState extends State<ReviewHubPage> {
                                 ),
                               ),
                             ],
+                          ),
+                        ),
+                        IconButton(
+                          icon: const Icon(Icons.logout_rounded, color: AppColors.primary, size: 20),
+                          tooltip: 'Đăng xuất',
+                          onPressed: () => showLogoutConfirmDialog(context, ref),
+                          style: IconButton.styleFrom(
+                            backgroundColor: AppColors.darkSurface,
+                            side: const BorderSide(color: AppColors.darkBorder),
                           ),
                         ),
                       ],

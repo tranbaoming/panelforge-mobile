@@ -51,6 +51,13 @@ void main() {
     await PreferencesService.init();
     await PreferencesService.setLocalBalanceCoins(150);
     await PreferencesService.setLocalVip(isVip: false);
+    await PreferencesService.saveAuthUser({
+      'id': 'reader-test-1',
+      'email': 'reader@test.com',
+      'fullName': 'Test Reader',
+      'isActive': true,
+      'role': 'User',
+    });
   });
 
   group('MonetizationService & Wallet Tests', () {
