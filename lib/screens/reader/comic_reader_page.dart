@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 import 'package:google_fonts/google_fonts.dart';
@@ -8,9 +9,11 @@ import '../../models/comic_package_models.dart';
 import '../../providers/api_providers.dart';
 import '../../services/catalog_service.dart';
 import '../../services/preferences_service.dart';
+import '../../services/screen_security_service.dart';
 import '../../theme/app_theme.dart';
 import '../../widgets/interactive_scrubber.dart';
 import '../../widgets/reading_mode_switcher.dart';
+import '../../widgets/security_blur_shield.dart';
 import '../../widgets/text_region_detail_sheet.dart';
 import '../../widgets/unlock_chapter_bottom_sheet.dart';
 import '../../widgets/wallet_topup_dialog.dart';
@@ -29,7 +32,7 @@ class ComicReaderPage extends ConsumerStatefulWidget {
   ConsumerState<ComicReaderPage> createState() => _ComicReaderPageState();
 }
 
-class _ComicReaderPageState extends ConsumerState<ComicReaderPage> {
+class _ComicReaderPageState extends ConsumerState<ComicReaderPage> with WidgetsBindingObserver {
   final GlobalKey<ScaffoldState> _scaffoldKey = GlobalKey<ScaffoldState>();
   final GlobalKey<ReadingModeSwitcherState> _readerSwitcherKey = GlobalKey<ReadingModeSwitcherState>();
 
@@ -48,10 +51,119 @@ class _ComicReaderPageState extends ConsumerState<ComicReaderPage> {
   bool _showHud = true;
   int _currentPage = 1;
 
+  bool _isScreenLocked = false;
+  bool _isPrivacyShieldActive = false;
+
   @override
   void initState() {
     super.initState();
+    WidgetsBinding.instance.addObserver(this);
+    HardwareKeyboard.instance.addHandler(_handleKeyEvent);
+    ScreenSecurityService.keepScreenAwake(true);
     _loadData();
+  }
+
+  @override
+  void dispose() {
+    WidgetsBinding.instance.removeObserver(this);
+    HardwareKeyboard.instance.removeHandler(_handleKeyEvent);
+    ScreenSecurityService.keepScreenAwake(false);
+    ScreenSecurityService.unlockOrientation();
+    super.dispose();
+  }
+
+  @override
+  void didChangeAppLifecycleState(AppLifecycleState state) {
+    if (state == AppLifecycleState.inactive ||
+        state == AppLifecycleState.paused ||
+        state == AppLifecycleState.hidden) {
+      if (mounted && !_isPrivacyShieldActive) {
+        setState(() => _isPrivacyShieldActive = true);
+      }
+    } else if (state == AppLifecycleState.resumed) {
+      if (mounted && _isPrivacyShieldActive) {
+        setState(() => _isPrivacyShieldActive = false);
+      }
+    }
+  }
+
+  bool _handleKeyEvent(KeyEvent event) {
+    if (event is KeyDownEvent && event.logicalKey == LogicalKeyboardKey.printScreen) {
+      if (mounted) {
+        setState(() => _isPrivacyShieldActive = true);
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+            content: Text('🔒 Bảo mật: Không được phép chụp màn hình nội dung bản quyền PanelForge.'),
+            backgroundColor: AppColors.rose,
+            behavior: SnackBarBehavior.floating,
+          ),
+        );
+      }
+      return true;
+    }
+    return false;
+  }
+
+  void _enableScreenLock() {
+    setState(() {
+      _isScreenLocked = true;
+      _showHud = false;
+    });
+    ScreenSecurityService.lockOrientation(MediaQuery.of(context).orientation);
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(
+        backgroundColor: AppColors.darkSurface,
+        shape: RoundedRectangleBorder(
+          borderRadius: BorderRadius.circular(12),
+          side: const BorderSide(color: AppColors.primary, width: 1.2),
+        ),
+        behavior: SnackBarBehavior.floating,
+        duration: const Duration(seconds: 3),
+        content: Row(
+          children: [
+            const Icon(Icons.lock_rounded, color: AppColors.primary, size: 20),
+            const SizedBox(width: 10),
+            Expanded(
+              child: Text(
+                'Đã khóa màn hình: Chống bấm nhầm & cố định xoay. Nhấn giữ 2s nút khóa góc dưới để mở lại.',
+                style: GoogleFonts.plusJakartaSans(fontSize: 12.5, color: Colors.white),
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  void _disableScreenLock() {
+    setState(() {
+      _isScreenLocked = false;
+      _showHud = true;
+    });
+    ScreenSecurityService.unlockOrientation();
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(
+        backgroundColor: AppColors.darkSurface,
+        shape: RoundedRectangleBorder(
+          borderRadius: BorderRadius.circular(12),
+          side: const BorderSide(color: AppColors.mint, width: 1.2),
+        ),
+        behavior: SnackBarBehavior.floating,
+        duration: const Duration(seconds: 2),
+        content: Row(
+          children: [
+            const Icon(Icons.lock_open_rounded, color: AppColors.mint, size: 20),
+            const SizedBox(width: 10),
+            Expanded(
+              child: Text(
+                'Đã mở khóa thao tác màn hình.',
+                style: GoogleFonts.plusJakartaSans(fontSize: 12.5, color: Colors.white),
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
   }
 
   bool _isChapterUnlocked(ChapterItem chapter) {
@@ -257,6 +369,7 @@ class _ComicReaderPageState extends ConsumerState<ComicReaderPage> {
   }
 
   void _toggleHud() {
+    if (_isScreenLocked) return;
     setState(() {
       _showHud = !_showHud;
     });
@@ -386,6 +499,7 @@ class _ComicReaderPageState extends ConsumerState<ComicReaderPage> {
               isGuidedPanelMode: _isGuidedPanelMode,
               webtoonTileSpacing: _webtoonTileSpacing,
               onRegionTap: (region) {
+                if (_isScreenLocked) return;
                 TextRegionDetailSheet.show(
                   context,
                   region: region,
@@ -629,6 +743,14 @@ class _ComicReaderPageState extends ConsumerState<ComicReaderPage> {
                       },
                     ),
 
+                  // Lock Screen Button (Chống bấm nhầm & Cố định xoay)
+                  IconButton(
+                    icon: const Icon(Icons.lock_outline_rounded, size: 20),
+                    color: hudTextColor,
+                    tooltip: 'Khóa màn hình (Chống bấm nhầm & Cố định xoay)',
+                    onPressed: _enableScreenLock,
+                  ),
+
                   // Table of Contents Drawer Button
                   IconButton(
                     icon: const Icon(Icons.menu_book_rounded),
@@ -675,51 +797,84 @@ class _ComicReaderPageState extends ConsumerState<ComicReaderPage> {
               child: Column(
                 mainAxisSize: MainAxisSize.min,
                 children: [
-                  // Theme switchers: Đêm / Giấy Cổ / Sáng
+                  // Theme switchers: Đêm / Giấy Cổ / Sáng & Nút Khóa màn hình
                   Row(
                     mainAxisAlignment: MainAxisAlignment.center,
-                    children: ReaderThemeMode.values.map((theme) {
-                      final isSelected = _themeMode == theme;
-                      return Padding(
+                    children: [
+                      ...ReaderThemeMode.values.map((theme) {
+                        final isSelected = _themeMode == theme;
+                        return Padding(
+                          padding: const EdgeInsets.symmetric(horizontal: 4),
+                          child: InkWell(
+                            onTap: () => setState(() => _themeMode = theme),
+                            borderRadius: BorderRadius.circular(16),
+                            child: Container(
+                              padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 6),
+                              decoration: BoxDecoration(
+                                color: Color(theme.bgColor),
+                                borderRadius: BorderRadius.circular(16),
+                                border: Border.all(
+                                  color: isSelected ? AppColors.primary : AppColors.darkBorder,
+                                  width: isSelected ? 2.0 : 1.0,
+                                ),
+                              ),
+                              child: Row(
+                                children: [
+                                  Container(
+                                    width: 8,
+                                    height: 8,
+                                    decoration: BoxDecoration(
+                                      color: isSelected ? AppColors.primary : Colors.transparent,
+                                      shape: BoxShape.circle,
+                                    ),
+                                  ),
+                                  const SizedBox(width: 6),
+                                  Text(
+                                    theme.label,
+                                    style: GoogleFonts.plusJakartaSans(
+                                      fontSize: 11,
+                                      fontWeight: isSelected ? FontWeight.w800 : FontWeight.w500,
+                                      color: Color(theme.textColor),
+                                    ),
+                                  ),
+                                ],
+                              ),
+                            ),
+                          ),
+                        );
+                      }),
+                      Padding(
                         padding: const EdgeInsets.symmetric(horizontal: 4),
                         child: InkWell(
-                          onTap: () => setState(() => _themeMode = theme),
+                          onTap: _enableScreenLock,
                           borderRadius: BorderRadius.circular(16),
                           child: Container(
-                            padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 6),
+                            padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
                             decoration: BoxDecoration(
-                              color: Color(theme.bgColor),
+                              color: AppColors.primary.withValues(alpha: 0.15),
                               borderRadius: BorderRadius.circular(16),
                               border: Border.all(
-                                color: isSelected ? AppColors.primary : AppColors.darkBorder,
-                                width: isSelected ? 2.0 : 1.0,
+                                color: AppColors.primary.withValues(alpha: 0.5),
                               ),
                             ),
                             child: Row(
                               children: [
-                                Container(
-                                  width: 8,
-                                  height: 8,
-                                  decoration: BoxDecoration(
-                                    color: isSelected ? AppColors.primary : Colors.transparent,
-                                    shape: BoxShape.circle,
-                                  ),
-                                ),
-                                const SizedBox(width: 6),
+                                const Icon(Icons.lock_outline_rounded, size: 12, color: AppColors.primary),
+                                const SizedBox(width: 4),
                                 Text(
-                                  theme.label,
+                                  'Khóa',
                                   style: GoogleFonts.plusJakartaSans(
                                     fontSize: 11,
-                                    fontWeight: isSelected ? FontWeight.w800 : FontWeight.w500,
-                                    color: Color(theme.textColor),
+                                    fontWeight: FontWeight.w700,
+                                    color: AppColors.primary,
                                   ),
                                 ),
                               ],
                             ),
                           ),
                         ),
-                      );
-                    }).toList(),
+                      ),
+                    ],
                   ),
 
                   // Cài đặt khoảng cách khung tranh Webtoon (Adaptive Webtoon Spacing)
@@ -794,6 +949,59 @@ class _ComicReaderPageState extends ConsumerState<ComicReaderPage> {
               ),
             ),
           ),
+
+          // FLOATING LOCK PILL: Hiển thị khi đang khóa màn hình (Giữ 2s hoặc nhấn đúp để mở)
+          if (_isScreenLocked)
+            Positioned(
+              bottom: MediaQuery.of(context).padding.bottom + 24,
+              right: 20,
+              child: GestureDetector(
+                onLongPress: _disableScreenLock,
+                onDoubleTap: _disableScreenLock,
+                child: Container(
+                  padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 10),
+                  decoration: BoxDecoration(
+                    color: AppColors.darkSurface.withValues(alpha: 0.94),
+                    borderRadius: BorderRadius.circular(24),
+                    border: Border.all(color: AppColors.primary, width: 1.5),
+                    boxShadow: [
+                      BoxShadow(
+                        color: Colors.black.withValues(alpha: 0.5),
+                        blurRadius: 14,
+                        offset: const Offset(0, 4),
+                      ),
+                    ],
+                  ),
+                  child: Row(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      const Icon(Icons.lock_rounded, color: AppColors.primary, size: 18),
+                      const SizedBox(width: 8),
+                      Text(
+                        '🔒 Đang khóa • Giữ 2s để mở',
+                        style: GoogleFonts.plusJakartaSans(
+                          fontSize: 12,
+                          fontWeight: FontWeight.w700,
+                          color: Colors.white,
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+              ),
+            ),
+
+          // Lớp bảo mật chống chụp màn hình / chuyển tác vụ
+          if (_isPrivacyShieldActive)
+            Positioned.fill(
+              child: SecurityBlurShield(
+                title: '🔒 BẢO VỆ BẢN QUYỀN NỘI DUNG',
+                message: 'Nội dung truyện tranh tạm thời được che mờ khi chuyển tác vụ hoặc kích hoạt công cụ chụp màn hình.',
+                onDismiss: () {
+                  setState(() => _isPrivacyShieldActive = false);
+                },
+              ),
+            ),
         ],
       ),
     );
@@ -834,12 +1042,14 @@ class _ComicReaderPageState extends ConsumerState<ComicReaderPage> {
           ),
         ],
       ),
-      body: Center(
-        child: SingleChildScrollView(
-          padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 20),
-          child: Column(
-            mainAxisSize: MainAxisSize.min,
-            children: [
+      body: Stack(
+        children: [
+          Center(
+            child: SingleChildScrollView(
+              padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 20),
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
+                children: [
               // Icon khóa
               Container(
                 width: 88,
@@ -1009,7 +1219,19 @@ class _ComicReaderPageState extends ConsumerState<ComicReaderPage> {
           ),
         ),
       ),
-    );
+      if (_isPrivacyShieldActive)
+        Positioned.fill(
+          child: SecurityBlurShield(
+            title: '🔒 BẢO VỆ BẢN QUYỀN NỘI DUNG',
+            message: 'Nội dung tạm thời được che mờ khi chuyển tác vụ hoặc kích hoạt công cụ chụp màn hình.',
+            onDismiss: () {
+              setState(() => _isPrivacyShieldActive = false);
+            },
+          ),
+        ),
+    ],
+  ),
+);
   }
 
   Widget _buildTableOfContentsDrawer(SeriesItem series, ChapterItem currentChapter) {

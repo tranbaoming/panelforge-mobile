@@ -5,9 +5,12 @@ import '../../models/api_dtos.dart';
 import '../../models/comic_package_models.dart';
 import '../../models/review_model.dart';
 import '../../services/preview_service.dart';
+import '../../services/screen_security_service.dart';
 import '../../theme/app_theme.dart';
 import '../../widgets/annotation_sheet.dart';
+import '../../widgets/no_print_security_overlay.dart';
 import '../../widgets/panel_selection_detector.dart';
+import '../../widgets/security_blur_shield.dart';
 import '../../widgets/watermark_overlay.dart';
 
 class ReviewCanvasPage extends StatefulWidget {
@@ -19,17 +22,42 @@ class ReviewCanvasPage extends StatefulWidget {
   State<ReviewCanvasPage> createState() => _ReviewCanvasPageState();
 }
 
-class _ReviewCanvasPageState extends State<ReviewCanvasPage> {
+class _ReviewCanvasPageState extends State<ReviewCanvasPage> with WidgetsBindingObserver {
   ReviewManuscript? _manuscript;
   String? _selectedPanelId;
   int _totalAnnotationCount = 0;
   bool _isLoading = true;
   String? _errorMessage;
+  bool _isPrivacyShieldActive = false;
 
   @override
   void initState() {
     super.initState();
+    WidgetsBinding.instance.addObserver(this);
+    ScreenSecurityService.keepScreenAwake(true);
     _fetchLiveManuscript();
+  }
+
+  @override
+  void dispose() {
+    WidgetsBinding.instance.removeObserver(this);
+    ScreenSecurityService.keepScreenAwake(false);
+    super.dispose();
+  }
+
+  @override
+  void didChangeAppLifecycleState(AppLifecycleState state) {
+    if (state == AppLifecycleState.inactive ||
+        state == AppLifecycleState.paused ||
+        state == AppLifecycleState.hidden) {
+      if (mounted && !_isPrivacyShieldActive) {
+        setState(() => _isPrivacyShieldActive = true);
+      }
+    } else if (state == AppLifecycleState.resumed) {
+      if (mounted && _isPrivacyShieldActive) {
+        setState(() => _isPrivacyShieldActive = false);
+      }
+    }
   }
 
   Future<void> _fetchLiveManuscript() async {
@@ -212,213 +240,262 @@ class _ReviewCanvasPageState extends State<ReviewCanvasPage> {
     }
 
     final manuscript = _manuscript!;
-    final watermarkText = '${manuscript.recipientEmail} • BẢN REVIEW KHẨN';
+    final cleanToken = widget.token.length > 14 ? widget.token.substring(0, 14) : widget.token;
+    final watermarkText = 'BẢN THẢO NỘI BỘ - CẤM IN ẤN • $cleanToken';
 
-    return Scaffold(
-      backgroundColor: AppColors.darkBg,
-      appBar: AppBar(
-        backgroundColor: AppColors.darkBg.withValues(alpha: 0.9),
-        leading: IconButton(
-          icon: const Icon(Icons.arrow_back_ios_new_rounded, color: Colors.white, size: 20),
-          onPressed: () => context.pop(),
-        ),
-        title: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            Text(
-              manuscript.seriesTitle,
-              style: GoogleFonts.newsreader(
-                fontSize: 16,
-                fontWeight: FontWeight.w700,
-                color: Colors.white,
-              ),
-            ),
-            Text(
-              manuscript.chapterTitle,
-              style: GoogleFonts.plusJakartaSans(
-                fontSize: 11,
-                color: AppColors.darkTextSecondary,
-              ),
-            ),
-          ],
-        ),
-        actions: [
-          Container(
-            margin: const EdgeInsets.only(right: 14),
-            padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
-            decoration: BoxDecoration(
-              color: AppColors.mintSubtle,
-              borderRadius: BorderRadius.circular(14),
-              border: Border.all(color: AppColors.mint.withValues(alpha: 0.4)),
-            ),
-            child: Row(
-              children: [
-                const Icon(Icons.comment_rounded, size: 12, color: AppColors.mint),
-                const SizedBox(width: 4),
-                Text(
-                  '$_totalAnnotationCount GÓP Ý',
-                  style: GoogleFonts.plusJakartaSans(
-                    fontSize: 10,
-                    fontWeight: FontWeight.w800,
-                    color: AppColors.mint,
-                  ),
-                ),
-              ],
-            ),
+    return NoPrintSecurityOverlay(
+      token: widget.token,
+      onSecurityTriggered: () {
+        setState(() => _isPrivacyShieldActive = true);
+      },
+      child: Scaffold(
+        backgroundColor: AppColors.darkBg,
+        appBar: AppBar(
+          backgroundColor: AppColors.darkBg.withValues(alpha: 0.9),
+          leading: IconButton(
+            icon: const Icon(Icons.arrow_back_ios_new_rounded, color: Colors.white, size: 20),
+            onPressed: () => context.pop(),
           ),
-        ],
-      ),
-      body: SafeArea(
-        child: Column(
-          children: [
-            // Top DRM Watermark warning ribbon
+          title: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Text(
+                manuscript.seriesTitle,
+                style: GoogleFonts.newsreader(
+                  fontSize: 16,
+                  fontWeight: FontWeight.w700,
+                  color: Colors.white,
+                ),
+              ),
+              Text(
+                manuscript.chapterTitle,
+                style: GoogleFonts.plusJakartaSans(
+                  fontSize: 11,
+                  color: AppColors.darkTextSecondary,
+                ),
+              ),
+            ],
+          ),
+          actions: [
+            // Huy hiệu CẤM IN & SAO CHÉP (NO-PRINT DRM)
             Container(
-              padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 6),
-              color: AppColors.primary.withValues(alpha: 0.12),
+              margin: const EdgeInsets.only(right: 8),
+              padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+              decoration: BoxDecoration(
+                color: AppColors.rose.withValues(alpha: 0.15),
+                borderRadius: BorderRadius.circular(12),
+                border: Border.all(color: AppColors.rose.withValues(alpha: 0.5)),
+              ),
               child: Row(
+                mainAxisSize: MainAxisSize.min,
                 children: [
-                  const Icon(Icons.lock_clock_rounded, size: 13, color: AppColors.primary),
-                  const SizedBox(width: 8),
-                  Expanded(
-                    child: Text(
-                      'Watermark đang nhúng: ${manuscript.recipientEmail}',
-                      style: GoogleFonts.plusJakartaSans(
-                        fontSize: 10,
-                        fontWeight: FontWeight.w700,
-                        color: AppColors.primary,
-                      ),
-                    ),
-                  ),
+                  const Icon(Icons.block_rounded, size: 12, color: AppColors.rose),
+                  const SizedBox(width: 4),
                   Text(
-                    '${manuscript.panels.length} Khung Tranh',
+                    '🚫 CẤM IN & SAO CHÉP (NO-PRINT DRM)',
                     style: GoogleFonts.plusJakartaSans(
-                      fontSize: 10,
-                      fontWeight: FontWeight.w600,
-                      color: AppColors.darkTextSecondary,
+                      fontSize: 9.5,
+                      fontWeight: FontWeight.w800,
+                      color: AppColors.rose,
                     ),
                   ),
                 ],
               ),
             ),
-
-            // MAIN SCROLLABLE CANVAS WITH WATERMARK OVERLAY
-            Expanded(
-              child: WatermarkOverlay(
-                text: watermarkText,
-                spacingX: 200,
-                spacingY: 90,
-                opacity: 0.14,
-                child: manuscript.panels.isEmpty
-                    ? Center(
-                        child: Padding(
-                          padding: const EdgeInsets.all(24),
-                          child: Column(
-                            mainAxisSize: MainAxisSize.min,
-                            children: [
-                              const Icon(Icons.panorama_outlined, size: 48, color: Colors.white24),
-                              const SizedBox(height: 12),
-                              Text(
-                                'Bản thảo chưa có khung tranh nào',
-                                style: GoogleFonts.plusJakartaSans(
-                                  fontSize: 14,
-                                  color: Colors.white70,
-                                ),
-                              ),
-                            ],
-                          ),
-                        ),
-                      )
-                    : ListView.builder(
-                        physics: const BouncingScrollPhysics(),
-                        padding: const EdgeInsets.symmetric(vertical: 16),
-                        itemCount: manuscript.panels.length,
-                        itemBuilder: (context, index) {
-                          final panel = manuscript.panels[index];
-                          final isSelected = panel.id == _selectedPanelId;
-
-                          return PanelSelectionDetector(
-                            panel: panel,
-                            isSelected: isSelected,
-                            onTap: () {
-                              setState(() {
-                                _selectedPanelId = panel.id;
-                              });
-                            },
-                            onAnnotatePressed: () {
-                              _openAnnotationSheet(panel);
-                            },
-                            onTextRegionTap: (region) {
-                              setState(() {
-                                _selectedPanelId = panel.id;
-                              });
-                              _openAnnotationSheet(panel, selectedTextRegion: region);
-                            },
-                            onCanvasPointTap: (point) {
-                              setState(() {
-                                _selectedPanelId = panel.id;
-                              });
-                              _openAnnotationSheet(panel, point: point);
-                            },
-                          );
-                        },
-                      ),
+            Container(
+              margin: const EdgeInsets.only(right: 14),
+              padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
+              decoration: BoxDecoration(
+                color: AppColors.mintSubtle,
+                borderRadius: BorderRadius.circular(14),
+                border: Border.all(color: AppColors.mint.withValues(alpha: 0.4)),
+              ),
+              child: Row(
+                children: [
+                  const Icon(Icons.comment_rounded, size: 12, color: AppColors.mint),
+                  const SizedBox(width: 4),
+                  Text(
+                    '$_totalAnnotationCount GÓP Ý',
+                    style: GoogleFonts.plusJakartaSans(
+                      fontSize: 10,
+                      fontWeight: FontWeight.w800,
+                      color: AppColors.mint,
+                    ),
+                  ),
+                ],
               ),
             ),
-
-            // BOTTOM CONTROL BAR
-            if (manuscript.panels.isNotEmpty)
-              Container(
-                padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
-                decoration: const BoxDecoration(
-                  color: AppColors.darkSurface,
-                  border: Border(
-                    top: BorderSide(color: AppColors.darkBorder),
-                  ),
-                ),
-                child: Row(
-                  children: [
-                    Expanded(
-                      child: Column(
-                        crossAxisAlignment: CrossAxisAlignment.start,
-                        mainAxisSize: MainAxisSize.min,
-                        children: [
-                          Text(
-                            'Khung đang chọn:',
+          ],
+        ),
+        body: Stack(
+          children: [
+            SafeArea(
+              child: Column(
+                children: [
+                  // Top DRM Watermark warning ribbon
+                  Container(
+                    padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 6),
+                    color: AppColors.primary.withValues(alpha: 0.12),
+                    child: Row(
+                      children: [
+                        const Icon(Icons.lock_clock_rounded, size: 13, color: AppColors.primary),
+                        const SizedBox(width: 8),
+                        Expanded(
+                          child: Text(
+                            'Watermark đang nhúng: ${manuscript.recipientEmail}',
                             style: GoogleFonts.plusJakartaSans(
                               fontSize: 10,
-                              color: AppColors.darkTextSecondary,
+                              fontWeight: FontWeight.w700,
+                              color: AppColors.primary,
                             ),
                           ),
-                          Text(
-                            _selectedPanelId != null
-                                ? 'PANEL #${manuscript.panels.firstWhere((p) => p.id == _selectedPanelId, orElse: () => manuscript.panels.first).panelNumber}'
-                                : 'Chưa chọn',
-                            style: GoogleFonts.plusJakartaSans(
-                              fontSize: 13,
-                              fontWeight: FontWeight.w800,
-                              color: Colors.white,
+                        ),
+                        Text(
+                          '${manuscript.panels.length} Khung Tranh',
+                          style: GoogleFonts.plusJakartaSans(
+                            fontSize: 10,
+                            fontWeight: FontWeight.w600,
+                            color: AppColors.darkTextSecondary,
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+
+                  // MAIN SCROLLABLE CANVAS WITH WATERMARK OVERLAY (30 độ nghiêng)
+                  Expanded(
+                    child: WatermarkOverlay(
+                      text: watermarkText,
+                      angle: -30 * 3.1415926535 / 180,
+                      spacingX: 200,
+                      spacingY: 90,
+                      opacity: 0.14,
+                      child: manuscript.panels.isEmpty
+                          ? Center(
+                              child: Padding(
+                                padding: const EdgeInsets.all(24),
+                                child: Column(
+                                  mainAxisSize: MainAxisSize.min,
+                                  children: [
+                                    const Icon(Icons.panorama_outlined, size: 48, color: Colors.white24),
+                                    const SizedBox(height: 12),
+                                    Text(
+                                      'Bản thảo chưa có khung tranh nào',
+                                      style: GoogleFonts.plusJakartaSans(
+                                        fontSize: 14,
+                                        color: Colors.white70,
+                                      ),
+                                    ),
+                                  ],
+                                ),
+                              ),
+                            )
+                          : ListView.builder(
+                              physics: const BouncingScrollPhysics(),
+                              padding: const EdgeInsets.symmetric(vertical: 16),
+                              itemCount: manuscript.panels.length,
+                              itemBuilder: (context, index) {
+                                final panel = manuscript.panels[index];
+                                final isSelected = panel.id == _selectedPanelId;
+
+                                return PanelSelectionDetector(
+                                  panel: panel,
+                                  isSelected: isSelected,
+                                  onTap: () {
+                                    setState(() {
+                                      _selectedPanelId = panel.id;
+                                    });
+                                  },
+                                  onAnnotatePressed: () {
+                                    _openAnnotationSheet(panel);
+                                  },
+                                  onTextRegionTap: (region) {
+                                    setState(() {
+                                      _selectedPanelId = panel.id;
+                                    });
+                                    _openAnnotationSheet(panel, selectedTextRegion: region);
+                                  },
+                                  onCanvasPointTap: (point) {
+                                    setState(() {
+                                      _selectedPanelId = panel.id;
+                                    });
+                                    _openAnnotationSheet(panel, point: point);
+                                  },
+                                );
+                              },
+                            ),
+                    ),
+                  ),
+
+                  // BOTTOM CONTROL BAR
+                  if (manuscript.panels.isNotEmpty)
+                    Container(
+                      padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+                      decoration: const BoxDecoration(
+                        color: AppColors.darkSurface,
+                        border: Border(
+                          top: BorderSide(color: AppColors.darkBorder),
+                        ),
+                      ),
+                      child: Row(
+                        children: [
+                          Expanded(
+                            child: Column(
+                              crossAxisAlignment: CrossAxisAlignment.start,
+                              mainAxisSize: MainAxisSize.min,
+                              children: [
+                                Text(
+                                  'Khung đang chọn:',
+                                  style: GoogleFonts.plusJakartaSans(
+                                    fontSize: 10,
+                                    color: AppColors.darkTextSecondary,
+                                  ),
+                                ),
+                                Text(
+                                  _selectedPanelId != null
+                                      ? 'PANEL #${manuscript.panels.firstWhere((p) => p.id == _selectedPanelId, orElse: () => manuscript.panels.first).panelNumber}'
+                                      : 'Chưa chọn',
+                                  style: GoogleFonts.plusJakartaSans(
+                                    fontSize: 13,
+                                    fontWeight: FontWeight.w800,
+                                    color: Colors.white,
+                                  ),
+                                ),
+                              ],
+                            ),
+                          ),
+                          ElevatedButton.icon(
+                            onPressed: () {
+                              final currentPanel = manuscript.panels.firstWhere(
+                                (p) => p.id == _selectedPanelId,
+                                orElse: () => manuscript.panels.first,
+                              );
+                              _openAnnotationSheet(currentPanel);
+                            },
+                            icon: const Icon(Icons.add_comment_rounded, size: 16),
+                            label: const Text('GÓP Ý PANEL NÀY'),
+                            style: ElevatedButton.styleFrom(
+                              backgroundColor: AppColors.primary,
+                              foregroundColor: Colors.white,
+                              padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
                             ),
                           ),
                         ],
                       ),
                     ),
-                    ElevatedButton.icon(
-                      onPressed: () {
-                        final currentPanel = manuscript.panels.firstWhere(
-                          (p) => p.id == _selectedPanelId,
-                          orElse: () => manuscript.panels.first,
-                        );
-                        _openAnnotationSheet(currentPanel);
-                      },
-                      icon: const Icon(Icons.add_comment_rounded, size: 16),
-                      label: const Text('GÓP Ý PANEL NÀY'),
-                      style: ElevatedButton.styleFrom(
-                        backgroundColor: AppColors.primary,
-                        foregroundColor: Colors.white,
-                        padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
-                      ),
-                    ),
-                  ],
+                ],
+              ),
+            ),
+
+            // Lớp màn chắn bảo mật khi ứng dụng mất tiêu điểm hoặc khi bấm phím chụp màn hình
+            if (_isPrivacyShieldActive)
+              Positioned.fill(
+                child: SecurityBlurShield(
+                  title: '🔒 BẢN THẢO NỘI BỘ ĐANG ĐƯỢC BẢO VỆ',
+                  message: 'Màn hình tạm thời bị ẩn khi chuyển ứng dụng hoặc khi kích hoạt công cụ chụp màn hình theo chính sách bản quyền Studio.',
+                  onDismiss: () {
+                    setState(() => _isPrivacyShieldActive = false);
+                  },
                 ),
               ),
           ],
