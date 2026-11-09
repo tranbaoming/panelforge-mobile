@@ -1,5 +1,6 @@
 import 'dart:convert';
 import 'package:shared_preferences/shared_preferences.dart';
+import '../models/api_dtos.dart';
 import 'api_config.dart';
 
 class PreferencesService {
@@ -10,7 +11,10 @@ class PreferencesService {
   static const String _keyRecentTokens = 'panelforge_recent_tokens';
   static const String _keyOfflineChapters = 'panelforge_offline_chapters';
   static const String _keyUnlockedChapters = 'panelforge_unlocked_chapters';
+  static const String _keyChapterEntitlements = 'panelforge_chapter_entitlements';
   static const String _keyWalletBalance = 'panelforge_wallet_balance';
+  static const String _keyWalletBalanceVnd = 'panelforge_wallet_balance_vnd';
+  static const String _keyWalletTransactions = 'panelforge_wallet_transactions';
   static const String _keyIsVip = 'panelforge_is_vip';
   static const String _keyVipExpiresAt = 'panelforge_vip_expires_at';
 
@@ -131,7 +135,7 @@ class PreferencesService {
     return getOfflineChapterIds().contains(chapterId.trim());
   }
 
-  // ─── Unlocked Chapters & Monetization ─────────────────────────────────────
+  // ─── Unlocked Chapters & Entitlements ─────────────────────────────────────
   static Set<String> getUnlockedChapterIds() {
     final list = _prefs?.getStringList(_keyUnlockedChapters) ?? [];
     return list.toSet();
@@ -145,17 +149,105 @@ class PreferencesService {
     await _prefs?.setStringList(_keyUnlockedChapters, current.toList());
   }
 
+  static Future<void> removeUnlockedChapterId(String chapterId) async {
+    final clean = chapterId.trim();
+    final current = getUnlockedChapterIds();
+    current.remove(clean);
+    await _prefs?.setStringList(_keyUnlockedChapters, current.toList());
+  }
+
+  static Map<String, ChapterEntitlement> getChapterEntitlements() {
+    final rawStr = _prefs?.getString(_keyChapterEntitlements);
+    if (rawStr == null || rawStr.isEmpty) return {};
+    try {
+      final decoded = jsonDecode(rawStr) as Map<String, dynamic>;
+      return decoded.map(
+        (key, value) => MapEntry(
+          key,
+          ChapterEntitlement.fromJson(value as Map<String, dynamic>),
+        ),
+      );
+    } catch (_) {
+      return {};
+    }
+  }
+
+  static ChapterEntitlement? getChapterEntitlement(String chapterId) {
+    final entitlements = getChapterEntitlements();
+    return entitlements[chapterId.trim()];
+  }
+
+  static Future<void> saveChapterEntitlement(ChapterEntitlement entitlement) async {
+    final entitlements = getChapterEntitlements();
+    final cleanId = entitlement.chapterId.trim();
+    entitlements[cleanId] = entitlement;
+    final encoded = jsonEncode(entitlements.map((k, v) => MapEntry(k, v.toJson())));
+    await _prefs?.setString(_keyChapterEntitlements, encoded);
+
+    if (entitlement.isValid) {
+      await addUnlockedChapterId(cleanId);
+    } else {
+      await removeUnlockedChapterId(cleanId);
+    }
+  }
+
+  static Future<void> removeChapterEntitlement(String chapterId) async {
+    final cleanId = chapterId.trim();
+    final entitlements = getChapterEntitlements();
+    entitlements.remove(cleanId);
+    final encoded = jsonEncode(entitlements.map((k, v) => MapEntry(k, v.toJson())));
+    await _prefs?.setString(_keyChapterEntitlements, encoded);
+    await removeUnlockedChapterId(cleanId);
+  }
+
   static bool isChapterUnlocked(String chapterId) {
+    if (getLocalIsVip()) return true;
+    final ent = getChapterEntitlement(chapterId);
+    if (ent != null) {
+      return ent.isValid;
+    }
     return getUnlockedChapterIds().contains(chapterId.trim());
   }
 
   // ─── Local Wallet & VIP Cache ─────────────────────────────────────────────
+  static int getLocalBalanceVnd() {
+    final vnd = _prefs?.getInt(_keyWalletBalanceVnd);
+    if (vnd != null) return vnd;
+    final coins = _prefs?.getInt(_keyWalletBalance);
+    if (coins != null && coins > 0) return coins * 100;
+    return 50000;
+  }
+
+  static Future<void> setLocalBalanceVnd(int amount) async {
+    await _prefs?.setInt(_keyWalletBalanceVnd, amount);
+    await _prefs?.setInt(_keyWalletBalance, amount ~/ 100);
+  }
+
   static int getLocalBalanceCoins() {
-    return _prefs?.getInt(_keyWalletBalance) ?? 0;
+    return getLocalBalanceVnd() ~/ 100;
   }
 
   static Future<void> setLocalBalanceCoins(int coins) async {
-    await _prefs?.setInt(_keyWalletBalance, coins);
+    await setLocalBalanceVnd(coins * 100);
+  }
+
+  static List<WalletTransactionDto> getWalletTransactions() {
+    final strList = _prefs?.getStringList(_keyWalletTransactions) ?? [];
+    final list = <WalletTransactionDto>[];
+    for (final str in strList) {
+      try {
+        final map = jsonDecode(str) as Map<String, dynamic>;
+        list.add(WalletTransactionDto.fromJson(map));
+      } catch (_) {}
+    }
+    return list;
+  }
+
+  static Future<void> addWalletTransaction(WalletTransactionDto tx) async {
+    final list = getWalletTransactions();
+    list.insert(0, tx);
+    final encoded = list.take(50).map((t) => jsonEncode(t.toJson())).toList();
+    await _prefs?.setStringList(_keyWalletTransactions, encoded);
   }
 
   static bool getLocalIsVip() {
@@ -200,6 +292,20 @@ class PreferencesService {
 
   static Future<void> saveAuthUser(Map<String, dynamic> userMap) async {
     await _prefs?.setString(_keyAuthUser, jsonEncode(userMap));
+    // Khởi tạo số dư ví mặc định 50.000đ cho độc giả mới nếu chưa có
+    if (_prefs?.getInt(_keyWalletBalanceVnd) == null &&
+        _prefs?.getInt(_keyWalletBalance) == null) {
+      await setLocalBalanceVnd(50000);
+      await addWalletTransaction(
+        WalletTransactionDto(
+          id: 'welcome-${DateTime.now().millisecondsSinceEpoch}',
+          title: 'Quà tặng chào mừng Độc giả mới',
+          amountVnd: 50000,
+          createdAt: DateTime.now(),
+          balanceAfter: 50000,
+        ),
+      );
+    }
   }
 
   static String? getRememberDeviceToken() {

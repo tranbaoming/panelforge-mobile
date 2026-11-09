@@ -58,6 +58,8 @@ class _ComicReaderPageState extends ConsumerState<ComicReaderPage> {
     if (chapter.isFree) return true;
     final wallet = ref.watch(walletNotifierProvider).asData?.value;
     if (wallet?.isVip ?? false) return true;
+    final ent = PreferencesService.getChapterEntitlement(chapter.id);
+    if (ent != null) return ent.isValid;
     final unlockedIds = ref.watch(unlockedChaptersProvider);
     if (unlockedIds.contains(chapter.id)) return true;
     if (PreferencesService.isChapterUnlocked(chapter.id)) return true;
@@ -190,6 +192,58 @@ class _ComicReaderPageState extends ConsumerState<ComicReaderPage> {
           _isLoading = false;
           _currentPage = 1;
         });
+
+        // Tiêu hao lượt xem nếu là tập thuê có giới hạn số lần xem
+        if (!currentChapter.isFree) {
+          WidgetsBinding.instance.addPostFrameCallback((_) async {
+            if (!mounted) return;
+            final consumeResult = await ref
+                .read(walletNotifierProvider.notifier)
+                .consumeChapterView(currentChapter.id);
+            if (consumeResult.message != null && mounted) {
+              ScaffoldMessenger.of(context).showSnackBar(
+                SnackBar(
+                  backgroundColor: AppColors.darkSurface,
+                  shape: RoundedRectangleBorder(
+                    borderRadius: BorderRadius.circular(10),
+                    side: BorderSide(
+                      color: consumeResult.remainingViews == 0
+                          ? AppColors.rose
+                          : AppColors.primary,
+                      width: 1,
+                    ),
+                  ),
+                  behavior: SnackBarBehavior.floating,
+                  duration: const Duration(seconds: 3),
+                  content: Row(
+                    children: [
+                      Icon(
+                        consumeResult.remainingViews == 0
+                            ? Icons.lock_clock_rounded
+                            : Icons.visibility_rounded,
+                        color: consumeResult.remainingViews == 0
+                            ? AppColors.rose
+                            : AppColors.primary,
+                        size: 18,
+                      ),
+                      const SizedBox(width: 8),
+                      Expanded(
+                        child: Text(
+                          consumeResult.message!,
+                          style: GoogleFonts.plusJakartaSans(
+                            fontSize: 12.5,
+                            fontWeight: FontWeight.w600,
+                            color: Colors.white,
+                          ),
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+              );
+            }
+          });
+        }
       }
     } catch (e) {
       debugPrint('[ComicReader Content Load Error] $e');
@@ -215,6 +269,7 @@ class _ComicReaderPageState extends ConsumerState<ComicReaderPage> {
       UnlockChapterBottomSheet.show(
         context,
         chapter: chapter,
+        series: _series,
         onUnlocked: () {
           _loadChapterContent(_series!, chapter);
         },
@@ -747,8 +802,13 @@ class _ComicReaderPageState extends ConsumerState<ComicReaderPage> {
   /// Màn hình Paywall khóa chương truyện giao diện Dark Obsidian
   Widget _buildPaywallView(SeriesItem series, ChapterItem currentChapter) {
     final wallet = ref.watch(walletNotifierProvider).asData?.value;
-    final balance = wallet?.balanceCoins ?? 0;
-    final price = currentChapter.priceCoins;
+    final cachedVnd = PreferencesService.getLocalBalanceVnd();
+    final balanceVnd = wallet?.balanceVnd ?? cachedVnd;
+
+    final isWeeklyHot = currentChapter.isWeeklyHot || currentChapter.priceVnd == 5000;
+    final priceVnd = currentChapter.priceVnd > 0
+        ? currentChapter.priceVnd
+        : (isWeeklyHot ? series.hotChapterPriceVnd : series.baseChapterPriceVnd);
 
     return Scaffold(
       backgroundColor: AppColors.darkBg,
@@ -838,10 +898,10 @@ class _ComicReaderPageState extends ConsumerState<ComicReaderPage> {
                         ),
                         Row(
                           children: [
-                            const Icon(Icons.monetization_on_rounded, size: 16, color: AppColors.primary),
+                            const Icon(Icons.account_balance_wallet_rounded, size: 15, color: AppColors.primary),
                             const SizedBox(width: 4),
                             Text(
-                              '$price ForgeCoins',
+                              formatVnd(priceVnd),
                               style: GoogleFonts.plusJakartaSans(
                                 fontSize: 14,
                                 fontWeight: FontWeight.w800,
@@ -864,11 +924,11 @@ class _ComicReaderPageState extends ConsumerState<ComicReaderPage> {
                           style: GoogleFonts.plusJakartaSans(fontSize: 13, color: AppColors.darkTextSecondary),
                         ),
                         Text(
-                          '$balance ForgeCoins',
+                          formatVnd(balanceVnd),
                           style: GoogleFonts.plusJakartaSans(
                             fontSize: 14,
                             fontWeight: FontWeight.w700,
-                            color: balance >= price ? AppColors.mint : AppColors.rose,
+                            color: balanceVnd >= priceVnd ? AppColors.mint : AppColors.rose,
                           ),
                         ),
                       ],
@@ -886,6 +946,7 @@ class _ComicReaderPageState extends ConsumerState<ComicReaderPage> {
                     UnlockChapterBottomSheet.show(
                       context,
                       chapter: currentChapter,
+                      series: series,
                       onUnlocked: () {
                         _loadChapterContent(series, currentChapter);
                       },
@@ -893,7 +954,7 @@ class _ComicReaderPageState extends ConsumerState<ComicReaderPage> {
                   },
                   icon: const Icon(Icons.lock_open_rounded, size: 18),
                   label: Text(
-                    'Mở Khóa Ngay ($price Xu)',
+                    'Mở Khóa Ngay (${formatVnd(priceVnd)})',
                     style: GoogleFonts.plusJakartaSans(fontWeight: FontWeight.w800),
                   ),
                   style: ElevatedButton.styleFrom(
@@ -906,25 +967,24 @@ class _ComicReaderPageState extends ConsumerState<ComicReaderPage> {
               ),
               const SizedBox(height: 12),
 
-              // Nút VIP Pass
+              // Nút Nạp tiền vào Ví
               SizedBox(
                 width: double.infinity,
                 child: OutlinedButton.icon(
                   onPressed: () {
-                    WalletTopupDialog.show(context, initialTab: 1);
+                    WalletTopupDialog.show(context, initialTab: 0);
                   },
-                  icon: const Icon(Icons.workspace_premium_rounded, size: 18, color: AppColors.amber),
+                  icon: const Icon(Icons.add_circle_outline_rounded, size: 18, color: AppColors.primary),
                   label: Text(
-                    'Nâng cấp VIP Pass (Đọc Không Giới Hạn)',
+                    'Nạp Tiền Vào Ví',
                     style: GoogleFonts.plusJakartaSans(
-                      fontSize: 13,
                       fontWeight: FontWeight.w700,
-                      color: AppColors.amber,
+                      color: Colors.white,
                     ),
                   ),
                   style: OutlinedButton.styleFrom(
-                    side: const BorderSide(color: AppColors.amber, width: 1.2),
-                    padding: const EdgeInsets.symmetric(vertical: 13),
+                    side: const BorderSide(color: AppColors.darkBorder),
+                    padding: const EdgeInsets.symmetric(vertical: 14),
                     shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
                   ),
                 ),
@@ -1068,7 +1128,7 @@ class _ComicReaderPageState extends ConsumerState<ComicReaderPage> {
                                   const Icon(Icons.lock_rounded, size: 11, color: AppColors.primary),
                                   const SizedBox(width: 3),
                                   Text(
-                                    '${ch.priceCoins}',
+                                    formatVnd(ch.priceVnd > 0 ? ch.priceVnd : series.baseChapterPriceVnd),
                                     style: GoogleFonts.plusJakartaSans(
                                       fontSize: 10,
                                       fontWeight: FontWeight.w800,

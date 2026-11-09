@@ -83,6 +83,11 @@ class ChapterItem {
   final bool isFree;
   final bool isUnlocked;
   final int priceCoins;
+  final int priceVnd;
+  final int rentalPriceVnd;
+  final ChapterAccessPolicy accessPolicy;
+  final int? maxAllowedViews;
+  final bool isWeeklyHot;
   final String? cbzPackageUrl;
   final String? manifestUrl;
   final List<ComicPageData> pages;
@@ -96,6 +101,11 @@ class ChapterItem {
     this.isFree = true,
     this.isUnlocked = true,
     this.priceCoins = 0,
+    this.priceVnd = 0,
+    this.rentalPriceVnd = 0,
+    this.accessPolicy = ChapterAccessPolicy.free,
+    this.maxAllowedViews,
+    this.isWeeklyHot = false,
     this.cbzPackageUrl,
     this.manifestUrl,
     required this.pages,
@@ -113,6 +123,11 @@ class ChapterItem {
       isFree: dto.isFree,
       isUnlocked: dto.isUnlocked,
       priceCoins: dto.priceCoins,
+      priceVnd: dto.priceVnd,
+      rentalPriceVnd: dto.rentalPriceVnd,
+      accessPolicy: dto.accessPolicy,
+      maxAllowedViews: dto.maxAllowedViews,
+      isWeeklyHot: dto.isWeeklyHot,
       cbzPackageUrl: dto.cbzPackageUrl,
       manifestUrl: dto.manifestUrl,
       pages: const [],
@@ -131,6 +146,11 @@ class ChapterItem {
       isFree: dto.isFree,
       isUnlocked: dto.isUnlocked,
       priceCoins: dto.priceCoins,
+      priceVnd: dto.priceVnd,
+      rentalPriceVnd: dto.rentalPriceVnd,
+      accessPolicy: dto.accessPolicy,
+      maxAllowedViews: dto.maxAllowedViews,
+      isWeeklyHot: dto.isWeeklyHot,
       cbzPackageUrl: dto.cbzPackageUrl,
       manifestUrl: dto.manifestUrl,
       pages: dto.pages.map((p) => ComicPageData.fromPublicPage(p)).toList(),
@@ -146,6 +166,11 @@ class ChapterItem {
     bool? isFree,
     bool? isUnlocked,
     int? priceCoins,
+    int? priceVnd,
+    int? rentalPriceVnd,
+    ChapterAccessPolicy? accessPolicy,
+    int? maxAllowedViews,
+    bool? isWeeklyHot,
     String? cbzPackageUrl,
     String? manifestUrl,
     List<ComicPageData>? pages,
@@ -159,6 +184,11 @@ class ChapterItem {
       isFree: isFree ?? this.isFree,
       isUnlocked: isUnlocked ?? this.isUnlocked,
       priceCoins: priceCoins ?? this.priceCoins,
+      priceVnd: priceVnd ?? this.priceVnd,
+      rentalPriceVnd: rentalPriceVnd ?? this.rentalPriceVnd,
+      accessPolicy: accessPolicy ?? this.accessPolicy,
+      maxAllowedViews: maxAllowedViews ?? this.maxAllowedViews,
+      isWeeklyHot: isWeeklyHot ?? this.isWeeklyHot,
       cbzPackageUrl: cbzPackageUrl ?? this.cbzPackageUrl,
       manifestUrl: manifestUrl ?? this.manifestUrl,
       pages: pages ?? this.pages,
@@ -184,6 +214,8 @@ class SeriesItem {
   final List<ChapterItem> chapters;
   final bool isBookmarked;
   final String editorialNote;
+  final int baseChapterPriceVnd;
+  final int hotChapterPriceVnd;
 
   const SeriesItem({
     required this.id,
@@ -203,6 +235,8 @@ class SeriesItem {
     required this.chapters,
     this.isBookmarked = false,
     required this.editorialNote,
+    this.baseChapterPriceVnd = 3000,
+    this.hotChapterPriceVnd = 5000,
   });
 
   factory SeriesItem.fromPublicDto(PublicSeriesDto dto) {
@@ -234,6 +268,8 @@ class SeriesItem {
       chapters: const [],
       isBookmarked: false,
       editorialNote: 'Phát hành chính thức bởi Studio ${dto.studioName}.',
+      baseChapterPriceVnd: dto.baseChapterPriceVnd,
+      hotChapterPriceVnd: dto.hotChapterPriceVnd,
     );
   }
 
@@ -266,6 +302,8 @@ class SeriesItem {
       chapters: dto.chapters.map((c) => ChapterItem.fromPublicDto(c)).toList(),
       isBookmarked: false,
       editorialNote: 'Phát hành chính thức bởi Studio ${dto.studioName}.',
+      baseChapterPriceVnd: dto.baseChapterPriceVnd,
+      hotChapterPriceVnd: dto.hotChapterPriceVnd,
     );
   }
 
@@ -273,6 +311,8 @@ class SeriesItem {
     bool? isBookmarked,
     int? readProgressChapter,
     List<ChapterItem>? chapters,
+    int? baseChapterPriceVnd,
+    int? hotChapterPriceVnd,
   }) {
     return SeriesItem(
       id: id,
@@ -292,6 +332,8 @@ class SeriesItem {
       chapters: chapters ?? this.chapters,
       isBookmarked: isBookmarked ?? this.isBookmarked,
       editorialNote: editorialNote,
+      baseChapterPriceVnd: baseChapterPriceVnd ?? this.baseChapterPriceVnd,
+      hotChapterPriceVnd: hotChapterPriceVnd ?? this.hotChapterPriceVnd,
     );
   }
 }

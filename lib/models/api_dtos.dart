@@ -35,6 +35,116 @@ enum ApiReadingDirection {
   }
 }
 
+/// Chính sách lượt xem cho từng Tập/Chapter
+enum ChapterAccessPolicy {
+  free,
+  rentalLimitedViews,
+  permanent;
+
+  static ChapterAccessPolicy fromDynamic(dynamic val) {
+    if (val is ChapterAccessPolicy) return val;
+    if (val is String) {
+      final lower = val.toLowerCase();
+      if (lower.contains('rental') || lower.contains('limited')) {
+        return ChapterAccessPolicy.rentalLimitedViews;
+      }
+      if (lower.contains('permanent') || lower.contains('buy')) {
+        return ChapterAccessPolicy.permanent;
+      }
+      if (lower.contains('free')) {
+        return ChapterAccessPolicy.free;
+      }
+    }
+    return ChapterAccessPolicy.free;
+  }
+
+  String get value {
+    switch (this) {
+      case ChapterAccessPolicy.free:
+        return 'free';
+      case ChapterAccessPolicy.rentalLimitedViews:
+        return 'rentalLimitedViews';
+      case ChapterAccessPolicy.permanent:
+        return 'permanent';
+    }
+  }
+}
+
+/// Trạng thái sở hữu của Reader cho từng chapter
+class ChapterEntitlement {
+  final String chapterId;
+  final bool isPermanent;
+  final int? remainingViews;
+  final DateTime? lastOpenedAt;
+  final DateTime? unlockedAt;
+
+  const ChapterEntitlement({
+    required this.chapterId,
+    this.isPermanent = false,
+    this.remainingViews,
+    this.lastOpenedAt,
+    this.unlockedAt,
+  });
+
+  bool get isValid {
+    if (isPermanent) return true;
+    return (remainingViews ?? 0) > 0;
+  }
+
+  factory ChapterEntitlement.fromJson(Map<String, dynamic> json) {
+    return ChapterEntitlement(
+      chapterId: json['chapterId']?.toString() ?? '',
+      isPermanent: json['isPermanent'] as bool? ?? false,
+      remainingViews: (json['remainingViews'] as num?)?.toInt(),
+      lastOpenedAt: json['lastOpenedAt'] != null
+          ? DateTime.tryParse(json['lastOpenedAt'].toString())
+          : null,
+      unlockedAt: json['unlockedAt'] != null
+          ? DateTime.tryParse(json['unlockedAt'].toString())
+          : null,
+    );
+  }
+
+  Map<String, dynamic> toJson() => {
+        'chapterId': chapterId,
+        'isPermanent': isPermanent,
+        if (remainingViews != null) 'remainingViews': remainingViews,
+        if (lastOpenedAt != null) 'lastOpenedAt': lastOpenedAt!.toIso8601String(),
+        if (unlockedAt != null) 'unlockedAt': unlockedAt!.toIso8601String(),
+      };
+
+  ChapterEntitlement copyWith({
+    String? chapterId,
+    bool? isPermanent,
+    int? remainingViews,
+    DateTime? lastOpenedAt,
+    DateTime? unlockedAt,
+  }) {
+    return ChapterEntitlement(
+      chapterId: chapterId ?? this.chapterId,
+      isPermanent: isPermanent ?? this.isPermanent,
+      remainingViews: remainingViews ?? this.remainingViews,
+      lastOpenedAt: lastOpenedAt ?? this.lastOpenedAt,
+      unlockedAt: unlockedAt ?? this.unlockedAt,
+    );
+  }
+}
+
+/// Kết quả trừ lượt xem khi đọc chapter
+class ConsumeViewResult {
+  final bool didConsume;
+  final bool isPermanent;
+  final int? remainingViews;
+  final String? message;
+
+  const ConsumeViewResult({
+    required this.didConsume,
+    this.isPermanent = false,
+    this.remainingViews,
+    this.message,
+  });
+}
+
 // ─────────────────────────────────────────────────────────────────────────────
 // CATALOG MODELS (Reader)
 // ─────────────────────────────────────────────────────────────────────────────
@@ -49,6 +159,8 @@ class PublicSeriesDto {
   final String studioName;
   final int publishedChapterCount;
   final DateTime? latestPublishedAt;
+  final int baseChapterPriceVnd;
+  final int hotChapterPriceVnd;
 
   PublicSeriesDto({
     required this.id,
@@ -60,9 +172,14 @@ class PublicSeriesDto {
     required this.studioName,
     required this.publishedChapterCount,
     this.latestPublishedAt,
+    this.baseChapterPriceVnd = 3000,
+    this.hotChapterPriceVnd = 5000,
   });
 
   factory PublicSeriesDto.fromJson(Map<String, dynamic> json) {
+    final formatLower = (json['format']?.toString() ?? '').toLowerCase();
+    final defaultBase = formatLower.contains('manga') ? 2000 : 3000;
+
     return PublicSeriesDto(
       id: json['id']?.toString() ?? '',
       title: json['title']?.toString() ?? '',
@@ -75,6 +192,10 @@ class PublicSeriesDto {
       latestPublishedAt: json['latestPublishedAt'] != null
           ? DateTime.tryParse(json['latestPublishedAt'].toString())
           : null,
+      baseChapterPriceVnd:
+          (json['baseChapterPriceVnd'] as num?)?.toInt() ?? defaultBase,
+      hotChapterPriceVnd:
+          (json['hotChapterPriceVnd'] as num?)?.toInt() ?? 5000,
     );
   }
 }
@@ -87,6 +208,11 @@ class PublicChapterSummaryDto {
   final bool isFree;
   final bool isUnlocked;
   final int priceCoins;
+  final int priceVnd;
+  final int rentalPriceVnd;
+  final ChapterAccessPolicy accessPolicy;
+  final int? maxAllowedViews;
+  final bool isWeeklyHot;
   final String? cbzPackageUrl;
   final String? manifestUrl;
 
@@ -98,22 +224,89 @@ class PublicChapterSummaryDto {
     this.isFree = true,
     this.isUnlocked = true,
     this.priceCoins = 0,
+    this.priceVnd = 0,
+    this.rentalPriceVnd = 0,
+    this.accessPolicy = ChapterAccessPolicy.free,
+    this.maxAllowedViews,
+    this.isWeeklyHot = false,
     this.cbzPackageUrl,
     this.manifestUrl,
   });
 
   factory PublicChapterSummaryDto.fromJson(Map<String, dynamic> json) {
-    final free = json['isFree'] as bool? ?? true;
+    final rawFree = json['isFree'] as bool? ?? false;
+    final numVal = (json['chapterNumber'] as num?)?.toDouble() ?? 1.0;
+    final free = rawFree || numVal == 1.0;
+
+    DateTime? pubAt;
+    if (json['publishedAt'] != null) {
+      pubAt = DateTime.tryParse(json['publishedAt'].toString());
+    }
+
+    final bool isHotFromPub = pubAt != null &&
+        DateTime.now().difference(pubAt).inDays <= 7 &&
+        !free;
+    final bool isHot = (json['isWeeklyHot'] as bool?) ?? isHotFromPub;
+
+    int priceVnd;
+    int rentalPriceVnd;
+
+    if (free) {
+      priceVnd = 0;
+      rentalPriceVnd = 0;
+    } else if (json['priceVnd'] != null) {
+      priceVnd = (json['priceVnd'] as num).toInt();
+      rentalPriceVnd = (json['rentalPriceVnd'] as num?)?.toInt() ??
+          (priceVnd <= 500
+              ? 300
+              : priceVnd <= 700
+                  ? 500
+                  : priceVnd <= 1000
+                      ? 500
+                      : priceVnd <= 3000
+                          ? 1500
+                          : 2000);
+    } else if (isHot) {
+      priceVnd = 5000;
+      rentalPriceVnd = 2000;
+    } else if (numVal == 2.0) {
+      priceVnd = 500;
+      rentalPriceVnd = 300;
+    } else if (numVal == 3.0) {
+      priceVnd = 700;
+      rentalPriceVnd = 500;
+    } else if (numVal == 4.0) {
+      priceVnd = 1000;
+      rentalPriceVnd = 500;
+    } else if (json['priceCoins'] != null && (json['priceCoins'] as num) > 0) {
+      priceVnd = ((json['priceCoins'] as num).toInt() * 60).clamp(500, 5000);
+      rentalPriceVnd = (priceVnd * 0.5).round();
+    } else {
+      priceVnd = 1000;
+      rentalPriceVnd = 500;
+    }
+
+    final coins = (json['priceCoins'] as num?)?.toInt() ?? (priceVnd ~/ 100);
+    final policy = free
+        ? ChapterAccessPolicy.free
+        : (json['accessPolicy'] != null
+            ? ChapterAccessPolicy.fromDynamic(json['accessPolicy'])
+            : ChapterAccessPolicy.rentalLimitedViews);
+    final maxViews = (json['maxAllowedViews'] as num?)?.toInt() ?? (free ? null : 3);
+
     return PublicChapterSummaryDto(
       id: json['id']?.toString() ?? '',
-      chapterNumber: (json['chapterNumber'] as num?)?.toDouble() ?? 1.0,
+      chapterNumber: numVal,
       title: json['title']?.toString(),
-      publishedAt: json['publishedAt'] != null
-          ? DateTime.tryParse(json['publishedAt'].toString())
-          : null,
+      publishedAt: pubAt,
       isFree: free,
       isUnlocked: json['isUnlocked'] as bool? ?? free,
-      priceCoins: (json['priceCoins'] as num?)?.toInt() ?? 0,
+      priceCoins: coins,
+      priceVnd: priceVnd,
+      rentalPriceVnd: rentalPriceVnd,
+      accessPolicy: policy,
+      maxAllowedViews: maxViews,
+      isWeeklyHot: isHot,
       cbzPackageUrl: json['cbzPackageUrl']?.toString(),
       manifestUrl: json['manifestUrl']?.toString(),
     );
@@ -127,6 +320,11 @@ class PublicChapterSummaryDto {
         'isFree': isFree,
         'isUnlocked': isUnlocked,
         'priceCoins': priceCoins,
+        'priceVnd': priceVnd,
+        'rentalPriceVnd': rentalPriceVnd,
+        'accessPolicy': accessPolicy.value,
+        if (maxAllowedViews != null) 'maxAllowedViews': maxAllowedViews,
+        'isWeeklyHot': isWeeklyHot,
         if (cbzPackageUrl != null) 'cbzPackageUrl': cbzPackageUrl,
         if (manifestUrl != null) 'manifestUrl': manifestUrl,
       };
@@ -155,6 +353,8 @@ class PublicSeriesDetailDto {
   final ApiReadingDirection readingDirection;
   final String studioName;
   final List<PublicChapterSummaryDto> chapters;
+  final int baseChapterPriceVnd;
+  final int hotChapterPriceVnd;
 
   PublicSeriesDetailDto({
     required this.id,
@@ -165,10 +365,15 @@ class PublicSeriesDetailDto {
     required this.readingDirection,
     required this.studioName,
     required this.chapters,
+    this.baseChapterPriceVnd = 3000,
+    this.hotChapterPriceVnd = 5000,
   });
 
   factory PublicSeriesDetailDto.fromJson(Map<String, dynamic> json) {
     final rawChapters = json['chapters'] as List<dynamic>? ?? [];
+    final formatLower = (json['format']?.toString() ?? '').toLowerCase();
+    final defaultBase = formatLower.contains('manga') ? 2000 : 3000;
+
     return PublicSeriesDetailDto(
       id: json['id']?.toString() ?? '',
       title: json['title']?.toString() ?? '',
@@ -177,6 +382,10 @@ class PublicSeriesDetailDto {
       format: json['format']?.toString() ?? 'Manga',
       readingDirection: ApiReadingDirection.fromDynamic(json['readingDirection']),
       studioName: json['studioName']?.toString() ?? 'PanelForge Studio',
+      baseChapterPriceVnd:
+          (json['baseChapterPriceVnd'] as num?)?.toInt() ?? defaultBase,
+      hotChapterPriceVnd:
+          (json['hotChapterPriceVnd'] as num?)?.toInt() ?? 5000,
       chapters: rawChapters
           .map((e) => PublicChapterSummaryDto.fromJson(e as Map<String, dynamic>))
           .toList(),
@@ -219,6 +428,11 @@ class PublicChapterReadDto {
   final bool isFree;
   final bool isUnlocked;
   final int priceCoins;
+  final int priceVnd;
+  final int rentalPriceVnd;
+  final ChapterAccessPolicy accessPolicy;
+  final int? maxAllowedViews;
+  final bool isWeeklyHot;
   final String? cbzPackageUrl;
   final String? manifestUrl;
 
@@ -234,29 +448,96 @@ class PublicChapterReadDto {
     this.isFree = true,
     this.isUnlocked = true,
     this.priceCoins = 0,
+    this.priceVnd = 0,
+    this.rentalPriceVnd = 0,
+    this.accessPolicy = ChapterAccessPolicy.free,
+    this.maxAllowedViews,
+    this.isWeeklyHot = false,
     this.cbzPackageUrl,
     this.manifestUrl,
   });
 
   factory PublicChapterReadDto.fromJson(Map<String, dynamic> json) {
     final rawPages = json['pages'] as List<dynamic>? ?? [];
-    final free = json['isFree'] as bool? ?? true;
+    final rawFree = json['isFree'] as bool? ?? false;
+    final numVal = (json['chapterNumber'] as num?)?.toDouble() ?? 1.0;
+    final free = rawFree || numVal == 1.0;
+
+    DateTime? pubAt;
+    if (json['publishedAt'] != null) {
+      pubAt = DateTime.tryParse(json['publishedAt'].toString());
+    }
+
+    final bool isHotFromPub = pubAt != null &&
+        DateTime.now().difference(pubAt).inDays <= 7 &&
+        !free;
+    final bool isHot = (json['isWeeklyHot'] as bool?) ?? isHotFromPub;
+
+    int priceVnd;
+    int rentalPriceVnd;
+
+    if (free) {
+      priceVnd = 0;
+      rentalPriceVnd = 0;
+    } else if (json['priceVnd'] != null) {
+      priceVnd = (json['priceVnd'] as num).toInt();
+      rentalPriceVnd = (json['rentalPriceVnd'] as num?)?.toInt() ??
+          (priceVnd <= 500
+              ? 300
+              : priceVnd <= 700
+                  ? 500
+                  : priceVnd <= 1000
+                      ? 500
+                      : priceVnd <= 3000
+                          ? 1500
+                          : 2000);
+    } else if (isHot) {
+      priceVnd = 5000;
+      rentalPriceVnd = 2000;
+    } else if (numVal == 2.0) {
+      priceVnd = 500;
+      rentalPriceVnd = 300;
+    } else if (numVal == 3.0) {
+      priceVnd = 700;
+      rentalPriceVnd = 500;
+    } else if (numVal == 4.0) {
+      priceVnd = 1000;
+      rentalPriceVnd = 500;
+    } else if (json['priceCoins'] != null && (json['priceCoins'] as num) > 0) {
+      priceVnd = ((json['priceCoins'] as num).toInt() * 60).clamp(500, 5000);
+      rentalPriceVnd = (priceVnd * 0.5).round();
+    } else {
+      priceVnd = 1000;
+      rentalPriceVnd = 500;
+    }
+
+    final coins = (json['priceCoins'] as num?)?.toInt() ?? (priceVnd ~/ 100);
+    final policy = free
+        ? ChapterAccessPolicy.free
+        : (json['accessPolicy'] != null
+            ? ChapterAccessPolicy.fromDynamic(json['accessPolicy'])
+            : ChapterAccessPolicy.rentalLimitedViews);
+    final maxViews = (json['maxAllowedViews'] as num?)?.toInt() ?? (free ? null : 3);
+
     return PublicChapterReadDto(
       id: json['id']?.toString() ?? '',
       seriesId: json['seriesId']?.toString() ?? '',
       seriesTitle: json['seriesTitle']?.toString() ?? '',
       readingDirection: ApiReadingDirection.fromDynamic(json['readingDirection']),
-      chapterNumber: (json['chapterNumber'] as num?)?.toDouble() ?? 1.0,
+      chapterNumber: numVal,
       title: json['title']?.toString(),
-      publishedAt: json['publishedAt'] != null
-          ? DateTime.tryParse(json['publishedAt'].toString())
-          : null,
+      publishedAt: pubAt,
       pages: rawPages
           .map((e) => PublicPageDto.fromJson(e as Map<String, dynamic>))
           .toList(),
       isFree: free,
       isUnlocked: json['isUnlocked'] as bool? ?? free,
-      priceCoins: (json['priceCoins'] as num?)?.toInt() ?? 0,
+      priceCoins: coins,
+      priceVnd: priceVnd,
+      rentalPriceVnd: rentalPriceVnd,
+      accessPolicy: policy,
+      maxAllowedViews: maxViews,
+      isWeeklyHot: isHot,
       cbzPackageUrl: json['cbzPackageUrl']?.toString(),
       manifestUrl: json['manifestUrl']?.toString(),
     );
@@ -274,6 +555,11 @@ class PublicChapterReadDto {
         'isFree': isFree,
         'isUnlocked': isUnlocked,
         'priceCoins': priceCoins,
+        'priceVnd': priceVnd,
+        'rentalPriceVnd': rentalPriceVnd,
+        'accessPolicy': accessPolicy.value,
+        if (maxAllowedViews != null) 'maxAllowedViews': maxAllowedViews,
+        'isWeeklyHot': isWeeklyHot,
         if (cbzPackageUrl != null) 'cbzPackageUrl': cbzPackageUrl,
         if (manifestUrl != null) 'manifestUrl': manifestUrl,
       };
@@ -537,47 +823,142 @@ class PreviewFeedbackDto {
 // MONETIZATION & WALLET DTOs (Thu phí người dùng)
 // ─────────────────────────────────────────────────────────────────────────────
 
-class UserWalletDto {
-  final int balanceCoins;
-  final bool isVip;
-  final DateTime? vipExpiresAt;
+/// Định dạng tiền tệ VNĐ chuẩn với dấu chấm phân cách hàng nghìn (vd: 20.000đ, 5.000đ)
+String formatVnd(int amount, {bool showSign = false}) {
+  final isNegative = amount < 0;
+  final abs = amount.abs().toString();
+  final buffer = StringBuffer();
+  for (int i = 0; i < abs.length; i++) {
+    if (i > 0 && (abs.length - i) % 3 == 0) {
+      buffer.write('.');
+    }
+    buffer.write(abs[i]);
+  }
+  final formatted = buffer.toString();
+  if (showSign) {
+    return isNegative ? '-$formattedđ' : '+$formattedđ';
+  }
+  return isNegative ? '-$formattedđ' : '$formattedđ';
+}
 
-  const UserWalletDto({
-    required this.balanceCoins,
-    this.isVip = false,
-    this.vipExpiresAt,
+/// DTO Lịch sử giao dịch ví (Nạp tiền, Mua chapter)
+class WalletTransactionDto {
+  final String id;
+  final String title;
+  final int amountVnd;
+  final DateTime createdAt;
+  final int balanceAfter;
+
+  const WalletTransactionDto({
+    required this.id,
+    required this.title,
+    required this.amountVnd,
+    required this.createdAt,
+    required this.balanceAfter,
   });
 
-  factory UserWalletDto.fromJson(Map<String, dynamic> json) {
-    return UserWalletDto(
-      balanceCoins: (json['balanceCoins'] as num?)?.toInt() ?? 0,
-      isVip: json['isVip'] as bool? ?? false,
-      vipExpiresAt: json['vipExpiresAt'] != null
-          ? DateTime.tryParse(json['vipExpiresAt'].toString())
-          : null,
+  factory WalletTransactionDto.fromJson(Map<String, dynamic> json) {
+    return WalletTransactionDto(
+      id: json['id']?.toString() ?? '',
+      title: json['title']?.toString() ?? '',
+      amountVnd: (json['amountVnd'] as num?)?.toInt() ?? 0,
+      createdAt: json['createdAt'] != null
+          ? DateTime.tryParse(json['createdAt'].toString()) ?? DateTime.now()
+          : DateTime.now(),
+      balanceAfter: (json['balanceAfter'] as num?)?.toInt() ?? 0,
     );
   }
 
   Map<String, dynamic> toJson() => {
+        'id': id,
+        'title': title,
+        'amountVnd': amountVnd,
+        'createdAt': createdAt.toIso8601String(),
+        'balanceAfter': balanceAfter,
+      };
+}
+
+class UserWalletDto {
+  final int balanceVnd;
+  final bool isVip;
+  final DateTime? vipExpiresAt;
+  final List<WalletTransactionDto> transactions;
+
+  const UserWalletDto({
+    required this.balanceVnd,
+    this.isVip = false,
+    this.vipExpiresAt,
+    this.transactions = const [],
+  });
+
+  /// Getter tương thích ngược cho ForgeCoins
+  int get balanceCoins => balanceVnd ~/ 100;
+
+  factory UserWalletDto.fromJson(Map<String, dynamic> json) {
+    int balance;
+    if (json['balanceVnd'] != null) {
+      balance = (json['balanceVnd'] as num).toInt();
+    } else if (json['balanceCoins'] != null) {
+      balance = (json['balanceCoins'] as num).toInt() * 100;
+    } else {
+      balance = 50000;
+    }
+
+    final rawTx = json['transactions'] as List<dynamic>? ?? [];
+    final txList = rawTx
+        .map((e) => WalletTransactionDto.fromJson(e as Map<String, dynamic>))
+        .toList();
+
+    return UserWalletDto(
+      balanceVnd: balance,
+      isVip: json['isVip'] as bool? ?? false,
+      vipExpiresAt: json['vipExpiresAt'] != null
+          ? DateTime.tryParse(json['vipExpiresAt'].toString())
+          : null,
+      transactions: txList,
+    );
+  }
+
+  Map<String, dynamic> toJson() => {
+        'balanceVnd': balanceVnd,
         'balanceCoins': balanceCoins,
         'isVip': isVip,
         if (vipExpiresAt != null) 'vipExpiresAt': vipExpiresAt!.toIso8601String(),
+        'transactions': transactions.map((t) => t.toJson()).toList(),
       };
 }
 
 class UnlockChapterRequest {
   final String chapterId;
+  final int? priceVnd;
+  final String? seriesId;
+  final bool isPermanent;
+  final int? rentalViews;
 
-  const UnlockChapterRequest({required this.chapterId});
+  const UnlockChapterRequest({
+    required this.chapterId,
+    this.priceVnd,
+    this.seriesId,
+    this.isPermanent = true,
+    this.rentalViews,
+  });
 
   factory UnlockChapterRequest.fromJson(Map<String, dynamic> json) {
     return UnlockChapterRequest(
       chapterId: json['chapterId']?.toString() ?? '',
+      priceVnd: (json['priceVnd'] as num?)?.toInt(),
+      seriesId: json['seriesId']?.toString(),
+      isPermanent: json['isPermanent'] as bool? ?? true,
+      rentalViews: (json['rentalViews'] as num?)?.toInt(),
     );
   }
 
   Map<String, dynamic> toJson() => {
         'chapterId': chapterId,
+        if (priceVnd != null) 'priceVnd': priceVnd,
+        if (seriesId != null) 'seriesId': seriesId,
+        'isPermanent': isPermanent,
+        if (rentalViews != null) 'rentalViews': rentalViews,
       };
 }
 
@@ -585,24 +966,39 @@ class UnlockChapterResponse {
   final String chapterId;
   final bool success;
   final int remainingCoins;
+  final int remainingBalanceVnd;
   final String? cbzDownloadUrl;
   final String? message;
+  final bool isPermanent;
+  final int? remainingViews;
 
   const UnlockChapterResponse({
     required this.chapterId,
     required this.success,
     required this.remainingCoins,
+    required this.remainingBalanceVnd,
     this.cbzDownloadUrl,
     this.message,
+    this.isPermanent = true,
+    this.remainingViews,
   });
 
   factory UnlockChapterResponse.fromJson(Map<String, dynamic> json) {
+    final remVnd = (json['remainingBalanceVnd'] as num?)?.toInt() ??
+        ((json['remainingCoins'] as num?)?.toInt() != null
+            ? (json['remainingCoins'] as num).toInt() * 100
+            : 0);
+    final remCoins = (json['remainingCoins'] as num?)?.toInt() ?? (remVnd ~/ 100);
+
     return UnlockChapterResponse(
       chapterId: json['chapterId']?.toString() ?? '',
       success: json['success'] as bool? ?? false,
-      remainingCoins: (json['remainingCoins'] as num?)?.toInt() ?? 0,
+      remainingCoins: remCoins,
+      remainingBalanceVnd: remVnd,
       cbzDownloadUrl: json['cbzDownloadUrl']?.toString() ?? json['cbzPackageUrl']?.toString(),
       message: json['message']?.toString(),
+      isPermanent: json['isPermanent'] as bool? ?? true,
+      remainingViews: (json['remainingViews'] as num?)?.toInt(),
     );
   }
 
@@ -610,8 +1006,11 @@ class UnlockChapterResponse {
         'chapterId': chapterId,
         'success': success,
         'remainingCoins': remainingCoins,
+        'remainingBalanceVnd': remainingBalanceVnd,
         if (cbzDownloadUrl != null) 'cbzDownloadUrl': cbzDownloadUrl,
         if (message != null) 'message': message,
+        'isPermanent': isPermanent,
+        if (remainingViews != null) 'remainingViews': remainingViews,
       };
 
   String? get fullCbzDownloadUrl =>

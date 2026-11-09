@@ -6,6 +6,7 @@ import 'package:dio_cookie_manager/dio_cookie_manager.dart';
 import 'package:flutter/foundation.dart';
 import 'package:path_provider/path_provider.dart';
 import 'api_config.dart';
+import 'preferences_service.dart';
 
 class ApiException implements Exception {
   final String message;
@@ -95,13 +96,22 @@ class AuthInterceptor extends QueuedInterceptor {
       final uri = err.requestOptions.uri.toString();
 
       // Bỏ qua nếu là endpoint auth nghiệp vụ (nhập sai pass, sai mã OTP,...)
-      if (_authEndpoints.hasMatch(path) || _authEndpoints.hasMatch(uri)) {
+      // hoặc các endpoint kiểm tra thông tin (/api/auth/me, /api/wallet/me)
+      final isSelfCheckEndpoint = path.contains('/api/auth/me') ||
+          path.contains('/api/wallet/me') ||
+          uri.contains('/api/auth/me') ||
+          uri.contains('/api/wallet/me');
+
+      if (_authEndpoints.hasMatch(path) || _authEndpoints.hasMatch(uri) || isSelfCheckEndpoint) {
+        // Tuyệt đối không cho phép lỗi 401 từ /api/auth/me hoặc /api/wallet/me xóa phiên Reader
         return handler.next(err);
       }
 
       // Đã thử refresh cho request này rồi mà vẫn 401 -> phiên thực sự hết hạn
       if (err.requestOptions.extra['is_retry'] == true) {
-        onSessionExpired();
+        if (PreferencesService.getAuthUser() == null) {
+          onSessionExpired();
+        }
         return handler.next(err);
       }
 
@@ -117,11 +127,15 @@ class AuthInterceptor extends QueuedInterceptor {
           final retryResponse = await dio.fetch(retryOptions);
           return handler.resolve(retryResponse);
         } else {
-          onSessionExpired();
+          if (PreferencesService.getAuthUser() == null) {
+            onSessionExpired();
+          }
           return handler.next(err);
         }
       } catch (_) {
-        onSessionExpired();
+        if (PreferencesService.getAuthUser() == null) {
+          onSessionExpired();
+        }
         return handler.next(err);
       }
     }

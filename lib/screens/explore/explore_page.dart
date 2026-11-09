@@ -174,95 +174,163 @@ class _ExplorePageState extends ConsumerState<ExplorePage> {
                       const SizedBox(width: 12),
                       Row(
                         children: [
-                          if (_isLiveBackend) ...[
-                            if (authState.isGuest) ...[
-                              InkWell(
-                                onTap: () => context.push('/login'),
+                          if (authState.isGuest) ...[
+                            // Nhãn chỉ báo chế độ Khách (Guest)
+                            Container(
+                              padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 5),
+                              decoration: BoxDecoration(
+                                color: AppColors.darkSurface,
                                 borderRadius: BorderRadius.circular(20),
-                                child: Container(
-                                  padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
-                                  decoration: BoxDecoration(
-                                    color: AppColors.darkSurface,
-                                    borderRadius: BorderRadius.circular(20),
-                                    border: Border.all(color: AppColors.primary.withValues(alpha: 0.8), width: 1),
+                                border: Border.all(color: AppColors.darkBorder),
+                              ),
+                              child: Row(
+                                mainAxisSize: MainAxisSize.min,
+                                children: [
+                                  const Icon(Icons.person_outline_rounded,
+                                      color: AppColors.darkTextSecondary, size: 14),
+                                  const SizedBox(width: 4),
+                                  Text(
+                                    'Khách',
+                                    style: GoogleFonts.plusJakartaSans(
+                                      fontSize: 11,
+                                      fontWeight: FontWeight.w600,
+                                      color: AppColors.darkTextSecondary,
+                                    ),
                                   ),
-                                  child: Row(
-                                    mainAxisSize: MainAxisSize.min,
-                                    children: [
-                                      const Icon(Icons.login_rounded, color: AppColors.primary, size: 14),
-                                      const SizedBox(width: 4),
-                                      Text(
-                                        'Đăng nhập',
+                                ],
+                              ),
+                            ),
+                            const SizedBox(width: 8),
+
+                            // Nút Đăng nhập cho chế độ Khách
+                            InkWell(
+                              onTap: () => context.push('/login'),
+                              borderRadius: BorderRadius.circular(20),
+                              child: Container(
+                                padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
+                                decoration: BoxDecoration(
+                                  color: AppColors.darkSurface,
+                                  borderRadius: BorderRadius.circular(20),
+                                  border: Border.all(color: AppColors.primary.withValues(alpha: 0.8), width: 1),
+                                ),
+                                child: Row(
+                                  mainAxisSize: MainAxisSize.min,
+                                  children: [
+                                    const Icon(Icons.login_rounded, color: AppColors.primary, size: 14),
+                                    const SizedBox(width: 4),
+                                    Text(
+                                      'Đăng nhập',
+                                      style: GoogleFonts.plusJakartaSans(
+                                        fontSize: 12,
+                                        fontWeight: FontWeight.w700,
+                                        color: AppColors.primary,
+                                      ),
+                                    ),
+                                  ],
+                                ),
+                              ),
+                            ),
+                            const SizedBox(width: 8),
+                          ] else ...[
+                            // Khi role == reader (Đã đăng nhập) -> BẮT BUỘC hiển thị:
+                            // 1. Chip Ví ForgeCoins
+                            const WalletChip(isServerConnected: true),
+                            const SizedBox(width: 8),
+
+                            // 2. Chip Hồ sơ Reader (Avatar / Initials + Tên hoặc Email + Nhãn READER)
+                            InkWell(
+                              onTap: () => ReaderProfileSheet.show(context),
+                              borderRadius: BorderRadius.circular(20),
+                              child: Container(
+                                padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+                                decoration: BoxDecoration(
+                                  color: AppColors.darkSurface,
+                                  borderRadius: BorderRadius.circular(20),
+                                  border: Border.all(
+                                    color: authState.isRestricted
+                                        ? AppColors.amber.withValues(alpha: 0.6)
+                                        : AppColors.primary.withValues(alpha: 0.5),
+                                  ),
+                                ),
+                                child: Row(
+                                  mainAxisSize: MainAxisSize.min,
+                                  children: [
+                                    CircleAvatar(
+                                      radius: 12,
+                                      backgroundColor: authState.isRestricted
+                                          ? AppColors.amber
+                                          : AppColors.primary,
+                                      backgroundImage: (authState.user?.avatarUrl != null &&
+                                              authState.user!.avatarUrl!.isNotEmpty)
+                                          ? NetworkImage(authState.user!.avatarUrl!)
+                                          : null,
+                                      child: (authState.user?.avatarUrl == null ||
+                                              authState.user!.avatarUrl!.isEmpty)
+                                          ? Text(
+                                              (authState.user?.fullName.isNotEmpty == true)
+                                                  ? authState.user!.fullName.substring(0, 1).toUpperCase()
+                                                  : (authState.user?.email.isNotEmpty == true)
+                                                      ? authState.user!.email.substring(0, 1).toUpperCase()
+                                                      : 'R',
+                                              style: const TextStyle(
+                                                fontSize: 10,
+                                                fontWeight: FontWeight.w800,
+                                                color: Colors.white,
+                                              ),
+                                            )
+                                          : null,
+                                    ),
+                                    const SizedBox(width: 6),
+                                    ConstrainedBox(
+                                      constraints: const BoxConstraints(maxWidth: 85),
+                                      child: Text(
+                                        (authState.user?.fullName.isNotEmpty == true)
+                                            ? authState.user!.fullName.split(' ').first
+                                            : (authState.user?.email.isNotEmpty == true)
+                                                ? authState.user!.email.split('@').first
+                                                : 'Reader',
                                         style: GoogleFonts.plusJakartaSans(
                                           fontSize: 12,
                                           fontWeight: FontWeight.w700,
-                                          color: AppColors.primary,
+                                          color: Colors.white,
                                         ),
+                                        overflow: TextOverflow.ellipsis,
                                       ),
-                                    ],
-                                  ),
-                                ),
-                              ),
-                              const SizedBox(width: 8),
-                            ] else ...[
-                              const WalletChip(isServerConnected: true),
-                              const SizedBox(width: 8),
-                              InkWell(
-                                onTap: () => ReaderProfileSheet.show(context),
-                                borderRadius: BorderRadius.circular(20),
-                                child: Container(
-                                  padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
-                                  decoration: BoxDecoration(
-                                    color: AppColors.darkSurface,
-                                    borderRadius: BorderRadius.circular(20),
-                                    border: Border.all(
-                                      color: authState.isRestricted
-                                          ? AppColors.amber.withValues(alpha: 0.6)
-                                          : AppColors.darkBorder,
                                     ),
-                                  ),
-                                  child: Row(
-                                    mainAxisSize: MainAxisSize.min,
-                                    children: [
-                                      CircleAvatar(
-                                        radius: 11,
-                                        backgroundColor: authState.isRestricted
-                                            ? AppColors.amber
-                                            : AppColors.primary,
-                                        child: Text(
-                                          authState.user != null && authState.user!.fullName.isNotEmpty
-                                              ? authState.user!.fullName.substring(0, 1).toUpperCase()
-                                              : 'R',
-                                          style: const TextStyle(
-                                            fontSize: 10,
-                                            fontWeight: FontWeight.w800,
-                                            color: Colors.white,
-                                          ),
+                                    const SizedBox(width: 6),
+                                    Container(
+                                      padding: const EdgeInsets.symmetric(horizontal: 5, vertical: 1.5),
+                                      decoration: BoxDecoration(
+                                        color: authState.isRestricted
+                                            ? AppColors.amber.withValues(alpha: 0.2)
+                                            : AppColors.primary.withValues(alpha: 0.2),
+                                        borderRadius: BorderRadius.circular(4),
+                                        border: Border.all(
+                                          color: authState.isRestricted ? AppColors.amber : AppColors.primary,
+                                          width: 0.6,
                                         ),
                                       ),
-                                      const SizedBox(width: 6),
-                                      ConstrainedBox(
-                                        constraints: const BoxConstraints(maxWidth: 80),
-                                        child: Text(
-                                          authState.user?.fullName.split(' ').first ?? 'Reader',
-                                          style: GoogleFonts.plusJakartaSans(
-                                            fontSize: 12,
-                                            fontWeight: FontWeight.w700,
-                                            color: Colors.white,
-                                          ),
-                                          overflow: TextOverflow.ellipsis,
+                                      child: Text(
+                                        authState.isRestricted ? 'LIMITED' : 'READER',
+                                        style: GoogleFonts.plusJakartaSans(
+                                          fontSize: 8.5,
+                                          fontWeight: FontWeight.w800,
+                                          letterSpacing: 0.5,
+                                          color: authState.isRestricted ? AppColors.amber : AppColors.primary,
                                         ),
                                       ),
-                                      const SizedBox(width: 2),
-                                      const Icon(Icons.arrow_drop_down_rounded,
-                                          color: AppColors.darkTextSecondary, size: 16),
-                                    ],
-                                  ),
+                                    ),
+                                    const SizedBox(width: 2),
+                                    const Icon(Icons.arrow_drop_down_rounded,
+                                        color: AppColors.darkTextSecondary, size: 16),
+                                  ],
                                 ),
                               ),
-                              const SizedBox(width: 8),
-                            ],
+                            ),
+                            const SizedBox(width: 8),
                           ],
+
+                          // 3. Nút Đăng xuất
                           IconButton(
                             icon: const Icon(Icons.logout_rounded, color: AppColors.primary, size: 20),
                             tooltip: 'Đăng xuất',

@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 import 'package:google_fonts/google_fonts.dart';
+import '../../models/api_dtos.dart';
 import '../../models/comic_model.dart';
 import '../../providers/api_providers.dart';
 import '../../theme/app_theme.dart';
@@ -22,7 +23,6 @@ class SeriesDetailPage extends ConsumerStatefulWidget {
 class _SeriesDetailPageState extends ConsumerState<SeriesDetailPage> {
   SeriesItem? _series;
   bool _isLoading = true;
-  bool _isLiveBackend = false;
   String? _errorMessage;
   bool _isNewestFirst = false;
 
@@ -44,7 +44,6 @@ class _SeriesDetailPageState extends ConsumerState<SeriesDetailPage> {
         setState(() {
           _series = SeriesItem.fromPublicDetailDto(detail).copyWith(isBookmarked: bookmarked);
           _isLoading = false;
-          _isLiveBackend = true;
         });
         ref.read(isServerConnectedProvider.notifier).state = true;
       }
@@ -53,7 +52,6 @@ class _SeriesDetailPageState extends ConsumerState<SeriesDetailPage> {
       if (mounted) {
         setState(() {
           _isLoading = false;
-          _isLiveBackend = false;
           _errorMessage = 'Không thể tải thông tin tác phẩm. Vui lòng kiểm tra lại kết nối mạng.';
         });
         ref.read(isServerConnectedProvider.notifier).state = false;
@@ -83,6 +81,11 @@ class _SeriesDetailPageState extends ConsumerState<SeriesDetailPage> {
     if (chapter.isFree) return true;
     final wallet = ref.watch(walletNotifierProvider).asData?.value;
     if (wallet?.isVip ?? false) return true;
+    final entitlements = ref.watch(chapterEntitlementsProvider);
+    final ent = entitlements[chapter.id] ?? PreferencesService.getChapterEntitlement(chapter.id);
+    if (ent != null) {
+      return ent.isValid;
+    }
     final unlockedIds = ref.watch(unlockedChaptersProvider);
     if (unlockedIds.contains(chapter.id)) return true;
     return chapter.isUnlocked;
@@ -96,6 +99,7 @@ class _SeriesDetailPageState extends ConsumerState<SeriesDetailPage> {
       UnlockChapterBottomSheet.show(
         context,
         chapter: chapter,
+        series: series,
         onUnlocked: () {
           setState(() {});
         },
@@ -104,6 +108,26 @@ class _SeriesDetailPageState extends ConsumerState<SeriesDetailPage> {
   }
 
   Future<void> _downloadChapter(ChapterItem chapter) async {
+    final isVip = ref.read(walletNotifierProvider).asData?.value.isVip ?? PreferencesService.getLocalIsVip();
+    final ent = PreferencesService.getChapterEntitlement(chapter.id);
+    if (!isVip && ent != null && !ent.isPermanent) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          backgroundColor: AppColors.darkSurface,
+          shape: RoundedRectangleBorder(
+            borderRadius: BorderRadius.circular(12),
+            side: const BorderSide(color: AppColors.primary),
+          ),
+          behavior: SnackBarBehavior.floating,
+          content: Text(
+            'Gói thuê xem theo lượt không hỗ trợ tải offline. Vui lòng mua vĩnh viễn để tải file .CBZ.',
+            style: GoogleFonts.plusJakartaSans(color: Colors.white, fontSize: 13),
+          ),
+        ),
+      );
+      return;
+    }
+
     final cbzService = ref.read(cbzPackageServiceProvider);
     try {
       ref.read(downloadStatusProvider.notifier).setStatus(chapter.id, DownloadStatus.downloading);
@@ -245,10 +269,42 @@ class _SeriesDetailPageState extends ConsumerState<SeriesDetailPage> {
               onPressed: () => context.pop(),
             ),
             actions: [
-              if (_isLiveBackend) ...[
+              if (!ref.watch(authStateProvider).isGuest) ...[
                 const Padding(
                   padding: EdgeInsets.symmetric(vertical: 10),
                   child: WalletChip(isServerConnected: true),
+                ),
+                const SizedBox(width: 8),
+              ] else ...[
+                Padding(
+                  padding: const EdgeInsets.symmetric(vertical: 10),
+                  child: InkWell(
+                    onTap: () => context.push('/login'),
+                    borderRadius: BorderRadius.circular(20),
+                    child: Container(
+                      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 5),
+                      decoration: BoxDecoration(
+                        color: Colors.black45,
+                        borderRadius: BorderRadius.circular(20),
+                        border: Border.all(color: AppColors.primary.withValues(alpha: 0.8), width: 1),
+                      ),
+                      child: Row(
+                        mainAxisSize: MainAxisSize.min,
+                        children: [
+                          const Icon(Icons.login_rounded, color: AppColors.primary, size: 14),
+                          const SizedBox(width: 4),
+                          Text(
+                            'Đăng nhập',
+                            style: GoogleFonts.plusJakartaSans(
+                              fontSize: 12,
+                              fontWeight: FontWeight.w700,
+                              color: AppColors.primary,
+                            ),
+                          ),
+                        ],
+                      ),
+                    ),
+                  ),
                 ),
                 const SizedBox(width: 8),
               ],
@@ -504,6 +560,33 @@ class _SeriesDetailPageState extends ConsumerState<SeriesDetailPage> {
                     ],
                   ),
 
+                  // Thanh thông tin giá của bộ truyện
+                  Container(
+                    margin: const EdgeInsets.only(top: 14),
+                    padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
+                    decoration: BoxDecoration(
+                      color: AppColors.darkSurface,
+                      borderRadius: BorderRadius.circular(12),
+                      border: Border.all(color: AppColors.darkBorder),
+                    ),
+                    child: Row(
+                      children: [
+                        const Icon(Icons.sell_outlined, size: 16, color: AppColors.primary),
+                        const SizedBox(width: 8),
+                        Expanded(
+                          child: Text(
+                            'Giá tiêu chuẩn: ${formatVnd(series.baseChapterPriceVnd)}/chương • Chương mới trong tuần: ${formatVnd(series.hotChapterPriceVnd)}',
+                            style: GoogleFonts.plusJakartaSans(
+                              fontSize: 12,
+                              fontWeight: FontWeight.w600,
+                              color: AppColors.darkTextSecondary,
+                            ),
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+
                   const SizedBox(height: 28),
 
                   // Danh Sách Chương & Bộ Sắp Xếp (Mới nhất / Cũ nhất)
@@ -708,6 +791,17 @@ class _SeriesDetailPageState extends ConsumerState<SeriesDetailPage> {
     final isDownloading = downloadStatus == DownloadStatus.downloading ||
         downloadStatus == DownloadStatus.extracting;
 
+    final isVip = ref.watch(walletNotifierProvider).asData?.value.isVip ?? PreferencesService.getLocalIsVip();
+    final entitlements = ref.watch(chapterEntitlementsProvider);
+    final ent = entitlements[chapter.id] ?? PreferencesService.getChapterEntitlement(chapter.id);
+    final bool isPermanent = isVip || (ent != null ? ent.isPermanent : unlocked);
+    final int? remainingViews = ent?.remainingViews;
+
+    final isWeeklyHot = chapter.isWeeklyHot || chapter.priceVnd == 5000;
+    final displayPriceVnd = chapter.priceVnd > 0
+        ? chapter.priceVnd
+        : (isWeeklyHot ? series.hotChapterPriceVnd : series.baseChapterPriceVnd);
+
     return Container(
       margin: const EdgeInsets.only(bottom: 10),
       decoration: BoxDecoration(
@@ -744,7 +838,7 @@ class _SeriesDetailPageState extends ConsumerState<SeriesDetailPage> {
                   border: Border.all(color: AppColors.mint.withValues(alpha: 0.3)),
                 ),
                 child: Text(
-                  'FREE',
+                  'MIỄN PHÍ',
                   style: GoogleFonts.plusJakartaSans(
                     fontSize: 9,
                     fontWeight: FontWeight.w800,
@@ -753,7 +847,35 @@ class _SeriesDetailPageState extends ConsumerState<SeriesDetailPage> {
                   ),
                 ),
               )
-            else if (!unlocked)
+            else if (unlocked)
+              Container(
+                padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+                decoration: BoxDecoration(
+                  color: isPermanent
+                      ? AppColors.mint.withValues(alpha: 0.12)
+                      : AppColors.primary.withValues(alpha: 0.15),
+                  borderRadius: BorderRadius.circular(4),
+                  border: Border.all(
+                    color: isPermanent
+                        ? AppColors.mint.withValues(alpha: 0.3)
+                        : AppColors.primary.withValues(alpha: 0.4),
+                  ),
+                ),
+                child: Text(
+                  isPermanent
+                      ? 'VĨNH VIỄN'
+                      : (remainingViews != null
+                          ? 'CÒN $remainingViews/3 LƯỢT XEM'
+                          : 'ĐÃ MUA'),
+                  style: GoogleFonts.plusJakartaSans(
+                    fontSize: 9,
+                    fontWeight: FontWeight.w800,
+                    color: isPermanent ? AppColors.mint : AppColors.primary,
+                    letterSpacing: 0.5,
+                  ),
+                ),
+              )
+            else if (isWeeklyHot)
               Container(
                 padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
                 decoration: BoxDecoration(
@@ -761,20 +883,13 @@ class _SeriesDetailPageState extends ConsumerState<SeriesDetailPage> {
                   borderRadius: BorderRadius.circular(4),
                   border: Border.all(color: AppColors.primary.withValues(alpha: 0.3)),
                 ),
-                child: Row(
-                  mainAxisSize: MainAxisSize.min,
-                  children: [
-                    const Icon(Icons.lock_rounded, size: 10, color: AppColors.primary),
-                    const SizedBox(width: 3),
-                    Text(
-                      '${chapter.priceCoins > 0 ? chapter.priceCoins : 50} Coins',
-                      style: GoogleFonts.plusJakartaSans(
-                        fontSize: 9,
-                        fontWeight: FontWeight.w800,
-                        color: AppColors.primary,
-                      ),
-                    ),
-                  ],
+                child: Text(
+                  '🔥 MỚI TRONG TUẦN',
+                  style: GoogleFonts.plusJakartaSans(
+                    fontSize: 9,
+                    fontWeight: FontWeight.w800,
+                    color: AppColors.primary,
+                  ),
                 ),
               ),
           ],
@@ -783,48 +898,92 @@ class _SeriesDetailPageState extends ConsumerState<SeriesDetailPage> {
           mainAxisSize: MainAxisSize.min,
           children: [
             if (unlocked) ...[
-              if (isDownloading)
-                Padding(
-                  padding: const EdgeInsets.all(8.0),
-                  child: SizedBox(
-                    width: 20,
-                    height: 20,
-                    child: CircularProgressIndicator(
-                      value: downloadProgress > 0 ? downloadProgress : null,
-                      strokeWidth: 2,
-                      color: AppColors.primary,
+              if (isPermanent) ...[
+                if (isDownloading)
+                  Padding(
+                    padding: const EdgeInsets.all(8.0),
+                    child: SizedBox(
+                      width: 20,
+                      height: 20,
+                      child: CircularProgressIndicator(
+                        value: downloadProgress > 0 ? downloadProgress : null,
+                        strokeWidth: 2,
+                        color: AppColors.primary,
+                      ),
                     ),
-                  ),
-                )
-              else if (downloaded)
-                const Tooltip(
-                  message: 'Đã lưu offline',
-                  child: Padding(
-                    padding: EdgeInsets.all(8.0),
-                    child: Icon(
-                      Icons.check_circle_rounded,
+                  )
+                else if (downloaded)
+                  const Tooltip(
+                    message: 'Đã lưu offline',
+                    child: Padding(
+                      padding: EdgeInsets.all(8.0),
+                      child: Icon(
+                        Icons.check_circle_rounded,
+                        size: 20,
+                        color: AppColors.mint,
+                      ),
+                    ),
+                  )
+                else
+                  IconButton(
+                    tooltip: 'Tải CBZ Offline',
+                    icon: const Icon(
+                      Icons.download_for_offline_outlined,
                       size: 20,
-                      color: AppColors.mint,
+                      color: Colors.white70,
                     ),
+                    onPressed: () => _downloadChapter(chapter),
                   ),
-                )
-              else
-                IconButton(
-                  tooltip: 'Tải CBZ Offline',
-                  icon: const Icon(
-                    Icons.download_for_offline_outlined,
-                    size: 20,
-                    color: Colors.white70,
-                  ),
-                  onPressed: () => _downloadChapter(chapter),
-                ),
+              ],
               const SizedBox(width: 4),
+              const Icon(
+                Icons.arrow_forward_ios_rounded,
+                size: 14,
+                color: AppColors.primary,
+              ),
+            ] else ...[
+              // Nút khóa hiển thị mức giá VNĐ theo phân loại chương
+              Container(
+                padding: const EdgeInsets.symmetric(horizontal: 9, vertical: 5),
+                decoration: BoxDecoration(
+                  color: isWeeklyHot ? AppColors.primary : AppColors.darkCard,
+                  borderRadius: BorderRadius.circular(8),
+                  border: Border.all(
+                    color: isWeeklyHot ? AppColors.primary : AppColors.darkBorder,
+                  ),
+                  boxShadow: isWeeklyHot
+                      ? [
+                          BoxShadow(
+                            color: AppColors.primary.withValues(alpha: 0.3),
+                            blurRadius: 4,
+                            offset: const Offset(0, 1),
+                          ),
+                        ]
+                      : null,
+                ),
+                child: Row(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    Icon(
+                      isWeeklyHot ? Icons.whatshot_rounded : Icons.lock_rounded,
+                      size: 11,
+                      color: isWeeklyHot ? Colors.white : AppColors.primary,
+                    ),
+                    const SizedBox(width: 4),
+                    Text(
+                      isWeeklyHot
+                          ? '🔥 ${formatVnd(displayPriceVnd)}'
+                          : '🔒 ${formatVnd(displayPriceVnd)}',
+                      style: GoogleFonts.plusJakartaSans(
+                        fontSize: 11.5,
+                        fontWeight: FontWeight.w800,
+                        color: isWeeklyHot ? Colors.white : AppColors.primary,
+                      ),
+                    ),
+                  ],
+                ),
+              ),
             ],
-            Icon(
-              unlocked ? Icons.arrow_forward_ios_rounded : Icons.lock_outline_rounded,
-              size: 14,
-              color: unlocked ? AppColors.primary : AppColors.darkTextSecondary,
-            ),
           ],
         ),
         onTap: () => _onChapterTap(series, chapter),

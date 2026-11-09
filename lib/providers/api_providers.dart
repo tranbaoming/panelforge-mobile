@@ -28,7 +28,8 @@ export '../services/monetization_service.dart'
         MonetizationService,
         monetizationServiceProvider,
         walletNotifierProvider,
-        unlockedChaptersProvider;
+        unlockedChaptersProvider,
+        chapterEntitlementsProvider;
 
 final apiClientProvider = Provider<ApiClient>((ref) {
   return ApiClient();

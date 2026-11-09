@@ -3,9 +3,9 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:google_fonts/google_fonts.dart';
-import 'package:intl/intl.dart';
 import '../models/api_dtos.dart';
 import '../providers/api_providers.dart';
+import '../services/preferences_service.dart';
 import '../theme/app_theme.dart';
 
 class WalletTopupDialog extends ConsumerStatefulWidget {
@@ -29,17 +29,19 @@ class _WalletTopupDialogState extends ConsumerState<WalletTopupDialog>
     with SingleTickerProviderStateMixin {
   late final TabController _tabController;
 
-  // Tab 1: Topup
-  int _selectedCoins = 500;
-  int _selectedAmountVnd = 90000;
+  // Tab 1: Mệnh giá nạp VNĐ
+  int _selectedAmountVnd = 50000;
   bool _isLoadingQr = false;
   TopupResponse? _topupData;
   bool _isConfirming = false;
 
-  // Tab 2: VIP
-  String _selectedVipPlan = 'monthly';
-  bool _isSubscribingVip = false;
-  String? _vipMessage;
+  final _vndPackages = const [
+    (amount: 10000, tag: 'Cơ bản'),
+    (amount: 20000, tag: '7 chương'),
+    (amount: 50000, tag: 'Phổ biến'),
+    (amount: 100000, tag: 'Tiết kiệm'),
+    (amount: 200000, tag: 'VIP Độc giả'),
+  ];
 
   @override
   void initState() {
@@ -57,12 +59,6 @@ class _WalletTopupDialogState extends ConsumerState<WalletTopupDialog>
     super.dispose();
   }
 
-  final _coinPackages = const [
-    (coins: 100, price: 20000, tag: 'Cơ bản'),
-    (coins: 500, price: 90000, tag: 'Phổ biến • -10%'),
-    (coins: 1000, price: 160000, tag: 'Ưu đãi • -20%'),
-  ];
-
   Future<void> _generateVietQR() async {
     setState(() {
       _isLoadingQr = true;
@@ -72,7 +68,6 @@ class _WalletTopupDialogState extends ConsumerState<WalletTopupDialog>
     try {
       final service = ref.read(monetizationServiceProvider);
       final response = await service.requestTopup(
-        coinsAmount: _selectedCoins,
         amountVnd: _selectedAmountVnd,
       );
       if (mounted) {
@@ -97,7 +92,7 @@ class _WalletTopupDialogState extends ConsumerState<WalletTopupDialog>
                 SizedBox(width: 10),
                 Expanded(
                   child: Text(
-                    'Không thể kết nối đến máy chủ thanh toán. Vui lòng kiểm tra lại kết nối mạng hoặc thử lại sau.',
+                    'Không thể kết nối đến máy chủ thanh toán. Đang dùng mã VietQR dự phòng.',
                     style: TextStyle(color: Colors.white),
                   ),
                 ),
@@ -113,13 +108,14 @@ class _WalletTopupDialogState extends ConsumerState<WalletTopupDialog>
     if (_topupData == null) return;
     setState(() => _isConfirming = true);
 
-    await Future.delayed(const Duration(milliseconds: 600)); // Simulate gateway check
+    await Future.delayed(const Duration(milliseconds: 600));
     await ref.read(walletNotifierProvider.notifier).completeTopup(
           orderId: _topupData!.orderId,
-          coinsAmount: _topupData!.coins,
+          amountVnd: _topupData!.amountVnd,
         );
 
     if (mounted) {
+      final addedAmount = _topupData!.amountVnd;
       setState(() {
         _isConfirming = false;
         _topupData = null;
@@ -127,42 +123,22 @@ class _WalletTopupDialogState extends ConsumerState<WalletTopupDialog>
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(
           backgroundColor: AppColors.darkSurface,
+          shape: RoundedRectangleBorder(
+            borderRadius: BorderRadius.circular(12),
+            side: const BorderSide(color: AppColors.mint, width: 1),
+          ),
           content: Row(
             children: [
               const Icon(Icons.check_circle_rounded, color: AppColors.mint, size: 20),
               const SizedBox(width: 10),
               Text(
-                'Nạp thành công +$_selectedCoins ForgeCoins vào ví!',
-                style: const TextStyle(color: Colors.white),
+                'Nạp thành công +${formatVnd(addedAmount)} vào Ví!',
+                style: const TextStyle(color: Colors.white, fontWeight: FontWeight.w600),
               ),
             ],
           ),
         ),
       );
-    }
-  }
-
-  Future<void> _handleSubscribeVip() async {
-    setState(() {
-      _isSubscribingVip = true;
-      _vipMessage = null;
-    });
-
-    try {
-      final res = await ref.read(walletNotifierProvider.notifier).subscribeVip(_selectedVipPlan);
-      if (mounted) {
-        setState(() {
-          _isSubscribingVip = false;
-          _vipMessage = res.message ?? 'Đăng ký VIP thành công!';
-        });
-      }
-    } catch (e) {
-      if (mounted) {
-        setState(() {
-          _isSubscribingVip = false;
-          _vipMessage = e.toString().replaceAll('ApiException: ', '');
-        });
-      }
     }
   }
 
@@ -180,9 +156,9 @@ class _WalletTopupDialogState extends ConsumerState<WalletTopupDialog>
   Widget build(BuildContext context) {
     final walletState = ref.watch(walletNotifierProvider);
     final wallet = walletState.asData?.value;
-    final currentCoins = wallet?.balanceCoins ?? 0;
-    final isVip = wallet?.isVip ?? false;
-    final currencyFormat = NumberFormat('#,###', 'vi_VN');
+    final cachedVnd = PreferencesService.getLocalBalanceVnd();
+    final currentVnd = wallet?.balanceVnd ?? cachedVnd;
+    final isVip = wallet?.isVip ?? PreferencesService.getLocalIsVip();
 
     return Dialog(
       backgroundColor: AppColors.darkSurface,
@@ -192,7 +168,7 @@ class _WalletTopupDialogState extends ConsumerState<WalletTopupDialog>
         side: const BorderSide(color: AppColors.darkBorder, width: 1.5),
       ),
       child: ConstrainedBox(
-        constraints: const BoxConstraints(maxWidth: 420, maxHeight: 680),
+        constraints: const BoxConstraints(maxWidth: 440, maxHeight: 700),
         child: Column(
           children: [
             // Header Bar
@@ -205,7 +181,7 @@ class _WalletTopupDialogState extends ConsumerState<WalletTopupDialog>
                       crossAxisAlignment: CrossAxisAlignment.start,
                       children: [
                         Text(
-                          'Ví ForgeCoins & Gói VIP',
+                          'Ví Tiền PanelForge',
                           style: GoogleFonts.newsreader(
                             fontSize: 20,
                             fontWeight: FontWeight.w700,
@@ -225,32 +201,20 @@ class _WalletTopupDialogState extends ConsumerState<WalletTopupDialog>
                               child: Row(
                                 mainAxisSize: MainAxisSize.min,
                                 children: [
-                                  const Icon(Icons.monetization_on_rounded, size: 14, color: AppColors.primary),
-                                  const SizedBox(width: 4),
-                                  if (walletState.isLoading)
-                                    const SizedBox(
-                                      width: 12,
-                                      height: 12,
-                                      child: CircularProgressIndicator(strokeWidth: 2, color: AppColors.primary),
-                                    )
-                                  else if (walletState.hasError)
-                                    Text(
-                                      'Chưa kết nối',
-                                      style: GoogleFonts.plusJakartaSans(
-                                        fontSize: 11,
-                                        fontWeight: FontWeight.w700,
-                                        color: AppColors.rose,
-                                      ),
-                                    )
-                                  else
-                                    Text(
-                                      '$currentCoins Coins',
-                                      style: GoogleFonts.plusJakartaSans(
-                                        fontSize: 12,
-                                        fontWeight: FontWeight.w800,
-                                        color: AppColors.primary,
-                                      ),
+                                  const Icon(
+                                    Icons.account_balance_wallet_rounded,
+                                    size: 14,
+                                    color: AppColors.primary,
+                                  ),
+                                  const SizedBox(width: 5),
+                                  Text(
+                                    formatVnd(currentVnd),
+                                    style: GoogleFonts.plusJakartaSans(
+                                      fontSize: 12,
+                                      fontWeight: FontWeight.w800,
+                                      color: AppColors.primary,
                                     ),
+                                  ),
                                 ],
                               ),
                             ),
@@ -263,20 +227,13 @@ class _WalletTopupDialogState extends ConsumerState<WalletTopupDialog>
                                   borderRadius: BorderRadius.circular(8),
                                   border: Border.all(color: AppColors.mint.withValues(alpha: 0.3)),
                                 ),
-                                child: Row(
-                                  mainAxisSize: MainAxisSize.min,
-                                  children: [
-                                    const Icon(Icons.star_rounded, size: 14, color: AppColors.mint),
-                                    const SizedBox(width: 4),
-                                    Text(
-                                      'VIP ACTIVE',
-                                      style: GoogleFonts.plusJakartaSans(
-                                        fontSize: 11,
-                                        fontWeight: FontWeight.w800,
-                                        color: AppColors.mint,
-                                      ),
-                                    ),
-                                  ],
+                                child: Text(
+                                  'VIP ACTIVE',
+                                  style: GoogleFonts.plusJakartaSans(
+                                    fontSize: 10,
+                                    fontWeight: FontWeight.w800,
+                                    color: AppColors.mint,
+                                  ),
                                 ),
                               ),
                             ],
@@ -313,8 +270,14 @@ class _WalletTopupDialogState extends ConsumerState<WalletTopupDialog>
                 unselectedLabelColor: AppColors.darkTextSecondary,
                 labelStyle: GoogleFonts.plusJakartaSans(fontSize: 13, fontWeight: FontWeight.w700),
                 tabs: const [
-                  Tab(text: 'Nạp ForgeCoins'),
-                  Tab(text: 'Gói VIP Pass'),
+                  Tab(
+                    icon: Icon(Icons.qr_code_rounded, size: 16),
+                    text: 'Nạp Tiền Vào Ví',
+                  ),
+                  Tab(
+                    icon: Icon(Icons.history_rounded, size: 16),
+                    text: 'Lịch Sử Giao Dịch',
+                  ),
                 ],
               ),
             ),
@@ -325,8 +288,8 @@ class _WalletTopupDialogState extends ConsumerState<WalletTopupDialog>
               child: TabBarView(
                 controller: _tabController,
                 children: [
-                  _buildTopupTab(currencyFormat),
-                  _buildVipTab(currentCoins, isVip),
+                  _buildTopupTab(),
+                  _buildTransactionHistoryTab(),
                 ],
               ),
             ),
@@ -336,8 +299,8 @@ class _WalletTopupDialogState extends ConsumerState<WalletTopupDialog>
     );
   }
 
-  // ─── TAB 1: NẠP COINS ──────────────────────────────────────────────────────
-  Widget _buildTopupTab(NumberFormat currencyFormat) {
+  // ─── TAB 1: NẠP TIỀN VÀO VÍ ────────────────────────────────────────────────
+  Widget _buildTopupTab() {
     if (_topupData != null) {
       final qr = _topupData!;
       return SingleChildScrollView(
@@ -346,88 +309,101 @@ class _WalletTopupDialogState extends ConsumerState<WalletTopupDialog>
           crossAxisAlignment: CrossAxisAlignment.stretch,
           children: [
             Container(
-              padding: const EdgeInsets.all(12),
-              decoration: BoxDecoration(
-                color: Colors.white,
-                borderRadius: BorderRadius.circular(16),
-              ),
-              child: Column(
-                children: [
-                  if (qr.qrCodeUrl != null)
-                    CachedNetworkImage(
-                      imageUrl: qr.qrCodeUrl!,
-                      height: 180,
-                      fit: BoxFit.contain,
-                      placeholder: (context, url) => const SizedBox(
-                        height: 180,
-                        child: Center(child: CircularProgressIndicator()),
-                      ),
-                      errorWidget: (context, url, error) => const SizedBox(
-                        height: 180,
-                        child: Center(
-                          child: Icon(Icons.qr_code_2_rounded, size: 80, color: Colors.black54),
-                        ),
-                      ),
-                    ),
-                  const SizedBox(height: 6),
-                  Text(
-                    'Quét mã qua ứng dụng ngân hàng bất kỳ',
-                    style: GoogleFonts.plusJakartaSans(
-                      fontSize: 12,
-                      fontWeight: FontWeight.w600,
-                      color: Colors.black87,
-                    ),
-                  ),
-                ],
-              ),
-            ),
-            const SizedBox(height: 12),
-
-            // Transfer details
-            Container(
-              padding: const EdgeInsets.all(12),
+              padding: const EdgeInsets.all(14),
               decoration: BoxDecoration(
                 color: AppColors.darkCard,
-                borderRadius: BorderRadius.circular(12),
+                borderRadius: BorderRadius.circular(16),
                 border: Border.all(color: AppColors.darkBorder),
               ),
               child: Column(
                 children: [
-                  _buildCopyRow('Ngân hàng:', qr.bankName ?? 'Vietcombank', qr.bankName ?? ''),
-                  const Divider(color: AppColors.darkBorder, height: 16),
-                  _buildCopyRow('Số tài khoản:', qr.accountNumber ?? '9876543210', qr.accountNumber ?? ''),
-                  const Divider(color: AppColors.darkBorder, height: 16),
-                  _buildCopyRow('Số tiền:', '${currencyFormat.format(qr.amountVnd)} đ', qr.amountVnd.toString()),
-                  const Divider(color: AppColors.darkBorder, height: 16),
-                  _buildCopyRow('Nội dung CK:', qr.transferContent ?? 'PF', qr.transferContent ?? ''),
+                  Text(
+                    'Quét mã VietQR để nạp ${formatVnd(qr.amountVnd)}',
+                    style: GoogleFonts.plusJakartaSans(
+                      fontSize: 14,
+                      fontWeight: FontWeight.w700,
+                      color: Colors.white,
+                    ),
+                  ),
+                  const SizedBox(height: 12),
+                  // QR Image Container
+                  Container(
+                    padding: const EdgeInsets.all(8),
+                    decoration: BoxDecoration(
+                      color: Colors.white,
+                      borderRadius: BorderRadius.circular(12),
+                    ),
+                    child: qr.qrCodeUrl != null
+                        ? CachedNetworkImage(
+                            imageUrl: qr.qrCodeUrl!,
+                            width: 170,
+                            height: 170,
+                            fit: BoxFit.contain,
+                            placeholder: (context, url) => const SizedBox(
+                              width: 170,
+                              height: 170,
+                              child: Center(
+                                child: CircularProgressIndicator(color: AppColors.primary),
+                              ),
+                            ),
+                            errorWidget: (context, url, error) => const SizedBox(
+                              width: 170,
+                              height: 170,
+                              child: Center(
+                                child: Icon(Icons.broken_image_rounded, size: 40, color: Colors.grey),
+                              ),
+                            ),
+                          )
+                        : const SizedBox(
+                            width: 170,
+                            height: 170,
+                            child: Center(child: Icon(Icons.qr_code_2_rounded, size: 80)),
+                          ),
+                  ),
+                  const SizedBox(height: 14),
+
+                  // Thông tin chuyển khoản
+                  _buildInfoRow('Ngân hàng:', qr.bankName ?? 'Vietcombank'),
+                  _buildCopyRow('Số tài khoản:', qr.accountNumber ?? '9876543210'),
+                  _buildInfoRow('Chủ tài khoản:', qr.accountName ?? 'PANELFORGE COMICS'),
+                  _buildInfoRow('Số tiền:', formatVnd(qr.amountVnd), highlight: true),
+                  _buildCopyRow('Nội dung CK:', qr.transferContent ?? 'PFWALLET ${qr.orderId}'),
                 ],
               ),
             ),
             const SizedBox(height: 14),
 
-            ElevatedButton.icon(
+            // Nút Xác nhận chuyển khoản
+            ElevatedButton(
               onPressed: _isConfirming ? null : _confirmPayment,
-              icon: _isConfirming
-                  ? const SizedBox(
-                      width: 18,
-                      height: 18,
-                      child: CircularProgressIndicator(strokeWidth: 2, color: Colors.white),
-                    )
-                  : const Icon(Icons.check_circle_outline_rounded, size: 18),
-              label: Text(
-                _isConfirming ? 'Đang kiểm tra...' : 'Tôi Đã Chuyển Khoản',
-                style: GoogleFonts.plusJakartaSans(fontSize: 14, fontWeight: FontWeight.w700),
-              ),
               style: ElevatedButton.styleFrom(
                 backgroundColor: AppColors.mint,
-                foregroundColor: Colors.white,
-                padding: const EdgeInsets.symmetric(vertical: 12),
-                shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
+                foregroundColor: Colors.black,
+                padding: const EdgeInsets.symmetric(vertical: 14),
+                shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
               ),
+              child: _isConfirming
+                  ? const SizedBox(
+                      width: 20,
+                      height: 20,
+                      child: CircularProgressIndicator(strokeWidth: 2, color: Colors.black),
+                    )
+                  : Text(
+                      'Tôi Đã Chuyển Khoản Thành Công',
+                      style: GoogleFonts.plusJakartaSans(
+                        fontSize: 14,
+                        fontWeight: FontWeight.w800,
+                      ),
+                    ),
             ),
+            const SizedBox(height: 8),
+
             TextButton(
               onPressed: () => setState(() => _topupData = null),
-              child: const Text('Chọn gói khác', style: TextStyle(color: Colors.white60, fontSize: 12)),
+              child: Text(
+                'Chọn mệnh giá khác',
+                style: GoogleFonts.plusJakartaSans(color: Colors.white70, fontSize: 13),
+              ),
             ),
           ],
         ),
@@ -440,78 +416,79 @@ class _WalletTopupDialogState extends ConsumerState<WalletTopupDialog>
         crossAxisAlignment: CrossAxisAlignment.stretch,
         children: [
           Text(
-            'Chọn gói ForgeCoins:',
+            'Chọn mệnh giá nạp vào Ví:',
             style: GoogleFonts.plusJakartaSans(
-              fontSize: 13,
+              fontSize: 14,
               fontWeight: FontWeight.w700,
-              color: AppColors.darkTextSecondary,
+              color: Colors.white,
             ),
           ),
-          const SizedBox(height: 10),
+          const SizedBox(height: 12),
 
-          // Packages
-          ..._coinPackages.map((pkg) {
-            final isSelected = _selectedCoins == pkg.coins;
+          // Danh sách các gói mệnh giá VNĐ
+          ..._vndPackages.map((pkg) {
+            final isSelected = _selectedAmountVnd == pkg.amount;
             return Padding(
               padding: const EdgeInsets.only(bottom: 10),
               child: InkWell(
                 onTap: () {
-                  setState(() {
-                    _selectedCoins = pkg.coins;
-                    _selectedAmountVnd = pkg.price;
-                  });
+                  setState(() => _selectedAmountVnd = pkg.amount);
                 },
-                borderRadius: BorderRadius.circular(14),
+                borderRadius: BorderRadius.circular(12),
                 child: Container(
-                  padding: const EdgeInsets.all(14),
+                  padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
                   decoration: BoxDecoration(
-                    color: isSelected ? AppColors.primary.withValues(alpha: 0.12) : AppColors.darkCard,
-                    borderRadius: BorderRadius.circular(14),
+                    color: isSelected
+                        ? AppColors.primary.withValues(alpha: 0.15)
+                        : AppColors.darkCard,
+                    borderRadius: BorderRadius.circular(12),
                     border: Border.all(
                       color: isSelected ? AppColors.primary : AppColors.darkBorder,
-                      width: isSelected ? 1.5 : 1,
+                      width: isSelected ? 1.5 : 1.0,
                     ),
                   ),
                   child: Row(
+                    mainAxisAlignment: MainAxisAlignment.spaceBetween,
                     children: [
-                      Container(
-                        padding: const EdgeInsets.all(8),
-                        decoration: BoxDecoration(
-                          color: AppColors.primary.withValues(alpha: 0.15),
-                          shape: BoxShape.circle,
-                        ),
-                        child: const Icon(Icons.monetization_on_rounded, color: AppColors.primary, size: 20),
-                      ),
-                      const SizedBox(width: 12),
-                      Expanded(
-                        child: Column(
-                          crossAxisAlignment: CrossAxisAlignment.start,
-                          children: [
-                            Text(
-                              '${pkg.coins} ForgeCoins',
-                              style: GoogleFonts.plusJakartaSans(
-                                fontSize: 15,
-                                fontWeight: FontWeight.w800,
-                                color: Colors.white,
-                              ),
+                      Row(
+                        mainAxisSize: MainAxisSize.min,
+                        children: [
+                          Icon(
+                            isSelected ? Icons.radio_button_checked : Icons.radio_button_off,
+                            color: isSelected ? AppColors.primary : AppColors.darkTextSecondary,
+                            size: 18,
+                          ),
+                          const SizedBox(width: 10),
+                          Text(
+                            formatVnd(pkg.amount),
+                            style: GoogleFonts.plusJakartaSans(
+                              fontSize: 15,
+                              fontWeight: FontWeight.w800,
+                              color: isSelected ? Colors.white : Colors.white70,
                             ),
-                            Text(
-                              pkg.tag,
-                              style: GoogleFonts.plusJakartaSans(
-                                fontSize: 11,
-                                color: isSelected ? AppColors.primary : AppColors.darkTextSecondary,
-                                fontWeight: FontWeight.w600,
-                              ),
-                            ),
-                          ],
-                        ),
+                          ),
+                        ],
                       ),
-                      Text(
-                        '${currencyFormat.format(pkg.price)} đ',
-                        style: GoogleFonts.plusJakartaSans(
-                          fontSize: 15,
-                          fontWeight: FontWeight.w700,
-                          color: Colors.white,
+                      const SizedBox(width: 8),
+                      Flexible(
+                        child: Container(
+                          padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
+                          decoration: BoxDecoration(
+                            color: isSelected
+                                ? AppColors.primary.withValues(alpha: 0.2)
+                                : Colors.white.withValues(alpha: 0.05),
+                            borderRadius: BorderRadius.circular(6),
+                          ),
+                          child: Text(
+                            pkg.tag,
+                            maxLines: 1,
+                            overflow: TextOverflow.ellipsis,
+                            style: GoogleFonts.plusJakartaSans(
+                              fontSize: 11,
+                              fontWeight: FontWeight.w600,
+                              color: isSelected ? AppColors.primary : AppColors.darkTextSecondary,
+                            ),
+                          ),
                         ),
                       ),
                     ],
@@ -521,257 +498,214 @@ class _WalletTopupDialogState extends ConsumerState<WalletTopupDialog>
             );
           }),
 
-          const SizedBox(height: 10),
-          ElevatedButton.icon(
+          const SizedBox(height: 14),
+
+          // Nút tạo mã VietQR
+          ElevatedButton(
             onPressed: _isLoadingQr ? null : _generateVietQR,
-            icon: _isLoadingQr
-                ? const SizedBox(
-                    width: 18,
-                    height: 18,
-                    child: CircularProgressIndicator(strokeWidth: 2, color: Colors.white),
-                  )
-                : const Icon(Icons.qr_code_rounded, size: 18),
-            label: Text(
-              _isLoadingQr ? 'Đang tạo mã...' : 'Tạo Mã Thanh Toán VietQR',
-              style: GoogleFonts.plusJakartaSans(fontSize: 14, fontWeight: FontWeight.w700),
-            ),
             style: ElevatedButton.styleFrom(
               backgroundColor: AppColors.primary,
               foregroundColor: Colors.white,
               padding: const EdgeInsets.symmetric(vertical: 14),
               shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
             ),
+            child: _isLoadingQr
+                ? const SizedBox(
+                    width: 20,
+                    height: 20,
+                    child: CircularProgressIndicator(strokeWidth: 2, color: Colors.white),
+                  )
+                : Text(
+                    'Tạo Mã VietQR Thanh Toán',
+                    style: GoogleFonts.plusJakartaSans(
+                      fontSize: 15,
+                      fontWeight: FontWeight.w700,
+                    ),
+                  ),
+          ),
+          const SizedBox(height: 12),
+          Text(
+            'Hệ thống tự động cộng tiền ngay sau khi xác nhận chuyển khoản thành công.',
+            textAlign: TextAlign.center,
+            style: GoogleFonts.plusJakartaSans(
+              fontSize: 11.5,
+              color: AppColors.darkTextSecondary,
+            ),
           ),
         ],
       ),
     );
   }
 
-  Widget _buildCopyRow(String label, String value, String rawCopy) {
-    return Row(
-      mainAxisAlignment: MainAxisAlignment.spaceBetween,
-      children: [
-        Text(
-          label,
-          style: GoogleFonts.plusJakartaSans(fontSize: 12, color: AppColors.darkTextSecondary),
-        ),
-        Row(
-          children: [
-            Text(
-              value,
-              style: GoogleFonts.plusJakartaSans(
-                fontSize: 13,
-                fontWeight: FontWeight.w700,
-                color: Colors.white,
-              ),
-            ),
-            const SizedBox(width: 6),
-            InkWell(
-              onTap: () => _copyToClipboard(rawCopy, label),
-              child: const Icon(Icons.copy_rounded, size: 14, color: AppColors.primary),
-            ),
-          ],
-        ),
-      ],
-    );
-  }
+  // ─── TAB 2: LỊCH SỬ GIAO DỊCH ──────────────────────────────────────────────
+  Widget _buildTransactionHistoryTab() {
+    final transactions = PreferencesService.getWalletTransactions();
 
-  // ─── TAB 2: GÓI VIP PASS ───────────────────────────────────────────────────
-  Widget _buildVipTab(int currentCoins, bool isVip) {
-    final isYearly = _selectedVipPlan == 'yearly';
-    final cost = isYearly ? 1999 : 199;
-    final hasEnough = currentCoins >= cost;
-
-    return SingleChildScrollView(
-      padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 8),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.stretch,
-        children: [
-          // Privileges list
-          Container(
-            padding: const EdgeInsets.all(14),
-            decoration: BoxDecoration(
-              color: AppColors.darkCard,
-              borderRadius: BorderRadius.circular(14),
-              border: Border.all(color: AppColors.darkBorder),
-            ),
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Text(
-                  'Đặc Quyền Hội Viên VIP:',
-                  style: GoogleFonts.plusJakartaSans(
-                    fontSize: 13,
-                    fontWeight: FontWeight.w800,
-                    color: Colors.white,
-                  ),
-                ),
-                const SizedBox(height: 10),
-                _buildPrivilegeItem('Đọc miễn phí toàn bộ chương truyện trả phí'),
-                _buildPrivilegeItem('Tải Single-file CBZ không giới hạn đọc Offline'),
-                _buildPrivilegeItem('Dịch thuật AI đa ngôn ngữ không giới hạn lượt'),
-                _buildPrivilegeItem('Huy hiệu VIP Obsidian nổi bật trên tài khoản'),
-              ],
-            ),
-          ),
-          const SizedBox(height: 14),
-
-          // Plan selection: Monthly vs Yearly
-          Row(
+    if (transactions.isEmpty) {
+      return Center(
+        child: Padding(
+          padding: const EdgeInsets.all(24),
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
             children: [
-              Expanded(
-                child: _buildPlanCard(
-                  title: 'Gói Tháng',
-                  priceCoins: 199,
-                  subtitle: '30 ngày',
-                  selected: !isYearly,
-                  onTap: () => setState(() => _selectedVipPlan = 'monthly'),
+              Container(
+                padding: const EdgeInsets.all(16),
+                decoration: BoxDecoration(
+                  color: AppColors.darkCard,
+                  shape: BoxShape.circle,
+                  border: Border.all(color: AppColors.darkBorder),
+                ),
+                child: const Icon(
+                  Icons.receipt_long_outlined,
+                  size: 40,
+                  color: AppColors.darkTextSecondary,
                 ),
               ),
-              const SizedBox(width: 12),
-              Expanded(
-                child: _buildPlanCard(
-                  title: 'Gói Năm',
-                  priceCoins: 1999,
-                  subtitle: '365 ngày • Tiết kiệm 16%',
-                  selected: isYearly,
-                  onTap: () => setState(() => _selectedVipPlan = 'yearly'),
+              const SizedBox(height: 16),
+              Text(
+                'Chưa có giao dịch nào',
+                style: GoogleFonts.newsreader(
+                  fontSize: 17,
+                  fontWeight: FontWeight.w600,
+                  color: Colors.white,
+                ),
+              ),
+              const SizedBox(height: 6),
+              Text(
+                'Lịch sử nạp tiền và thanh toán chapter sẽ hiển thị tại đây.',
+                textAlign: TextAlign.center,
+                style: GoogleFonts.plusJakartaSans(
+                  fontSize: 12,
+                  color: AppColors.darkTextSecondary,
                 ),
               ),
             ],
           ),
-          const SizedBox(height: 14),
+        ),
+      );
+    }
 
-          if (_vipMessage != null)
-            Padding(
-              padding: const EdgeInsets.only(bottom: 12),
-              child: Container(
-                padding: const EdgeInsets.all(10),
+    return ListView.separated(
+      padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+      itemCount: transactions.length,
+      separatorBuilder: (context, index) => const Divider(color: AppColors.darkBorder, height: 1),
+      itemBuilder: (context, index) {
+        final tx = transactions[index];
+        final isPositive = tx.amountVnd > 0;
+        final dateStr =
+            '${tx.createdAt.day.toString().padLeft(2, '0')}/${tx.createdAt.month.toString().padLeft(2, '0')}/${tx.createdAt.year} ${tx.createdAt.hour.toString().padLeft(2, '0')}:${tx.createdAt.minute.toString().padLeft(2, '0')}';
+
+        return Padding(
+          padding: const EdgeInsets.symmetric(vertical: 10),
+          child: Row(
+            children: [
+              Container(
+                padding: const EdgeInsets.all(8),
                 decoration: BoxDecoration(
-                  color: AppColors.darkCard,
-                  borderRadius: BorderRadius.circular(10),
-                  border: Border.all(color: AppColors.primary.withValues(alpha: 0.4)),
+                  color: isPositive
+                      ? AppColors.mint.withValues(alpha: 0.15)
+                      : AppColors.primary.withValues(alpha: 0.15),
+                  shape: BoxShape.circle,
                 ),
-                child: Text(
-                  _vipMessage!,
-                  style: GoogleFonts.plusJakartaSans(fontSize: 12, color: Colors.white),
-                  textAlign: TextAlign.center,
+                child: Icon(
+                  isPositive ? Icons.add_circle_outline_rounded : Icons.remove_circle_outline_rounded,
+                  color: isPositive ? AppColors.mint : AppColors.primary,
+                  size: 20,
                 ),
               ),
-            ),
-
-          if (hasEnough)
-            ElevatedButton(
-              onPressed: _isSubscribingVip ? null : _handleSubscribeVip,
-              style: ElevatedButton.styleFrom(
-                backgroundColor: AppColors.primary,
-                foregroundColor: Colors.white,
-                padding: const EdgeInsets.symmetric(vertical: 14),
-                shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
-              ),
-              child: _isSubscribingVip
-                  ? const SizedBox(
-                      width: 20,
-                      height: 20,
-                      child: CircularProgressIndicator(strokeWidth: 2, color: Colors.white),
-                    )
-                  : Text(
-                      'Kích Hoạt VIP Ngay ($cost Coins)',
-                      style: GoogleFonts.plusJakartaSans(fontSize: 14, fontWeight: FontWeight.w700),
+              const SizedBox(width: 12),
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                      tx.title,
+                      style: GoogleFonts.plusJakartaSans(
+                        fontSize: 13,
+                        fontWeight: FontWeight.w700,
+                        color: Colors.white,
+                      ),
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
                     ),
-            )
-          else
-            ElevatedButton.icon(
-              onPressed: () => _tabController.animateTo(0),
-              icon: const Icon(Icons.add_circle_outline_rounded, size: 18),
-              label: Text(
-                'Số dư không đủ • Nạp Coins để nâng cấp',
-                style: GoogleFonts.plusJakartaSans(fontSize: 13, fontWeight: FontWeight.w700),
-              ),
-              style: ElevatedButton.styleFrom(
-                backgroundColor: AppColors.amber,
-                foregroundColor: Colors.black,
-                padding: const EdgeInsets.symmetric(vertical: 14),
-                shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
-              ),
-            ),
-        ],
-      ),
-    );
-  }
-
-  Widget _buildPrivilegeItem(String text) {
-    return Padding(
-      padding: const EdgeInsets.only(bottom: 6),
-      child: Row(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          const Icon(Icons.check_circle_rounded, color: AppColors.mint, size: 16),
-          const SizedBox(width: 8),
-          Expanded(
-            child: Text(
-              text,
-              style: GoogleFonts.plusJakartaSans(fontSize: 12, color: Colors.white70),
-            ),
-          ),
-        ],
-      ),
-    );
-  }
-
-  Widget _buildPlanCard({
-    required String title,
-    required int priceCoins,
-    required String subtitle,
-    required bool selected,
-    required VoidCallback onTap,
-  }) {
-    return InkWell(
-      onTap: onTap,
-      borderRadius: BorderRadius.circular(12),
-      child: Container(
-        padding: const EdgeInsets.all(12),
-        decoration: BoxDecoration(
-          color: selected ? AppColors.primary.withValues(alpha: 0.15) : AppColors.darkCard,
-          borderRadius: BorderRadius.circular(12),
-          border: Border.all(
-            color: selected ? AppColors.primary : AppColors.darkBorder,
-            width: selected ? 1.5 : 1,
-          ),
-        ),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            Text(
-              title,
-              style: GoogleFonts.plusJakartaSans(
-                fontSize: 13,
-                fontWeight: FontWeight.w700,
-                color: Colors.white,
-              ),
-            ),
-            const SizedBox(height: 4),
-            Row(
-              children: [
-                const Icon(Icons.monetization_on_rounded, size: 14, color: AppColors.primary),
-                const SizedBox(width: 4),
-                Text(
-                  '$priceCoins',
-                  style: GoogleFonts.plusJakartaSans(
-                    fontSize: 16,
-                    fontWeight: FontWeight.w800,
-                    color: AppColors.primary,
-                  ),
+                    const SizedBox(height: 2),
+                    Text(
+                      '$dateStr • Sau GD: ${formatVnd(tx.balanceAfter)}',
+                      style: GoogleFonts.plusJakartaSans(
+                        fontSize: 11,
+                        color: AppColors.darkTextSecondary,
+                      ),
+                    ),
+                  ],
                 ),
-              ],
+              ),
+              const SizedBox(width: 8),
+              Text(
+                formatVnd(tx.amountVnd, showSign: true),
+                style: GoogleFonts.plusJakartaSans(
+                  fontSize: 13.5,
+                  fontWeight: FontWeight.w800,
+                  color: isPositive ? AppColors.mint : AppColors.primary,
+                ),
+              ),
+            ],
+          ),
+        );
+      },
+    );
+  }
+
+  Widget _buildInfoRow(String label, String value, {bool highlight = false}) {
+    return Padding(
+      padding: const EdgeInsets.symmetric(vertical: 4),
+      child: Row(
+        mainAxisAlignment: MainAxisAlignment.spaceBetween,
+        children: [
+          Text(
+            label,
+            style: GoogleFonts.plusJakartaSans(fontSize: 12, color: AppColors.darkTextSecondary),
+          ),
+          Text(
+            value,
+            style: GoogleFonts.plusJakartaSans(
+              fontSize: 12.5,
+              fontWeight: FontWeight.w700,
+              color: highlight ? AppColors.primary : Colors.white,
             ),
-            const SizedBox(height: 2),
-            Text(
-              subtitle,
-              style: GoogleFonts.plusJakartaSans(fontSize: 10, color: AppColors.darkTextSecondary),
-            ),
-          ],
-        ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildCopyRow(String label, String value) {
+    return Padding(
+      padding: const EdgeInsets.symmetric(vertical: 4),
+      child: Row(
+        mainAxisAlignment: MainAxisAlignment.spaceBetween,
+        children: [
+          Text(
+            label,
+            style: GoogleFonts.plusJakartaSans(fontSize: 12, color: AppColors.darkTextSecondary),
+          ),
+          Row(
+            children: [
+              Text(
+                value,
+                style: GoogleFonts.plusJakartaSans(
+                  fontSize: 12.5,
+                  fontWeight: FontWeight.w700,
+                  color: Colors.white,
+                ),
+              ),
+              const SizedBox(width: 6),
+              InkWell(
+                onTap: () => _copyToClipboard(value, label),
+                child: const Icon(Icons.copy_rounded, size: 14, color: AppColors.primary),
+              ),
+            ],
+          ),
+        ],
       ),
     );
   }

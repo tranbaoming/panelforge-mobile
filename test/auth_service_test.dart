@@ -1,3 +1,4 @@
+import 'dart:convert';
 import 'package:cookie_jar/cookie_jar.dart';
 import 'package:dio/dio.dart';
 import 'package:flutter/material.dart';
@@ -252,6 +253,26 @@ void main() {
         // Expected network/server failure in mock test environment
         expect(e, isNotNull);
       }
+    });
+
+    test('parseJwtPayload correctly extracts claims from Google ID Token', () {
+      final payloadJson = {
+        'sub': 'google-uid-998877',
+        'email': 'real.google.reader@gmail.com',
+        'name': 'Google Manga Fan',
+        'picture': 'https://lh3.googleusercontent.com/photo.jpg',
+      };
+      final headerBase64 = base64Url.encode(utf8.encode('{"alg":"RS256","typ":"JWT"}')).replaceAll('=', '');
+      final payloadBase64 = base64Url.encode(utf8.encode(jsonEncode(payloadJson))).replaceAll('=', '');
+      const signature = 'dummy_signature';
+      final mockJwt = '$headerBase64.$payloadBase64.$signature';
+
+      final claims = AuthService.parseJwtPayload(mockJwt);
+      expect(claims, isNotNull);
+      expect(claims!['sub'], 'google-uid-998877');
+      expect(claims['email'], 'real.google.reader@gmail.com');
+      expect(claims['name'], 'Google Manga Fan');
+      expect(claims['picture'], 'https://lh3.googleusercontent.com/photo.jpg');
     });
   });
 
