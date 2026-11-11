@@ -150,6 +150,7 @@ class _ReviewCanvasPageState extends State<ReviewCanvasPage> {
           backgroundColor: AppColors.darkBg,
           elevation: 0,
           leading: IconButton(
+            tooltip: 'Quay lại',
             icon: const Icon(Icons.arrow_back_ios_new_rounded, color: Colors.white, size: 20),
             onPressed: () => context.pop(),
           ),
@@ -177,6 +178,7 @@ class _ReviewCanvasPageState extends State<ReviewCanvasPage> {
           backgroundColor: AppColors.darkBg,
           elevation: 0,
           leading: IconButton(
+            tooltip: 'Quay lại',
             icon: const Icon(Icons.arrow_back_ios_new_rounded, color: Colors.white, size: 20),
             onPressed: () => context.pop(),
           ),
@@ -219,6 +221,7 @@ class _ReviewCanvasPageState extends State<ReviewCanvasPage> {
       appBar: AppBar(
         backgroundColor: AppColors.darkBg.withValues(alpha: 0.9),
         leading: IconButton(
+          tooltip: 'Quay lại',
           icon: const Icon(Icons.arrow_back_ios_new_rounded, color: Colors.white, size: 20),
           onPressed: () => context.pop(),
         ),
@@ -236,7 +239,7 @@ class _ReviewCanvasPageState extends State<ReviewCanvasPage> {
             Text(
               manuscript.chapterTitle,
               style: GoogleFonts.plusJakartaSans(
-                fontSize: 11,
+                fontSize: 12,
                 color: AppColors.darkTextSecondary,
               ),
             ),
@@ -256,9 +259,9 @@ class _ReviewCanvasPageState extends State<ReviewCanvasPage> {
                 const Icon(Icons.comment_rounded, size: 12, color: AppColors.mint),
                 const SizedBox(width: 4),
                 Text(
-                  '$_totalAnnotationCount GÓP Ý',
+                  '$_totalAnnotationCount góp ý',
                   style: GoogleFonts.plusJakartaSans(
-                    fontSize: 10,
+                    fontSize: 12,
                     fontWeight: FontWeight.w800,
                     color: AppColors.mint,
                   ),
@@ -283,7 +286,7 @@ class _ReviewCanvasPageState extends State<ReviewCanvasPage> {
                     child: Text(
                       'Watermark đang nhúng: ${manuscript.recipientEmail}',
                       style: GoogleFonts.plusJakartaSans(
-                        fontSize: 10,
+                        fontSize: 12,
                         fontWeight: FontWeight.w700,
                         color: AppColors.primary,
                       ),
@@ -292,7 +295,7 @@ class _ReviewCanvasPageState extends State<ReviewCanvasPage> {
                   Text(
                     '${manuscript.panels.length} Khung Tranh',
                     style: GoogleFonts.plusJakartaSans(
-                      fontSize: 10,
+                      fontSize: 12,
                       fontWeight: FontWeight.w600,
                       color: AppColors.darkTextSecondary,
                     ),
@@ -368,7 +371,8 @@ class _ReviewCanvasPageState extends State<ReviewCanvasPage> {
             // BOTTOM CONTROL BAR
             if (manuscript.panels.isNotEmpty)
               Container(
-                padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+                constraints: const BoxConstraints(minHeight: 64),
+                padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
                 decoration: const BoxDecoration(
                   color: AppColors.darkSurface,
                   border: Border(
@@ -385,7 +389,7 @@ class _ReviewCanvasPageState extends State<ReviewCanvasPage> {
                           Text(
                             'Khung đang chọn:',
                             style: GoogleFonts.plusJakartaSans(
-                              fontSize: 10,
+                              fontSize: 12,
                               color: AppColors.darkTextSecondary,
                             ),
                           ),
@@ -410,11 +414,12 @@ class _ReviewCanvasPageState extends State<ReviewCanvasPage> {
                         );
                         _openAnnotationSheet(currentPanel);
                       },
-                      icon: const Icon(Icons.add_comment_rounded, size: 16),
-                      label: const Text('GÓP Ý PANEL NÀY'),
+                      icon: const Icon(Icons.add_comment_rounded, size: 20),
+                      label: const Text('Góp ý panel này'),
                       style: ElevatedButton.styleFrom(
                         backgroundColor: AppColors.primary,
                         foregroundColor: Colors.white,
+                        minimumSize: const Size(48, 48),
                         padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
                       ),
                     ),

@@ -377,7 +377,8 @@ class _ComicReaderPageState extends ConsumerState<ComicReaderPage> {
               child: Row(
                 children: [
                   IconButton(
-                    icon: const Icon(Icons.arrow_back_ios_new_rounded, size: 18),
+                    tooltip: 'Quay lại',
+                    icon: const Icon(Icons.arrow_back_ios_new_rounded, size: 20),
                     color: hudTextColor,
                     onPressed: () => context.pop(),
                   ),
@@ -412,7 +413,7 @@ class _ComicReaderPageState extends ConsumerState<ComicReaderPage> {
                                 child: Text(
                                   'OFFLINE',
                                   style: GoogleFonts.plusJakartaSans(
-                                    fontSize: 8.5,
+                                    fontSize: 12,
                                     fontWeight: FontWeight.w800,
                                     color: AppColors.mint,
                                   ),
@@ -426,7 +427,7 @@ class _ComicReaderPageState extends ConsumerState<ComicReaderPage> {
                           maxLines: 1,
                           overflow: TextOverflow.ellipsis,
                           style: GoogleFonts.plusJakartaSans(
-                            fontSize: 11,
+                            fontSize: 12,
                             color: hudTextColor.withValues(alpha: 0.7),
                           ),
                         ),
@@ -455,7 +456,7 @@ class _ComicReaderPageState extends ConsumerState<ComicReaderPage> {
                               Text(
                                 _selectedLanguage?.toUpperCase() ?? 'GỐC',
                                 style: GoogleFonts.plusJakartaSans(
-                                  fontSize: 11,
+                                  fontSize: 12,
                                   fontWeight: FontWeight.w800,
                                   color: AppColors.primary,
                                 ),
@@ -514,7 +515,7 @@ class _ComicReaderPageState extends ConsumerState<ComicReaderPage> {
                                     ? 'RTL'
                                     : 'CUỘN',
                             style: GoogleFonts.plusJakartaSans(
-                              fontSize: 11,
+                              fontSize: 12,
                               fontWeight: FontWeight.w800,
                               color: AppColors.primary,
                             ),
@@ -592,7 +593,7 @@ class _ComicReaderPageState extends ConsumerState<ComicReaderPage> {
           AnimatedPositioned(
             duration: const Duration(milliseconds: 250),
             curve: Curves.easeOutCubic,
-            bottom: _showHud ? 0 : -180,
+            bottom: _showHud ? 0 : -260,
             left: 0,
             right: 0,
             child: Container(
@@ -631,6 +632,8 @@ class _ComicReaderPageState extends ConsumerState<ComicReaderPage> {
                           onTap: () => setState(() => _themeMode = theme),
                           borderRadius: BorderRadius.circular(16),
                           child: Container(
+                            constraints: const BoxConstraints(minHeight: 44),
+                            alignment: Alignment.center,
                             padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 6),
                             decoration: BoxDecoration(
                               color: Color(theme.bgColor),
@@ -641,6 +644,7 @@ class _ComicReaderPageState extends ConsumerState<ComicReaderPage> {
                               ),
                             ),
                             child: Row(
+                              mainAxisSize: MainAxisSize.min,
                               children: [
                                 Container(
                                   width: 8,
@@ -654,7 +658,7 @@ class _ComicReaderPageState extends ConsumerState<ComicReaderPage> {
                                 Text(
                                   theme.label,
                                   style: GoogleFonts.plusJakartaSans(
-                                    fontSize: 11,
+                                    fontSize: 12,
                                     fontWeight: isSelected ? FontWeight.w800 : FontWeight.w500,
                                     color: Color(theme.textColor),
                                   ),
@@ -676,7 +680,7 @@ class _ComicReaderPageState extends ConsumerState<ComicReaderPage> {
                         Text(
                           'Khoảng cách khung:',
                           style: GoogleFonts.plusJakartaSans(
-                            fontSize: 11,
+                            fontSize: 12,
                             color: hudTextColor.withValues(alpha: 0.7),
                             fontWeight: FontWeight.w600,
                           ),
@@ -690,6 +694,8 @@ class _ComicReaderPageState extends ConsumerState<ComicReaderPage> {
                               onTap: () => setState(() => _webtoonTileSpacing = spacing),
                               borderRadius: BorderRadius.circular(12),
                               child: Container(
+                                constraints: const BoxConstraints(minHeight: 44, minWidth: 44),
+                                alignment: Alignment.center,
                                 padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
                                 decoration: BoxDecoration(
                                   color: isSelected ? AppColors.primary : AppColors.darkCard,
@@ -701,7 +707,7 @@ class _ComicReaderPageState extends ConsumerState<ComicReaderPage> {
                                 child: Text(
                                   '${spacing.toInt()}px',
                                   style: GoogleFonts.plusJakartaSans(
-                                    fontSize: 10,
+                                    fontSize: 12,
                                     fontWeight: isSelected ? FontWeight.w800 : FontWeight.w500,
                                     color: isSelected ? Colors.white : AppColors.darkTextSecondary,
                                   ),
@@ -968,7 +974,7 @@ class _ComicReaderPageState extends ConsumerState<ComicReaderPage> {
                   Text(
                     'MỤC LỤC BỘ TRUYỆN',
                     style: GoogleFonts.plusJakartaSans(
-                      fontSize: 11,
+                      fontSize: 12,
                       fontWeight: FontWeight.w800,
                       color: AppColors.primary,
                       letterSpacing: 1.2,
@@ -1023,7 +1029,7 @@ class _ComicReaderPageState extends ConsumerState<ComicReaderPage> {
                       subtitle: Text(
                         '${ch.pageCount > 0 ? '${ch.pageCount} trang' : 'Đang cập nhật'} • ${ch.releaseDate}',
                         style: GoogleFonts.plusJakartaSans(
-                          fontSize: 11,
+                          fontSize: 12,
                           color: AppColors.darkTextSecondary,
                         ),
                       ),
@@ -1047,7 +1053,7 @@ class _ComicReaderPageState extends ConsumerState<ComicReaderPage> {
                               child: Text(
                                 'FREE',
                                 style: GoogleFonts.plusJakartaSans(
-                                  fontSize: 10,
+                                  fontSize: 12,
                                   fontWeight: FontWeight.w800,
                                   color: AppColors.mint,
                                 ),
@@ -1070,7 +1076,7 @@ class _ComicReaderPageState extends ConsumerState<ComicReaderPage> {
                                   Text(
                                     '${ch.priceCoins}',
                                     style: GoogleFonts.plusJakartaSans(
-                                      fontSize: 10,
+                                      fontSize: 12,
                                       fontWeight: FontWeight.w800,
                                       color: AppColors.primary,
                                     ),

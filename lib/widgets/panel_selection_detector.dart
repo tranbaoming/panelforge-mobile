@@ -93,7 +93,7 @@ class PanelSelectionDetector extends StatelessWidget {
                       child: Text(
                         'PANEL #${panel.panelNumber}',
                         style: GoogleFonts.plusJakartaSans(
-                          fontSize: 11,
+                          fontSize: 12,
                           fontWeight: FontWeight.w800,
                           color: isSelected ? Colors.white : AppColors.darkTextSecondary,
                           letterSpacing: 0.8,
@@ -130,7 +130,7 @@ class PanelSelectionDetector extends StatelessWidget {
                             Text(
                               '${panel.annotations.length}',
                               style: GoogleFonts.plusJakartaSans(
-                                fontSize: 11,
+                                fontSize: 12,
                                 fontWeight: FontWeight.w700,
                                 color: AppColors.mint,
                               ),
@@ -243,8 +243,8 @@ class PanelSelectionDetector extends StatelessWidget {
                           return Positioned(
                             left: rx,
                             top: ry,
-                            width: rw.clamp(32.0, W),
-                            height: rh.clamp(24.0, H),
+                            width: rw.clamp(44.0, W),
+                            height: rh.clamp(44.0, H),
                             child: GestureDetector(
                               behavior: HitTestBehavior.opaque,
                               onTap: () {
@@ -273,7 +273,7 @@ class PanelSelectionDetector extends StatelessWidget {
                                     child: Text(
                                       '#${region.id} (${region.type.toUpperCase()})',
                                       style: GoogleFonts.plusJakartaSans(
-                                        fontSize: 9,
+                                        fontSize: 12,
                                         fontWeight: FontWeight.w800,
                                         color: Colors.white,
                                       ),
@@ -314,7 +314,7 @@ class PanelSelectionDetector extends StatelessWidget {
                                       maxLines: 1,
                                       overflow: TextOverflow.ellipsis,
                                       style: GoogleFonts.plusJakartaSans(
-                                        fontSize: 10,
+                                        fontSize: 12,
                                         color: AppColors.darkTextSecondary,
                                       ),
                                     ),
@@ -341,11 +341,12 @@ class PanelSelectionDetector extends StatelessWidget {
                             right: 14,
                             child: ElevatedButton.icon(
                               onPressed: onAnnotatePressed,
-                              icon: const Icon(Icons.add_comment_rounded, size: 14),
+                              icon: const Icon(Icons.add_comment_rounded, size: 18),
                               label: const Text('Thêm góp ý'),
                               style: ElevatedButton.styleFrom(
                                 backgroundColor: primaryColor,
                                 foregroundColor: Colors.white,
+                                minimumSize: const Size(44, 44),
                                 padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
                                 textStyle: GoogleFonts.plusJakartaSans(
                                   fontSize: 12,
