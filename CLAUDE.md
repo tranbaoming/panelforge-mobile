@@ -59,6 +59,9 @@ lib/
 │   ├── sketch_drawing_dialog.dart     # Canvas drawing for pinpoint feedback
 │   ├── watermark_overlay.dart         # Security watermark overlay (BR-17)
 │   ├── wallet_chip.dart               # Header wallet balance indicator
+│   ├── wallet_topup_dialog.dart       # Wallet top-up (VietQR order) & server transaction history
+│   ├── unlock_chapter_bottom_sheet.dart # Paid chapter unlock: wallet debit or direct VietQR
+│   ├── vietqr_payment_panel.dart      # Shared VietQR order view + 3s polling until Producer approves
 │   └── qr_scanner_dialog.dart         # Camera QR code reader (`mobile_scanner`)
 └── theme/
     └── app_theme.dart                 # Dark/Vintage/Light reader themes

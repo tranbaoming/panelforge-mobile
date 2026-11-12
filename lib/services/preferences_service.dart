@@ -200,6 +200,20 @@ class PreferencesService {
     await removeUnlockedChapterId(cleanId);
   }
 
+  /// Ghi đè cache chương đã mở khóa bằng danh sách quyền sở hữu thật từ `GET /api/wallet/me`
+  /// (server là nguồn sự thật; tránh cache của tài khoản cũ còn sót trên thiết bị).
+  static Future<void> replaceUnlockedChapterIds(Set<String> serverIds) async {
+    final clean = serverIds.map((e) => e.trim()).where((e) => e.isNotEmpty).toSet();
+    final entitlements = <String, ChapterEntitlement>{
+      for (final id in clean)
+        id: getChapterEntitlement(id) ??
+            ChapterEntitlement(chapterId: id, isPermanent: true, unlockedAt: DateTime.now()),
+    };
+    final encoded = jsonEncode(entitlements.map((k, v) => MapEntry(k, v.toJson())));
+    await _prefs?.setString(_keyChapterEntitlements, encoded);
+    await _prefs?.setStringList(_keyUnlockedChapters, clean.toList());
+  }
+
   static bool isChapterUnlocked(String chapterId) {
     if (getLocalIsVip()) return true;
     final ent = getChapterEntitlement(chapterId);

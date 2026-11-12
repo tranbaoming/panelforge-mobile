@@ -111,6 +111,9 @@ class ChapterItem {
     required this.pages,
   });
 
+  /// Chương trả phí do Producer khóa (Backend `isLocked`).
+  bool get isLocked => !isFree;
+
   factory ChapterItem.fromPublicDto(PublicChapterSummaryDto dto) {
     return ChapterItem(
       id: dto.id,

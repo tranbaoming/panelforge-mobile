@@ -205,6 +205,7 @@ class PublicChapterSummaryDto {
   final double chapterNumber;
   final String? title;
   final DateTime? publishedAt;
+  final bool isLocked;
   final bool isFree;
   final bool isUnlocked;
   final int priceCoins;
@@ -221,6 +222,7 @@ class PublicChapterSummaryDto {
     required this.chapterNumber,
     this.title,
     this.publishedAt,
+    this.isLocked = false,
     this.isFree = true,
     this.isUnlocked = true,
     this.priceCoins = 0,
@@ -233,79 +235,35 @@ class PublicChapterSummaryDto {
     this.manifestUrl,
   });
 
+  /// Đọc trạng thái khóa trực tiếp từ `GET /api/catalog/series/{id}` (PublicChapterDto):
+  /// `isLocked`, `priceVnd`, `isUnlocked` (server đã tính VIP + quyền sở hữu), `isFree`.
+  /// Không tự suy diễn giá ở client — giá mở khóa luôn do Producer cấu hình trên Backend.
   factory PublicChapterSummaryDto.fromJson(Map<String, dynamic> json) {
-    final rawFree = json['isFree'] as bool? ?? false;
     final numVal = (json['chapterNumber'] as num?)?.toDouble() ?? 1.0;
-    final free = rawFree || numVal == 1.0;
+    final isLocked = json['isLocked'] as bool? ?? false;
+    final free = !isLocked;
+    final priceVnd = free ? 0 : ((json['priceVnd'] as num?)?.toInt() ?? 0);
 
     DateTime? pubAt;
     if (json['publishedAt'] != null) {
       pubAt = DateTime.tryParse(json['publishedAt'].toString());
     }
-
-    final bool isHotFromPub = pubAt != null &&
-        DateTime.now().difference(pubAt).inDays <= 7 &&
-        !free;
-    final bool isHot = (json['isWeeklyHot'] as bool?) ?? isHotFromPub;
-
-    int priceVnd;
-    int rentalPriceVnd;
-
-    if (free) {
-      priceVnd = 0;
-      rentalPriceVnd = 0;
-    } else if (json['priceVnd'] != null) {
-      priceVnd = (json['priceVnd'] as num).toInt();
-      rentalPriceVnd = (json['rentalPriceVnd'] as num?)?.toInt() ??
-          (priceVnd <= 500
-              ? 300
-              : priceVnd <= 700
-                  ? 500
-                  : priceVnd <= 1000
-                      ? 500
-                      : priceVnd <= 3000
-                          ? 1500
-                          : 2000);
-    } else if (isHot) {
-      priceVnd = 5000;
-      rentalPriceVnd = 2000;
-    } else if (numVal == 2.0) {
-      priceVnd = 500;
-      rentalPriceVnd = 300;
-    } else if (numVal == 3.0) {
-      priceVnd = 700;
-      rentalPriceVnd = 500;
-    } else if (numVal == 4.0) {
-      priceVnd = 1000;
-      rentalPriceVnd = 500;
-    } else if (json['priceCoins'] != null && (json['priceCoins'] as num) > 0) {
-      priceVnd = ((json['priceCoins'] as num).toInt() * 60).clamp(500, 5000);
-      rentalPriceVnd = (priceVnd * 0.5).round();
-    } else {
-      priceVnd = 1000;
-      rentalPriceVnd = 500;
-    }
-
-    final coins = (json['priceCoins'] as num?)?.toInt() ?? (priceVnd ~/ 100);
-    final policy = free
-        ? ChapterAccessPolicy.free
-        : (json['accessPolicy'] != null
-            ? ChapterAccessPolicy.fromDynamic(json['accessPolicy'])
-            : ChapterAccessPolicy.rentalLimitedViews);
-    final maxViews = (json['maxAllowedViews'] as num?)?.toInt() ?? (free ? null : 3);
+    final bool isHot = (json['isWeeklyHot'] as bool?) ??
+        (pubAt != null && DateTime.now().difference(pubAt).inDays <= 7 && !free);
 
     return PublicChapterSummaryDto(
       id: json['id']?.toString() ?? '',
       chapterNumber: numVal,
       title: json['title']?.toString(),
       publishedAt: pubAt,
+      isLocked: isLocked,
       isFree: free,
       isUnlocked: json['isUnlocked'] as bool? ?? free,
-      priceCoins: coins,
+      priceCoins: priceVnd ~/ 100,
       priceVnd: priceVnd,
-      rentalPriceVnd: rentalPriceVnd,
-      accessPolicy: policy,
-      maxAllowedViews: maxViews,
+      rentalPriceVnd: 0,
+      accessPolicy: free ? ChapterAccessPolicy.free : ChapterAccessPolicy.permanent,
+      maxAllowedViews: null,
       isWeeklyHot: isHot,
       cbzPackageUrl: json['cbzPackageUrl']?.toString(),
       manifestUrl: json['manifestUrl']?.toString(),
@@ -317,6 +275,7 @@ class PublicChapterSummaryDto {
         'chapterNumber': chapterNumber,
         if (title != null) 'title': title,
         if (publishedAt != null) 'publishedAt': publishedAt!.toIso8601String(),
+        'isLocked': isLocked,
         'isFree': isFree,
         'isUnlocked': isUnlocked,
         'priceCoins': priceCoins,
@@ -459,65 +418,23 @@ class PublicChapterReadDto {
 
   factory PublicChapterReadDto.fromJson(Map<String, dynamic> json) {
     final rawPages = json['pages'] as List<dynamic>? ?? [];
-    final rawFree = json['isFree'] as bool? ?? false;
     final numVal = (json['chapterNumber'] as num?)?.toDouble() ?? 1.0;
-    final free = rawFree || numVal == 1.0;
+    // Trạng thái khóa & giá lấy nguyên từ Backend (PublicChapterReadDto: IsLocked, PriceVnd, IsUnlocked, IsFree).
+    final free = !(json['isLocked'] as bool? ?? false);
 
     DateTime? pubAt;
     if (json['publishedAt'] != null) {
       pubAt = DateTime.tryParse(json['publishedAt'].toString());
     }
 
-    final bool isHotFromPub = pubAt != null &&
-        DateTime.now().difference(pubAt).inDays <= 7 &&
-        !free;
-    final bool isHot = (json['isWeeklyHot'] as bool?) ?? isHotFromPub;
+    final bool isHot = (json['isWeeklyHot'] as bool?) ??
+        (pubAt != null && DateTime.now().difference(pubAt).inDays <= 7 && !free);
 
-    int priceVnd;
-    int rentalPriceVnd;
-
-    if (free) {
-      priceVnd = 0;
-      rentalPriceVnd = 0;
-    } else if (json['priceVnd'] != null) {
-      priceVnd = (json['priceVnd'] as num).toInt();
-      rentalPriceVnd = (json['rentalPriceVnd'] as num?)?.toInt() ??
-          (priceVnd <= 500
-              ? 300
-              : priceVnd <= 700
-                  ? 500
-                  : priceVnd <= 1000
-                      ? 500
-                      : priceVnd <= 3000
-                          ? 1500
-                          : 2000);
-    } else if (isHot) {
-      priceVnd = 5000;
-      rentalPriceVnd = 2000;
-    } else if (numVal == 2.0) {
-      priceVnd = 500;
-      rentalPriceVnd = 300;
-    } else if (numVal == 3.0) {
-      priceVnd = 700;
-      rentalPriceVnd = 500;
-    } else if (numVal == 4.0) {
-      priceVnd = 1000;
-      rentalPriceVnd = 500;
-    } else if (json['priceCoins'] != null && (json['priceCoins'] as num) > 0) {
-      priceVnd = ((json['priceCoins'] as num).toInt() * 60).clamp(500, 5000);
-      rentalPriceVnd = (priceVnd * 0.5).round();
-    } else {
-      priceVnd = 1000;
-      rentalPriceVnd = 500;
-    }
-
-    final coins = (json['priceCoins'] as num?)?.toInt() ?? (priceVnd ~/ 100);
-    final policy = free
-        ? ChapterAccessPolicy.free
-        : (json['accessPolicy'] != null
-            ? ChapterAccessPolicy.fromDynamic(json['accessPolicy'])
-            : ChapterAccessPolicy.rentalLimitedViews);
-    final maxViews = (json['maxAllowedViews'] as num?)?.toInt() ?? (free ? null : 3);
+    final priceVnd = free ? 0 : ((json['priceVnd'] as num?)?.toInt() ?? 0);
+    const rentalPriceVnd = 0;
+    final coins = priceVnd ~/ 100;
+    final policy = free ? ChapterAccessPolicy.free : ChapterAccessPolicy.permanent;
+    const int? maxViews = null;
 
     return PublicChapterReadDto(
       id: json['id']?.toString() ?? '',
@@ -884,30 +801,31 @@ class UserWalletDto {
   final DateTime? vipExpiresAt;
   final List<WalletTransactionDto> transactions;
 
+  /// Chương đã mở khóa vĩnh viễn trên server (ChapterEntitlement).
+  final Set<String> unlockedChapterIds;
+
   const UserWalletDto({
     required this.balanceVnd,
     this.isVip = false,
     this.vipExpiresAt,
     this.transactions = const [],
+    this.unlockedChapterIds = const {},
   });
 
   /// Getter tương thích ngược cho ForgeCoins
   int get balanceCoins => balanceVnd ~/ 100;
 
+  /// VIP còn hiệu lực (server có thể chưa kịp tắt cờ khi hết hạn).
+  bool get hasActiveVip =>
+      isVip && (vipExpiresAt == null || vipExpiresAt!.isAfter(DateTime.now()));
+
+  /// `GET /api/wallet/me` → UserWalletDto(BalanceVnd, BalanceCoins, IsVip, VipExpiresAt, UnlockedChapterIds, Transactions)
   factory UserWalletDto.fromJson(Map<String, dynamic> json) {
-    int balance;
-    if (json['balanceVnd'] != null) {
-      balance = (json['balanceVnd'] as num).toInt();
-    } else if (json['balanceCoins'] != null) {
-      balance = (json['balanceCoins'] as num).toInt() * 100;
-    } else {
-      balance = 50000;
-    }
+    final balance = (json['balanceVnd'] as num?)?.toInt() ??
+        (((json['balanceCoins'] as num?)?.toInt() ?? 0) * 100);
 
     final rawTx = json['transactions'] as List<dynamic>? ?? [];
-    final txList = rawTx
-        .map((e) => WalletTransactionDto.fromJson(e as Map<String, dynamic>))
-        .toList();
+    final rawUnlocked = json['unlockedChapterIds'] as List<dynamic>? ?? [];
 
     return UserWalletDto(
       balanceVnd: balance,
@@ -915,7 +833,26 @@ class UserWalletDto {
       vipExpiresAt: json['vipExpiresAt'] != null
           ? DateTime.tryParse(json['vipExpiresAt'].toString())
           : null,
-      transactions: txList,
+      transactions: rawTx
+          .map((e) => WalletTransactionDto.fromJson(e as Map<String, dynamic>))
+          .toList(),
+      unlockedChapterIds: rawUnlocked.map((e) => e.toString()).toSet(),
+    );
+  }
+
+  UserWalletDto copyWith({
+    int? balanceVnd,
+    bool? isVip,
+    DateTime? vipExpiresAt,
+    List<WalletTransactionDto>? transactions,
+    Set<String>? unlockedChapterIds,
+  }) {
+    return UserWalletDto(
+      balanceVnd: balanceVnd ?? this.balanceVnd,
+      isVip: isVip ?? this.isVip,
+      vipExpiresAt: vipExpiresAt ?? this.vipExpiresAt,
+      transactions: transactions ?? this.transactions,
+      unlockedChapterIds: unlockedChapterIds ?? this.unlockedChapterIds,
     );
   }
 
@@ -925,8 +862,10 @@ class UserWalletDto {
         'isVip': isVip,
         if (vipExpiresAt != null) 'vipExpiresAt': vipExpiresAt!.toIso8601String(),
         'transactions': transactions.map((t) => t.toJson()).toList(),
+        'unlockedChapterIds': unlockedChapterIds.toList(),
       };
 }
+
 
 class UnlockChapterRequest {
   final String chapterId;
@@ -1067,33 +1006,52 @@ class SubscribeVipResponse {
       };
 }
 
+/// Mục đích của đơn VietQR — khớp `TopupRequest.Purpose` / `PaymentTransactionType` trên Backend.
+enum PaymentPurpose {
+  topup('Topup'),
+  chapterUnlock('ChapterUnlock'),
+  vipSubscription('VipSubscription');
+
+  final String value;
+  const PaymentPurpose(this.value);
+}
+
+/// `POST /api/wallet/topup` — tạo đơn chuyển khoản VietQR ở trạng thái Pending.
+/// Ngữ cảnh (series/chapter/workspace) giúp đơn hiển thị đúng Studio trên màn hình Thanh toán của Producer.
+/// Với [PaymentPurpose.chapterUnlock] / [PaymentPurpose.vipSubscription], số tiền do server quyết định.
 class TopupRequest {
-  final int coinsAmount;
-  final int amountVnd;
-  final String paymentMethod; // 'vietqr' | 'momo' | 'bank'
+  final int? amountVnd;
+  final String paymentMethod;
+  final PaymentPurpose purpose;
+  final String? workspaceId;
+  final String? seriesId;
+  final String? chapterId;
+  final String? vipPlan;
 
   const TopupRequest({
-    required this.coinsAmount,
-    required this.amountVnd,
+    this.amountVnd,
     this.paymentMethod = 'vietqr',
+    this.purpose = PaymentPurpose.topup,
+    this.workspaceId,
+    this.seriesId,
+    this.chapterId,
+    this.vipPlan,
   });
 
-  factory TopupRequest.fromJson(Map<String, dynamic> json) {
-    return TopupRequest(
-      coinsAmount: (json['coinsAmount'] as num?)?.toInt() ?? 0,
-      amountVnd: (json['amountVnd'] as num?)?.toInt() ?? 0,
-      paymentMethod: json['paymentMethod']?.toString() ?? 'vietqr',
-    );
-  }
-
   Map<String, dynamic> toJson() => {
-        'coinsAmount': coinsAmount,
-        'amountVnd': amountVnd,
+        if (amountVnd != null) 'amountVnd': amountVnd,
         'paymentMethod': paymentMethod,
+        'purpose': purpose.value,
+        if (workspaceId != null) 'workspaceId': workspaceId,
+        if (seriesId != null) 'seriesId': seriesId,
+        if (chapterId != null) 'chapterId': chapterId,
+        if (vipPlan != null) 'vipPlan': vipPlan,
       };
 }
 
+/// Đơn VietQR do Backend sinh: mã đơn PFxxxxxx, ảnh QR (img.vietqr.io) và tài khoản thụ hưởng thật của Studio.
 class TopupResponse {
+  /// Mã đơn (vd: PF123456) — đồng thời là nội dung chuyển khoản bắt buộc.
   final String orderId;
   final int coins;
   final int amountVnd;
@@ -1103,6 +1061,8 @@ class TopupResponse {
   final String? accountName;
   final String? transferContent;
   final bool isCompleted;
+  final String purpose;
+  final String status;
 
   const TopupResponse({
     required this.orderId,
@@ -1114,7 +1074,15 @@ class TopupResponse {
     this.accountName,
     this.transferContent,
     this.isCompleted = false,
+    this.purpose = 'Topup',
+    this.status = 'Pending',
   });
+
+  String get orderCode => orderId;
+
+  /// Nội dung CK bắt buộc — trùng `addInfo` trong ảnh VietQR.
+  String get requiredTransferContent =>
+      (transferContent != null && transferContent!.trim().isNotEmpty) ? transferContent! : orderId;
 
   factory TopupResponse.fromJson(Map<String, dynamic> json) {
     return TopupResponse(
@@ -1122,11 +1090,13 @@ class TopupResponse {
       coins: (json['coins'] as num?)?.toInt() ?? 0,
       amountVnd: (json['amountVnd'] as num?)?.toInt() ?? 0,
       qrCodeUrl: json['qrCodeUrl']?.toString(),
-      bankName: json['bankName']?.toString() ?? 'Vietcombank',
-      accountNumber: json['accountNumber']?.toString() ?? '9876543210',
-      accountName: json['accountName']?.toString() ?? 'PANELFORGE COMICS',
-      transferContent: json['transferContent']?.toString() ?? 'PFCOINS ${json['orderId'] ?? ''}',
+      bankName: json['bankName']?.toString(),
+      accountNumber: json['accountNumber']?.toString(),
+      accountName: json['accountName']?.toString(),
+      transferContent: json['transferContent']?.toString(),
       isCompleted: json['isCompleted'] as bool? ?? false,
+      purpose: json['purpose']?.toString() ?? 'Topup',
+      status: json['status']?.toString() ?? 'Pending',
     );
   }
 
@@ -1140,6 +1110,46 @@ class TopupResponse {
         if (accountName != null) 'accountName': accountName,
         if (transferContent != null) 'transferContent': transferContent,
         'isCompleted': isCompleted,
+        'purpose': purpose,
+        'status': status,
       };
 }
 
+/// `GET /api/wallet/transactions/{orderCode}/status` — Mobile polling chờ Producer duyệt.
+class TransactionStatusDto {
+  final String orderCode;
+
+  /// Pending | Approved | Rejected | Expired
+  final String status;
+  final bool isCompleted;
+  final int amountVnd;
+  final DateTime? confirmedAt;
+  final String? rejectionReason;
+
+  const TransactionStatusDto({
+    required this.orderCode,
+    required this.status,
+    required this.isCompleted,
+    required this.amountVnd,
+    this.confirmedAt,
+    this.rejectionReason,
+  });
+
+  bool get isPending => status == 'Pending';
+  bool get isApproved => status == 'Approved' || isCompleted;
+  bool get isRejected => status == 'Rejected';
+  bool get isExpired => status == 'Expired';
+
+  factory TransactionStatusDto.fromJson(Map<String, dynamic> json) {
+    return TransactionStatusDto(
+      orderCode: json['orderCode']?.toString() ?? '',
+      status: json['status']?.toString() ?? 'Pending',
+      isCompleted: json['isCompleted'] as bool? ?? false,
+      amountVnd: (json['amountVnd'] as num?)?.toInt() ?? 0,
+      confirmedAt: json['confirmedAt'] != null
+          ? DateTime.tryParse(json['confirmedAt'].toString())
+          : null,
+      rejectionReason: json['rejectionReason']?.toString(),
+    );
+  }
+}

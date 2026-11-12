@@ -1,23 +1,34 @@
-import 'package:cached_network_image/cached_network_image.dart';
 import 'package:flutter/material.dart';
-import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:google_fonts/google_fonts.dart';
 import '../models/api_dtos.dart';
 import '../providers/api_providers.dart';
+import '../services/api_client.dart';
 import '../services/preferences_service.dart';
 import '../theme/app_theme.dart';
+import 'auth_modal_sheet.dart';
+import 'vietqr_payment_panel.dart';
 
 class WalletTopupDialog extends ConsumerStatefulWidget {
   final int initialTab;
 
-  const WalletTopupDialog({super.key, this.initialTab = 0});
+  /// Ngữ cảnh bộ truyện đang đọc — giúp đơn nạp hiển thị đúng Studio trên màn hình Thanh toán của Producer.
+  final String? seriesId;
 
-  static Future<void> show(BuildContext context, {int initialTab = 0}) {
+  const WalletTopupDialog({super.key, this.initialTab = 0, this.seriesId});
+
+  /// Mở Ví. Guest sẽ được yêu cầu đăng nhập trước khi thanh toán.
+  static Future<void> show(BuildContext context, {int initialTab = 0, String? seriesId}) {
+    final container = ProviderScope.containerOf(context, listen: false);
+    if (!container.read(authStateProvider).isAuthenticated) {
+      showLoginRequiredSnackBar(context, 'Vui lòng đăng nhập tài khoản Độc giả để nạp tiền vào Ví.');
+      AuthModalSheet.show(context);
+      return Future.value();
+    }
     return showDialog(
       context: context,
       barrierDismissible: true,
-      builder: (context) => WalletTopupDialog(initialTab: initialTab),
+      builder: (context) => WalletTopupDialog(initialTab: initialTab, seriesId: seriesId),
     );
   }
 
@@ -33,7 +44,6 @@ class _WalletTopupDialogState extends ConsumerState<WalletTopupDialog>
   int _selectedAmountVnd = 50000;
   bool _isLoadingQr = false;
   TopupResponse? _topupData;
-  bool _isConfirming = false;
 
   final _vndPackages = const [
     (amount: 10000, tag: 'Cơ bản'),
@@ -66,90 +76,40 @@ class _WalletTopupDialogState extends ConsumerState<WalletTopupDialog>
     });
 
     try {
-      final service = ref.read(monetizationServiceProvider);
-      final response = await service.requestTopup(
-        amountVnd: _selectedAmountVnd,
-      );
+      final order = await ref.read(monetizationServiceProvider).createVietQrOrder(
+            purpose: PaymentPurpose.topup,
+            amountVnd: _selectedAmountVnd,
+            seriesId: widget.seriesId,
+          );
       if (mounted) {
         setState(() {
           _isLoadingQr = false;
-          _topupData = response;
+          _topupData = order;
         });
       }
     } catch (e) {
-      debugPrint('[WalletTopupDialog QR error] $e');
-      if (mounted) {
-        setState(() {
-          _isLoadingQr = false;
-          _topupData = null;
-        });
-        ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(
-            backgroundColor: AppColors.darkSurface,
-            content: Row(
-              children: [
-                Icon(Icons.cloud_off_rounded, color: AppColors.rose, size: 20),
-                SizedBox(width: 10),
-                Expanded(
-                  child: Text(
-                    'Không thể kết nối đến máy chủ thanh toán. Đang dùng mã VietQR dự phòng.',
-                    style: TextStyle(color: Colors.white),
-                  ),
-                ),
-              ],
-            ),
-          ),
-        );
+      debugPrint('[WalletTopupDialog] Tạo đơn VietQR thất bại: $e');
+      if (!mounted) return;
+      setState(() => _isLoadingQr = false);
+      if (e is ApiException && e.statusCode == 401) {
+        Navigator.of(context).pop();
+        showLoginRequiredSnackBar(context, 'Phiên đăng nhập đã hết hạn. Vui lòng đăng nhập lại để nạp tiền.');
+        AuthModalSheet.show(context);
+        return;
       }
-    }
-  }
-
-  Future<void> _confirmPayment() async {
-    if (_topupData == null) return;
-    setState(() => _isConfirming = true);
-
-    await Future.delayed(const Duration(milliseconds: 600));
-    await ref.read(walletNotifierProvider.notifier).completeTopup(
-          orderId: _topupData!.orderId,
-          amountVnd: _topupData!.amountVnd,
-        );
-
-    if (mounted) {
-      final addedAmount = _topupData!.amountVnd;
-      setState(() {
-        _isConfirming = false;
-        _topupData = null;
-      });
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(
-          backgroundColor: AppColors.darkSurface,
-          shape: RoundedRectangleBorder(
-            borderRadius: BorderRadius.circular(12),
-            side: const BorderSide(color: AppColors.mint, width: 1),
-          ),
-          content: Row(
-            children: [
-              const Icon(Icons.check_circle_rounded, color: AppColors.mint, size: 20),
-              const SizedBox(width: 10),
-              Text(
-                'Nạp thành công +${formatVnd(addedAmount)} vào Ví!',
-                style: const TextStyle(color: Colors.white, fontWeight: FontWeight.w600),
-              ),
-            ],
-          ),
-        ),
+      showPaymentErrorSnackBar(
+        context,
+        e is ApiException ? e.message : 'Không thể tạo mã VietQR. Vui lòng kiểm tra kết nối mạng và thử lại.',
       );
     }
   }
 
-  void _copyToClipboard(String text, String label) {
-    Clipboard.setData(ClipboardData(text: text));
-    ScaffoldMessenger.of(context).showSnackBar(
-      SnackBar(
-        content: Text('Đã sao chép $label!'),
-        duration: const Duration(seconds: 1),
-      ),
-    );
+  /// Producer đã duyệt đơn nạp trên Web → làm mới số dư thật từ `/api/wallet/me`.
+  Future<void> _onTopupApproved(TransactionStatusDto status) async {
+    await ref.read(walletNotifierProvider.notifier).refresh(silent: true);
+    if (!mounted) return;
+    setState(() => _topupData = null);
+    showPaymentSuccessSnackBar(context, 'Nạp thành công +${formatVnd(status.amountVnd)} vào Ví!');
   }
 
   @override
@@ -302,113 +262,19 @@ class _WalletTopupDialogState extends ConsumerState<WalletTopupDialog>
   // ─── TAB 1: NẠP TIỀN VÀO VÍ ────────────────────────────────────────────────
   Widget _buildTopupTab() {
     if (_topupData != null) {
-      final qr = _topupData!;
+      final order = _topupData!;
       return SingleChildScrollView(
         padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 8),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.stretch,
-          children: [
-            Container(
-              padding: const EdgeInsets.all(14),
-              decoration: BoxDecoration(
-                color: AppColors.darkCard,
-                borderRadius: BorderRadius.circular(16),
-                border: Border.all(color: AppColors.darkBorder),
-              ),
-              child: Column(
-                children: [
-                  Text(
-                    'Quét mã VietQR để nạp ${formatVnd(qr.amountVnd)}',
-                    style: GoogleFonts.plusJakartaSans(
-                      fontSize: 14,
-                      fontWeight: FontWeight.w700,
-                      color: Colors.white,
-                    ),
-                  ),
-                  const SizedBox(height: 12),
-                  // QR Image Container
-                  Container(
-                    padding: const EdgeInsets.all(8),
-                    decoration: BoxDecoration(
-                      color: Colors.white,
-                      borderRadius: BorderRadius.circular(12),
-                    ),
-                    child: qr.qrCodeUrl != null
-                        ? CachedNetworkImage(
-                            imageUrl: qr.qrCodeUrl!,
-                            width: 170,
-                            height: 170,
-                            fit: BoxFit.contain,
-                            placeholder: (context, url) => const SizedBox(
-                              width: 170,
-                              height: 170,
-                              child: Center(
-                                child: CircularProgressIndicator(color: AppColors.primary),
-                              ),
-                            ),
-                            errorWidget: (context, url, error) => const SizedBox(
-                              width: 170,
-                              height: 170,
-                              child: Center(
-                                child: Icon(Icons.broken_image_rounded, size: 40, color: Colors.grey),
-                              ),
-                            ),
-                          )
-                        : const SizedBox(
-                            width: 170,
-                            height: 170,
-                            child: Center(child: Icon(Icons.qr_code_2_rounded, size: 80)),
-                          ),
-                  ),
-                  const SizedBox(height: 14),
-
-                  // Thông tin chuyển khoản
-                  _buildInfoRow('Ngân hàng:', qr.bankName ?? 'Vietcombank'),
-                  _buildCopyRow('Số tài khoản:', qr.accountNumber ?? '9876543210'),
-                  _buildInfoRow('Chủ tài khoản:', qr.accountName ?? 'PANELFORGE COMICS'),
-                  _buildInfoRow('Số tiền:', formatVnd(qr.amountVnd), highlight: true),
-                  _buildCopyRow('Nội dung CK:', qr.transferContent ?? 'PFWALLET ${qr.orderId}'),
-                ],
-              ),
-            ),
-            const SizedBox(height: 14),
-
-            // Nút Xác nhận chuyển khoản
-            ElevatedButton(
-              onPressed: _isConfirming ? null : _confirmPayment,
-              style: ElevatedButton.styleFrom(
-                backgroundColor: AppColors.mint,
-                foregroundColor: Colors.black,
-                padding: const EdgeInsets.symmetric(vertical: 14),
-                shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
-              ),
-              child: _isConfirming
-                  ? const SizedBox(
-                      width: 20,
-                      height: 20,
-                      child: CircularProgressIndicator(strokeWidth: 2, color: Colors.black),
-                    )
-                  : Text(
-                      'Tôi Đã Chuyển Khoản Thành Công',
-                      style: GoogleFonts.plusJakartaSans(
-                        fontSize: 14,
-                        fontWeight: FontWeight.w800,
-                      ),
-                    ),
-            ),
-            const SizedBox(height: 8),
-
-            TextButton(
-              onPressed: () => setState(() => _topupData = null),
-              child: Text(
-                'Chọn mệnh giá khác',
-                style: GoogleFonts.plusJakartaSans(color: Colors.white70, fontSize: 13),
-              ),
-            ),
-          ],
+        child: VietQrPaymentPanel(
+          key: ValueKey(order.orderId),
+          order: order,
+          title: 'Quét mã VietQR để nạp ${formatVnd(order.amountVnd)} vào Ví',
+          onApproved: _onTopupApproved,
+          onCancel: () => setState(() => _topupData = null),
         ),
       );
     }
+
 
     return SingleChildScrollView(
       padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 8),
@@ -525,7 +391,7 @@ class _WalletTopupDialogState extends ConsumerState<WalletTopupDialog>
           ),
           const SizedBox(height: 12),
           Text(
-            'Hệ thống tự động cộng tiền ngay sau khi xác nhận chuyển khoản thành công.',
+            'Số dư được cộng ngay khi Studio xác nhận đã nhận tiền.',
             textAlign: TextAlign.center,
             style: GoogleFonts.plusJakartaSans(
               fontSize: 11.5,
@@ -539,7 +405,7 @@ class _WalletTopupDialogState extends ConsumerState<WalletTopupDialog>
 
   // ─── TAB 2: LỊCH SỬ GIAO DỊCH ──────────────────────────────────────────────
   Widget _buildTransactionHistoryTab() {
-    final transactions = PreferencesService.getWalletTransactions();
+    final transactions = ref.watch(walletNotifierProvider).asData?.value.transactions ?? const [];
 
     if (transactions.isEmpty) {
       return Center(
@@ -652,61 +518,6 @@ class _WalletTopupDialogState extends ConsumerState<WalletTopupDialog>
           ),
         );
       },
-    );
-  }
-
-  Widget _buildInfoRow(String label, String value, {bool highlight = false}) {
-    return Padding(
-      padding: const EdgeInsets.symmetric(vertical: 4),
-      child: Row(
-        mainAxisAlignment: MainAxisAlignment.spaceBetween,
-        children: [
-          Text(
-            label,
-            style: GoogleFonts.plusJakartaSans(fontSize: 12, color: AppColors.darkTextSecondary),
-          ),
-          Text(
-            value,
-            style: GoogleFonts.plusJakartaSans(
-              fontSize: 12.5,
-              fontWeight: FontWeight.w700,
-              color: highlight ? AppColors.primary : Colors.white,
-            ),
-          ),
-        ],
-      ),
-    );
-  }
-
-  Widget _buildCopyRow(String label, String value) {
-    return Padding(
-      padding: const EdgeInsets.symmetric(vertical: 4),
-      child: Row(
-        mainAxisAlignment: MainAxisAlignment.spaceBetween,
-        children: [
-          Text(
-            label,
-            style: GoogleFonts.plusJakartaSans(fontSize: 12, color: AppColors.darkTextSecondary),
-          ),
-          Row(
-            children: [
-              Text(
-                value,
-                style: GoogleFonts.plusJakartaSans(
-                  fontSize: 12.5,
-                  fontWeight: FontWeight.w700,
-                  color: Colors.white,
-                ),
-              ),
-              const SizedBox(width: 6),
-              InkWell(
-                onTap: () => _copyToClipboard(value, label),
-                child: const Icon(Icons.copy_rounded, size: 14, color: AppColors.primary),
-              ),
-            ],
-          ),
-        ],
-      ),
     );
   }
 }

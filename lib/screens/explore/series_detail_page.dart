@@ -68,27 +68,22 @@ class _SeriesDetailPageState extends ConsumerState<SeriesDetailPage> {
       });
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(
-          content: Text(
-            newState ? 'Đã thêm vào tủ sách cá nhân' : 'Đã xóa khỏi tủ sách',
-          ),
+          content: Text(newState ? 'Đã thêm vào tủ sách cá nhân' : 'Đã xóa khỏi tủ sách'),
           duration: const Duration(seconds: 2),
         ),
       );
     }
   }
 
+  /// Chương đọc được khi: không bị Producer khóa, Backend báo `isUnlocked` (đã mua / VIP),
+  /// người dùng đang có VIP, hoặc vừa mở khóa trong phiên này (`/api/wallet/me` → unlockedChapterIds).
   bool _isChapterUnlocked(ChapterItem chapter) {
-    if (chapter.isFree) return true;
+    if (!chapter.isLocked) return true;
+    if (chapter.isUnlocked) return true;
     final wallet = ref.watch(walletNotifierProvider).asData?.value;
-    if (wallet?.isVip ?? false) return true;
-    final entitlements = ref.watch(chapterEntitlementsProvider);
-    final ent = entitlements[chapter.id] ?? PreferencesService.getChapterEntitlement(chapter.id);
-    if (ent != null) {
-      return ent.isValid;
-    }
-    final unlockedIds = ref.watch(unlockedChaptersProvider);
-    if (unlockedIds.contains(chapter.id)) return true;
-    return chapter.isUnlocked;
+    if (wallet?.hasActiveVip ?? false) return true;
+    if (wallet?.unlockedChapterIds.contains(chapter.id) ?? false) return true;
+    return ref.watch(unlockedChaptersProvider).contains(chapter.id);
   }
 
   void _onChapterTap(SeriesItem series, ChapterItem chapter) {
@@ -101,13 +96,31 @@ class _SeriesDetailPageState extends ConsumerState<SeriesDetailPage> {
         chapter: chapter,
         series: series,
         onUnlocked: () {
-          setState(() {});
+          if (mounted) setState(() {});
         },
       );
     }
   }
 
-  Future<void> _downloadChapter(ChapterItem chapter) async {
+  Future<void> _downloadChapter(SeriesItem series, ChapterItem chapter) async {
+    // Chương trả phí chưa mở khóa (không VIP, chưa mua) → không cho tải CBZ, mời mở khóa trước.
+    if (!_isChapterUnlocked(chapter)) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          behavior: SnackBarBehavior.floating,
+          content: Text('Vui lòng mở khóa chương trước khi tải offline.'),
+        ),
+      );
+      UnlockChapterBottomSheet.show(
+        context,
+        chapter: chapter,
+        series: series,
+        onUnlocked: () {
+          if (mounted) setState(() {});
+        },
+      );
+      return;
+    }
     final isVip = ref.read(walletNotifierProvider).asData?.value.isVip ?? PreferencesService.getLocalIsVip();
     final ent = PreferencesService.getChapterEntitlement(chapter.id);
     if (!isVip && ent != null && !ent.isPermanent) {
@@ -164,9 +177,7 @@ class _SeriesDetailPageState extends ConsumerState<SeriesDetailPage> {
     } catch (e) {
       ref.read(downloadStatusProvider.notifier).setStatus(chapter.id, DownloadStatus.failed);
       if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text('Lỗi khi tải gói offline: $e')),
-        );
+        ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('Lỗi khi tải gói offline: $e')));
       }
     }
   }
@@ -184,9 +195,7 @@ class _SeriesDetailPageState extends ConsumerState<SeriesDetailPage> {
             onPressed: () => context.pop(),
           ),
         ),
-        body: const Center(
-          child: CircularProgressIndicator(color: AppColors.primary),
-        ),
+        body: const Center(child: CircularProgressIndicator(color: AppColors.primary)),
       );
     }
 
@@ -216,20 +225,14 @@ class _SeriesDetailPageState extends ConsumerState<SeriesDetailPage> {
                 Text(
                   _errorMessage ?? 'Không tìm thấy tác phẩm này trên hệ thống.',
                   textAlign: TextAlign.center,
-                  style: GoogleFonts.plusJakartaSans(
-                    fontSize: 14,
-                    color: AppColors.darkTextSecondary,
-                  ),
+                  style: GoogleFonts.plusJakartaSans(fontSize: 14, color: AppColors.darkTextSecondary),
                 ),
                 const SizedBox(height: 16),
                 ElevatedButton.icon(
                   onPressed: _fetchDetailFromApi,
                   icon: const Icon(Icons.refresh_rounded, size: 18),
                   label: const Text('Tải lại'),
-                  style: ElevatedButton.styleFrom(
-                    backgroundColor: AppColors.primary,
-                    foregroundColor: Colors.white,
-                  ),
+                  style: ElevatedButton.styleFrom(backgroundColor: AppColors.primary, foregroundColor: Colors.white),
                 ),
               ],
             ),
@@ -263,17 +266,12 @@ class _SeriesDetailPageState extends ConsumerState<SeriesDetailPage> {
             elevation: 0,
             leading: IconButton(
               icon: const Icon(Icons.arrow_back_ios_new_rounded, size: 20, color: Colors.white),
-              style: IconButton.styleFrom(
-                backgroundColor: Colors.black45,
-              ),
+              style: IconButton.styleFrom(backgroundColor: Colors.black45),
               onPressed: () => context.pop(),
             ),
             actions: [
               if (!ref.watch(authStateProvider).isGuest) ...[
-                const Padding(
-                  padding: EdgeInsets.symmetric(vertical: 10),
-                  child: WalletChip(isServerConnected: true),
-                ),
+                const Padding(padding: EdgeInsets.symmetric(vertical: 10), child: WalletChip(isServerConnected: true)),
                 const SizedBox(width: 8),
               ] else ...[
                 Padding(
@@ -313,9 +311,7 @@ class _SeriesDetailPageState extends ConsumerState<SeriesDetailPage> {
                   series.isBookmarked ? Icons.bookmark_rounded : Icons.bookmark_border_rounded,
                   color: series.isBookmarked ? AppColors.primary : Colors.white70,
                 ),
-                style: IconButton.styleFrom(
-                  backgroundColor: Colors.black45,
-                ),
+                style: IconButton.styleFrom(backgroundColor: Colors.black45),
                 onPressed: _toggleBookmark,
               ),
               const SizedBox(width: 12),
@@ -326,17 +322,11 @@ class _SeriesDetailPageState extends ConsumerState<SeriesDetailPage> {
                   gradient: LinearGradient(
                     begin: Alignment.topCenter,
                     end: Alignment.bottomCenter,
-                    colors: [
-                      Color(int.parse(series.coverGradientStart)).withValues(alpha: 0.35),
-                      AppColors.darkBg,
-                    ],
+                    colors: [Color(int.parse(series.coverGradientStart)).withValues(alpha: 0.35), AppColors.darkBg],
                   ),
                 ),
                 child: Center(
-                  child: Padding(
-                    padding: const EdgeInsets.only(top: 50),
-                    child: _buildPrintBookCover(series),
-                  ),
+                  child: Padding(padding: const EdgeInsets.only(top: 50), child: _buildPrintBookCover(series)),
                 ),
               ),
             ),
@@ -366,10 +356,7 @@ class _SeriesDetailPageState extends ConsumerState<SeriesDetailPage> {
                       ),
                       Container(
                         padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
-                        decoration: BoxDecoration(
-                          color: AppColors.primary,
-                          borderRadius: BorderRadius.circular(6),
-                        ),
+                        decoration: BoxDecoration(color: AppColors.primary, borderRadius: BorderRadius.circular(6)),
                         child: Text(
                           series.format.label.toUpperCase(),
                           style: GoogleFonts.plusJakartaSans(
@@ -502,8 +489,7 @@ class _SeriesDetailPageState extends ConsumerState<SeriesDetailPage> {
                               height: 1.4,
                             ),
                           ),
-                        if (series.synopsisQuote.isNotEmpty)
-                          const SizedBox(height: 10),
+                        if (series.synopsisQuote.isNotEmpty) const SizedBox(height: 10),
                         Text(
                           series.fullSynopsis,
                           style: GoogleFonts.plusJakartaSans(
@@ -539,9 +525,7 @@ class _SeriesDetailPageState extends ConsumerState<SeriesDetailPage> {
                                 ? 'ĐỌC TIẾP CHƯƠNG ${series.readProgressChapter}'
                                 : 'ĐỌC CHƯƠNG ĐẦU',
                           ),
-                          style: ElevatedButton.styleFrom(
-                            padding: const EdgeInsets.symmetric(vertical: 16),
-                          ),
+                          style: ElevatedButton.styleFrom(padding: const EdgeInsets.symmetric(vertical: 16)),
                         ),
                       ),
                       const SizedBox(width: 10),
@@ -560,32 +544,33 @@ class _SeriesDetailPageState extends ConsumerState<SeriesDetailPage> {
                     ],
                   ),
 
-                  // Thanh thông tin giá của bộ truyện
-                  Container(
-                    margin: const EdgeInsets.only(top: 14),
-                    padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
-                    decoration: BoxDecoration(
-                      color: AppColors.darkSurface,
-                      borderRadius: BorderRadius.circular(12),
-                      border: Border.all(color: AppColors.darkBorder),
-                    ),
-                    child: Row(
-                      children: [
-                        const Icon(Icons.sell_outlined, size: 16, color: AppColors.primary),
-                        const SizedBox(width: 8),
-                        Expanded(
-                          child: Text(
-                            'Giá tiêu chuẩn: ${formatVnd(series.baseChapterPriceVnd)}/chương • Chương mới trong tuần: ${formatVnd(series.hotChapterPriceVnd)}',
-                            style: GoogleFonts.plusJakartaSans(
-                              fontSize: 12,
-                              fontWeight: FontWeight.w600,
-                              color: AppColors.darkTextSecondary,
+                  // Thanh thông tin chương trả phí (giá do Studio cấu hình trên Backend)
+                  if (series.chapters.any((c) => c.isLocked))
+                    Container(
+                      margin: const EdgeInsets.only(top: 14),
+                      padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
+                      decoration: BoxDecoration(
+                        color: AppColors.darkSurface,
+                        borderRadius: BorderRadius.circular(12),
+                        border: Border.all(color: AppColors.darkBorder),
+                      ),
+                      child: Row(
+                        children: [
+                          const Icon(Icons.sell_outlined, size: 16, color: AppColors.primary),
+                          const SizedBox(width: 8),
+                          Expanded(
+                            child: Text(
+                              '${series.chapters.where((c) => c.isLocked).length} chương trả phí do Studio định giá • Mở khóa vĩnh viễn bằng Ví hoặc chuyển khoản VietQR',
+                              style: GoogleFonts.plusJakartaSans(
+                                fontSize: 12,
+                                fontWeight: FontWeight.w600,
+                                color: AppColors.darkTextSecondary,
+                              ),
                             ),
                           ),
-                        ),
-                      ],
+                        ],
+                      ),
                     ),
-                  ),
 
                   const SizedBox(height: 28),
 
@@ -595,11 +580,7 @@ class _SeriesDetailPageState extends ConsumerState<SeriesDetailPage> {
                     children: [
                       Text(
                         'Danh Sách Chương (${chaptersList.length})',
-                        style: GoogleFonts.newsreader(
-                          fontSize: 20,
-                          fontWeight: FontWeight.w700,
-                          color: Colors.white,
-                        ),
+                        style: GoogleFonts.newsreader(fontSize: 20, fontWeight: FontWeight.w700, color: Colors.white),
                       ),
                       if (chaptersList.isNotEmpty)
                         InkWell(
@@ -657,10 +638,7 @@ class _SeriesDetailPageState extends ConsumerState<SeriesDetailPage> {
                       const SizedBox(height: 8),
                       Text(
                         'Chưa có chương nào được phát hành',
-                        style: GoogleFonts.plusJakartaSans(
-                          fontSize: 13,
-                          color: AppColors.darkTextSecondary,
-                        ),
+                        style: GoogleFonts.plusJakartaSans(fontSize: 13, color: AppColors.darkTextSecondary),
                       ),
                     ],
                   ),
@@ -671,13 +649,10 @@ class _SeriesDetailPageState extends ConsumerState<SeriesDetailPage> {
             SliverPadding(
               padding: const EdgeInsets.symmetric(horizontal: 20),
               sliver: SliverList(
-                delegate: SliverChildBuilderDelegate(
-                  (context, index) {
-                    final ch = chaptersList[index];
-                    return _buildChapterListItem(context, series, ch);
-                  },
-                  childCount: chaptersList.length,
-                ),
+                delegate: SliverChildBuilderDelegate((context, index) {
+                  final ch = chaptersList[index];
+                  return _buildChapterListItem(context, series, ch);
+                }, childCount: chaptersList.length),
               ),
             ),
 
@@ -696,17 +671,10 @@ class _SeriesDetailPageState extends ConsumerState<SeriesDetailPage> {
         gradient: LinearGradient(
           begin: Alignment.topLeft,
           end: Alignment.bottomRight,
-          colors: [
-            Color(int.parse(series.coverGradientStart)),
-            Color(int.parse(series.coverGradientEnd)),
-          ],
+          colors: [Color(int.parse(series.coverGradientStart)), Color(int.parse(series.coverGradientEnd))],
         ),
         boxShadow: [
-          BoxShadow(
-            color: Colors.black.withValues(alpha: 0.35),
-            blurRadius: 22,
-            offset: const Offset(4, 12),
-          ),
+          BoxShadow(color: Colors.black.withValues(alpha: 0.35), blurRadius: 22, offset: const Offset(4, 12)),
         ],
       ),
       child: Stack(
@@ -720,10 +688,7 @@ class _SeriesDetailPageState extends ConsumerState<SeriesDetailPage> {
             child: Container(
               decoration: const BoxDecoration(
                 color: Colors.black26,
-                borderRadius: BorderRadius.only(
-                  topLeft: Radius.circular(10),
-                  bottomLeft: Radius.circular(10),
-                ),
+                borderRadius: BorderRadius.only(topLeft: Radius.circular(10), bottomLeft: Radius.circular(10)),
               ),
             ),
           ),
@@ -732,10 +697,7 @@ class _SeriesDetailPageState extends ConsumerState<SeriesDetailPage> {
             child: Container(
               margin: const EdgeInsets.all(8),
               decoration: BoxDecoration(
-                border: Border.all(
-                  color: Colors.amber.withValues(alpha: 0.3),
-                  width: 1,
-                ),
+                border: Border.all(color: Colors.amber.withValues(alpha: 0.3), width: 1),
                 borderRadius: BorderRadius.circular(6),
               ),
             ),
@@ -760,20 +722,10 @@ class _SeriesDetailPageState extends ConsumerState<SeriesDetailPage> {
                   Text(
                     series.title,
                     textAlign: TextAlign.center,
-                    style: GoogleFonts.newsreader(
-                      fontSize: 18,
-                      fontWeight: FontWeight.w700,
-                      color: Colors.white,
-                    ),
+                    style: GoogleFonts.newsreader(fontSize: 18, fontWeight: FontWeight.w700, color: Colors.white),
                   ),
                   const SizedBox(height: 6),
-                  Text(
-                    series.author,
-                    style: GoogleFonts.plusJakartaSans(
-                      fontSize: 9,
-                      color: Colors.white70,
-                    ),
-                  ),
+                  Text(series.author, style: GoogleFonts.plusJakartaSans(fontSize: 9, color: Colors.white70)),
                 ],
               ),
             ),
@@ -788,8 +740,7 @@ class _SeriesDetailPageState extends ConsumerState<SeriesDetailPage> {
     final downloaded = ref.watch(downloadedChaptersProvider).contains(chapter.id);
     final downloadStatus = ref.watch(chapterDownloadStatusProvider(chapter.id));
     final downloadProgress = ref.watch(chapterDownloadProgressProvider(chapter.id));
-    final isDownloading = downloadStatus == DownloadStatus.downloading ||
-        downloadStatus == DownloadStatus.extracting;
+    final isDownloading = downloadStatus == DownloadStatus.downloading || downloadStatus == DownloadStatus.extracting;
 
     final isVip = ref.watch(walletNotifierProvider).asData?.value.isVip ?? PreferencesService.getLocalIsVip();
     final entitlements = ref.watch(chapterEntitlementsProvider);
@@ -797,10 +748,9 @@ class _SeriesDetailPageState extends ConsumerState<SeriesDetailPage> {
     final bool isPermanent = isVip || (ent != null ? ent.isPermanent : unlocked);
     final int? remainingViews = ent?.remainingViews;
 
-    final isWeeklyHot = chapter.isWeeklyHot || chapter.priceVnd == 5000;
-    final displayPriceVnd = chapter.priceVnd > 0
-        ? chapter.priceVnd
-        : (isWeeklyHot ? series.hotChapterPriceVnd : series.baseChapterPriceVnd);
+    final isWeeklyHot = chapter.isWeeklyHot;
+    // Giá mở khóa thật do Producer cấu hình (PublicChapterDto.priceVnd).
+    final displayPriceVnd = chapter.priceVnd;
 
     return Container(
       margin: const EdgeInsets.only(bottom: 10),
@@ -813,20 +763,13 @@ class _SeriesDetailPageState extends ConsumerState<SeriesDetailPage> {
         contentPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 4),
         title: Text(
           chapter.title,
-          style: GoogleFonts.newsreader(
-            fontSize: 16,
-            fontWeight: FontWeight.w600,
-            color: Colors.white,
-          ),
+          style: GoogleFonts.newsreader(fontSize: 16, fontWeight: FontWeight.w600, color: Colors.white),
         ),
         subtitle: Row(
           children: [
             Text(
               '${chapter.releaseDate} • ${chapter.pageCount} trang',
-              style: GoogleFonts.plusJakartaSans(
-                fontSize: 11,
-                color: AppColors.darkTextSecondary,
-              ),
+              style: GoogleFonts.plusJakartaSans(fontSize: 11, color: AppColors.darkTextSecondary),
             ),
             const SizedBox(width: 8),
             if (chapter.isFree)
@@ -862,11 +805,7 @@ class _SeriesDetailPageState extends ConsumerState<SeriesDetailPage> {
                   ),
                 ),
                 child: Text(
-                  isPermanent
-                      ? 'VĨNH VIỄN'
-                      : (remainingViews != null
-                          ? 'CÒN $remainingViews/3 LƯỢT XEM'
-                          : 'ĐÃ MUA'),
+                  isPermanent ? 'VĨNH VIỄN' : (remainingViews != null ? 'CÒN $remainingViews/3 LƯỢT XEM' : 'ĐÃ MUA'),
                   style: GoogleFonts.plusJakartaSans(
                     fontSize: 9,
                     fontWeight: FontWeight.w800,
@@ -917,30 +856,18 @@ class _SeriesDetailPageState extends ConsumerState<SeriesDetailPage> {
                     message: 'Đã lưu offline',
                     child: Padding(
                       padding: EdgeInsets.all(8.0),
-                      child: Icon(
-                        Icons.check_circle_rounded,
-                        size: 20,
-                        color: AppColors.mint,
-                      ),
+                      child: Icon(Icons.check_circle_rounded, size: 20, color: AppColors.mint),
                     ),
                   )
                 else
                   IconButton(
                     tooltip: 'Tải CBZ Offline',
-                    icon: const Icon(
-                      Icons.download_for_offline_outlined,
-                      size: 20,
-                      color: Colors.white70,
-                    ),
-                    onPressed: () => _downloadChapter(chapter),
+                    icon: const Icon(Icons.download_for_offline_outlined, size: 20, color: Colors.white70),
+                    onPressed: () => _downloadChapter(series, chapter),
                   ),
               ],
               const SizedBox(width: 4),
-              const Icon(
-                Icons.arrow_forward_ios_rounded,
-                size: 14,
-                color: AppColors.primary,
-              ),
+              const Icon(Icons.arrow_forward_ios_rounded, size: 14, color: AppColors.primary),
             ] else ...[
               // Nút khóa hiển thị mức giá VNĐ theo phân loại chương
               Container(
@@ -948,9 +875,7 @@ class _SeriesDetailPageState extends ConsumerState<SeriesDetailPage> {
                 decoration: BoxDecoration(
                   color: isWeeklyHot ? AppColors.primary : AppColors.darkCard,
                   borderRadius: BorderRadius.circular(8),
-                  border: Border.all(
-                    color: isWeeklyHot ? AppColors.primary : AppColors.darkBorder,
-                  ),
+                  border: Border.all(color: isWeeklyHot ? AppColors.primary : AppColors.darkBorder),
                   boxShadow: isWeeklyHot
                       ? [
                           BoxShadow(
@@ -971,9 +896,7 @@ class _SeriesDetailPageState extends ConsumerState<SeriesDetailPage> {
                     ),
                     const SizedBox(width: 4),
                     Text(
-                      isWeeklyHot
-                          ? '🔥 ${formatVnd(displayPriceVnd)}'
-                          : '🔒 ${formatVnd(displayPriceVnd)}',
+                      isWeeklyHot ? '🔥 ${formatVnd(displayPriceVnd)}' : '🔒 ${formatVnd(displayPriceVnd)}',
                       style: GoogleFonts.plusJakartaSans(
                         fontSize: 11.5,
                         fontWeight: FontWeight.w800,
