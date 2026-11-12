@@ -40,6 +40,12 @@ class CatalogService {
     return PublicSeriesDetailDto.fromJson(response.data as Map<String, dynamic>);
   }
 
+  /// Ghi một lượt đọc thật sau khi Reader mở xong chương (Backend gộp lượt đọc lại trong 30 phút).
+  /// POST /api/catalog/chapters/{chapterId}/views
+  Future<void> recordChapterView(String chapterId) async {
+    await _client.post('/api/catalog/chapters/$chapterId/views');
+  }
+
   /// Lấy nội dung chương đọc cho Reader: hướng đọc và danh sách URL ảnh các trang
   /// GET /api/catalog/chapters/{chapterId}
   Future<PublicChapterReadDto> readChapter(String chapterId) async {

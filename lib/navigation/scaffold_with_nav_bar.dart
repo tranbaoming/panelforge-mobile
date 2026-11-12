@@ -3,118 +3,74 @@ import 'package:go_router/go_router.dart';
 import 'package:google_fonts/google_fonts.dart';
 import '../theme/app_theme.dart';
 
+/// Thanh điều hướng dưới cùng nền đen, icon cam khi active.
+/// Thứ tự tab khớp thứ tự `StatefulShellBranch` trong `app_router.dart`.
 class ScaffoldWithNavBar extends StatelessWidget {
   final StatefulNavigationShell navigationShell;
 
-  const ScaffoldWithNavBar({
-    super.key,
-    required this.navigationShell,
-  });
+  const ScaffoldWithNavBar({super.key, required this.navigationShell});
+
+  static const _tabs = [
+    (Icons.home_filled, Icons.home_filled, 'Trang chủ'),
+    (Icons.explore_outlined, Icons.explore, 'Khám phá'),
+    (Icons.search, Icons.search, 'Tìm kiếm'),
+    (Icons.person, Icons.person, 'Cá nhân'),
+    (Icons.notifications_none, Icons.notifications, 'Thông báo'),
+  ];
 
   void _onTap(int index) {
-    navigationShell.goBranch(
-      index,
-      initialLocation: index == navigationShell.currentIndex,
-    );
+    navigationShell.goBranch(index, initialLocation: index == navigationShell.currentIndex);
   }
 
   @override
   Widget build(BuildContext context) {
-    final currentIndex = navigationShell.currentIndex;
-    const bgBarColor = AppColors.darkSurface;
-    const unselectedColor = AppColors.darkTextSecondary;
-
+    final current = navigationShell.currentIndex;
     return Scaffold(
-      backgroundColor: AppColors.darkBg,
+      backgroundColor: ForgeColors.bg,
       body: navigationShell,
       bottomNavigationBar: Container(
         decoration: BoxDecoration(
-          color: bgBarColor,
-          border: const Border(
-            top: BorderSide(
-              color: AppColors.darkBorder,
-              width: 1,
-            ),
-          ),
-          boxShadow: [
-            BoxShadow(
-              color: Colors.black.withValues(alpha: 0.4),
-              blurRadius: 16,
-              offset: const Offset(0, -4),
-            ),
-          ],
+          color: ForgeColors.navBar,
+          border: Border(top: BorderSide(color: ForgeColors.divider, width: 0.8)),
         ),
         child: SafeArea(
           top: false,
-          child: Padding(
-            padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 8),
+          child: SizedBox(
+            height: 60,
             child: Row(
-              mainAxisAlignment: MainAxisAlignment.spaceAround,
               children: [
-                _buildNavItem(
-                  index: 0,
-                  selectedIndex: currentIndex,
-                  icon: Icons.auto_stories_outlined,
-                  activeIcon: Icons.auto_stories_rounded,
-                  label: 'Khám Phá',
-                  unselectedColor: unselectedColor,
-                ),
-                _buildNavItem(
-                  index: 1,
-                  selectedIndex: currentIndex,
-                  icon: Icons.rate_review_outlined,
-                  activeIcon: Icons.rate_review_rounded,
-                  label: 'Review & Cộng Tác',
-                  unselectedColor: unselectedColor,
-                ),
+                for (var i = 0; i < _tabs.length; i++)
+                  Expanded(
+                    child: InkWell(
+                      onTap: () => _onTap(i),
+                      child: Semantics(
+                        selected: i == current,
+                        button: true,
+                        child: Column(
+                          mainAxisAlignment: MainAxisAlignment.center,
+                          children: [
+                            Icon(
+                              i == current ? _tabs[i].$2 : _tabs[i].$1,
+                              size: 24,
+                              color: i == current ? ForgeColors.accent : ForgeColors.muted,
+                            ),
+                            const SizedBox(height: 3),
+                            Text(
+                              _tabs[i].$3,
+                              style: GoogleFonts.plusJakartaSans(
+                                fontSize: 10.5,
+                                fontWeight: i == current ? FontWeight.w800 : FontWeight.w600,
+                                color: i == current ? ForgeColors.accent : ForgeColors.muted,
+                              ),
+                            ),
+                          ],
+                        ),
+                      ),
+                    ),
+                  ),
               ],
             ),
           ),
-        ),
-      ),
-    );
-  }
-
-  Widget _buildNavItem({
-    required int index,
-    required int selectedIndex,
-    required IconData icon,
-    required IconData activeIcon,
-    required String label,
-    required Color unselectedColor,
-  }) {
-    final isSelected = index == selectedIndex;
-
-    return InkWell(
-      onTap: () => _onTap(index),
-      borderRadius: BorderRadius.circular(16),
-      child: AnimatedContainer(
-        duration: const Duration(milliseconds: 200),
-        padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 8),
-        decoration: BoxDecoration(
-          color: isSelected
-              ? AppColors.primary.withValues(alpha: 0.12)
-              : Colors.transparent,
-          borderRadius: BorderRadius.circular(16),
-        ),
-        child: Row(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            Icon(
-              isSelected ? activeIcon : icon,
-              size: 22,
-              color: isSelected ? AppColors.primary : unselectedColor,
-            ),
-            const SizedBox(width: 8),
-            Text(
-              label,
-              style: GoogleFonts.plusJakartaSans(
-                fontSize: 13,
-                fontWeight: isSelected ? FontWeight.w800 : FontWeight.w600,
-                color: isSelected ? AppColors.primary : unselectedColor,
-              ),
-            ),
-          ],
         ),
       ),
     );

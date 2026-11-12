@@ -1,4 +1,4 @@
-﻿import 'package:flutter/material.dart';
+import 'package:flutter/material.dart';
 import 'package:google_fonts/google_fonts.dart';
 
 class AppColors {
@@ -37,7 +37,7 @@ class AppColors {
 class AppTheme {
   static ThemeData get lightTheme {
     final textTheme = GoogleFonts.plusJakartaSansTextTheme(ThemeData.light().textTheme);
-    
+
     return ThemeData(
       useMaterial3: true,
       brightness: Brightness.light,
@@ -95,11 +95,7 @@ class AppTheme {
           color: AppColors.lightTextSecondary,
           height: 1.4,
         ),
-        labelLarge: GoogleFonts.plusJakartaSans(
-          fontSize: 13,
-          fontWeight: FontWeight.w600,
-          letterSpacing: 0.2,
-        ),
+        labelLarge: GoogleFonts.plusJakartaSans(fontSize: 13, fontWeight: FontWeight.w600, letterSpacing: 0.2),
       ),
       appBarTheme: AppBarTheme(
         backgroundColor: AppColors.lightBg.withValues(alpha: 0.95),
@@ -127,10 +123,7 @@ class AppTheme {
           elevation: 0,
           padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 14),
           shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
-          textStyle: GoogleFonts.plusJakartaSans(
-            fontSize: 14,
-            fontWeight: FontWeight.w700,
-          ),
+          textStyle: GoogleFonts.plusJakartaSans(fontSize: 14, fontWeight: FontWeight.w700),
         ),
       ),
       inputDecorationTheme: InputDecorationTheme(
@@ -163,7 +156,7 @@ class AppTheme {
 
   static ThemeData get darkTheme {
     final textTheme = GoogleFonts.plusJakartaSansTextTheme(ThemeData.dark().textTheme);
-    
+
     return ThemeData(
       useMaterial3: true,
       brightness: Brightness.dark,
@@ -221,11 +214,7 @@ class AppTheme {
           color: AppColors.darkTextSecondary,
           height: 1.4,
         ),
-        labelLarge: GoogleFonts.plusJakartaSans(
-          fontSize: 13,
-          fontWeight: FontWeight.w600,
-          letterSpacing: 0.2,
-        ),
+        labelLarge: GoogleFonts.plusJakartaSans(fontSize: 13, fontWeight: FontWeight.w600, letterSpacing: 0.2),
       ),
       appBarTheme: AppBarTheme(
         backgroundColor: AppColors.darkBg.withValues(alpha: 0.95),
@@ -253,10 +242,7 @@ class AppTheme {
           elevation: 0,
           padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 14),
           shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
-          textStyle: GoogleFonts.plusJakartaSans(
-            fontSize: 14,
-            fontWeight: FontWeight.w700,
-          ),
+          textStyle: GoogleFonts.plusJakartaSans(fontSize: 14, fontWeight: FontWeight.w700),
         ),
       ),
       inputDecorationTheme: InputDecorationTheme(
@@ -286,4 +272,31 @@ class AppTheme {
       ),
     );
   }
+}
+
+/// Bảng màu giao diện đọc truyện (trang chủ, khám phá, chi tiết, DS Chương) cho cả chế độ Sáng và Tối.
+/// `PanelForgeApp` gọi [apply] theo độ sáng hiệu lực của theme và dựng lại cây widget khi đổi chế độ.
+class ForgeColors {
+  ForgeColors._();
+  static bool _dark = true;
+  static bool get isDark => _dark;
+  static void apply(Brightness brightness) => _dark = brightness == Brightness.dark;
+
+  static Color get bg => _dark ? const Color(0xFF34323D) : const Color(0xFFF5F5F7);
+  static Color get surface => _dark ? const Color(0xFF1E1D24) : const Color(0xFFFFFFFF);
+  static Color get card => _dark ? const Color(0xFF050507) : const Color(0xFFFFFFFF);
+  static Color get tile => _dark ? const Color(0xFF050507) : const Color(0xFFFFFFFF);
+  static Color get navBar => _dark ? const Color(0xFF050507) : const Color(0xFFFFFFFF);
+  static Color get bottomBar => _dark ? const Color(0xFF050507) : const Color(0xFFFFFFFF);
+  static Color get chip => _dark ? const Color(0xFF2C2C34) : const Color(0xFFEDEDF0);
+  static Color get divider => _dark ? const Color(0xFF1E1E24) : const Color(0xFFE5E5EA);
+  static Color get border => _dark ? const Color(0xFF2A2A32) : const Color(0xFFDCDCE1);
+  static Color get text => _dark ? Colors.white : const Color(0xFF1C1C1E);
+  static Color get textSoft => _dark ? Colors.white70 : const Color(0xFF3A3A3C);
+  static const Color accent = Color(0xFFFF6B00);
+  static const Color hot = Color(0xFFFF3D1F);
+  static const Color muted = Color(0xFF8E8E93);
+  static const Color blue = Color(0xFF2B95FF);
+  static const Color green = Color(0xFF22C55E);
+  static const Color danger = Color(0xFFEF4444);
 }

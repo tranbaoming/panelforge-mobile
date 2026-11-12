@@ -368,14 +368,7 @@ void main() {
       expect(find.text('PANELFORGE'), findsOneWidget);
       expect(find.text('Nền Tảng Đọc Truyện & Review Bản Quyền'), findsOneWidget);
 
-      // Long press on Logo opens Server Config dialog
-      final logoIcon = find.byIcon(Icons.auto_stories_rounded);
-      expect(logoIcon, findsOneWidget);
-      await tester.longPress(logoIcon);
-      await tester.pumpAndSettle();
-      expect(find.text('Cấu Hình Máy Chủ'), findsOneWidget);
-      await tester.tap(find.text('Đóng'));
-      await tester.pumpAndSettle();
+      expect(find.byIcon(Icons.auto_stories_rounded), findsOneWidget);
 
       // Reader Login Form & Tabs
       expect(find.text('Đăng Nhập'), findsNWidgets(2)); // Tab and button

@@ -24,12 +24,7 @@ class UnlockChapterBottomSheet extends ConsumerStatefulWidget {
   final SeriesItem? series;
   final VoidCallback onUnlocked;
 
-  const UnlockChapterBottomSheet({
-    super.key,
-    required this.chapter,
-    this.series,
-    required this.onUnlocked,
-  });
+  const UnlockChapterBottomSheet({super.key, required this.chapter, this.series, required this.onUnlocked});
 
   /// Guest sẽ nhận SnackBar yêu cầu đăng nhập thay vì mở màn hình thanh toán.
   static Future<void> show(
@@ -48,11 +43,7 @@ class UnlockChapterBottomSheet extends ConsumerStatefulWidget {
       context: context,
       isScrollControlled: true,
       backgroundColor: Colors.transparent,
-      builder: (context) => UnlockChapterBottomSheet(
-        chapter: chapter,
-        series: series,
-        onUnlocked: onUnlocked,
-      ),
+      builder: (context) => UnlockChapterBottomSheet(chapter: chapter, series: series, onUnlocked: onUnlocked),
     );
   }
 
@@ -114,7 +105,9 @@ class _UnlockChapterBottomSheetState extends ConsumerState<UnlockChapterBottomSh
       _errorMessage = null;
     });
     try {
-      final order = await ref.read(monetizationServiceProvider).createVietQrOrder(
+      final order = await ref
+          .read(monetizationServiceProvider)
+          .createVietQrOrder(
             purpose: PaymentPurpose.chapterUnlock,
             chapterId: widget.chapter.id,
             seriesId: widget.series?.id,
@@ -220,18 +213,14 @@ class _UnlockChapterBottomSheetState extends ConsumerState<UnlockChapterBottomSh
                 onCancel: () => setState(() => _vietQrOrder = null),
               )
             else ...[
-              if (!isVip) ...[
-                _buildMethodSelector(),
-                const SizedBox(height: 14),
-              ],
+              if (!isVip) ...[_buildMethodSelector(), const SizedBox(height: 14)],
               if (isVip || _method == _UnlockMethod.wallet)
                 _buildWalletSummary(currentBalanceVnd, isVip, hasEnoughMoney)
               else
                 _buildVietQrHint(),
               const SizedBox(height: 16),
               if (_errorMessage != null) _buildError(_errorMessage!),
-              if (!isVip && _method == _UnlockMethod.wallet && !hasEnoughMoney)
-                _buildInsufficientBanner(missingVnd),
+              if (!isVip && _method == _UnlockMethod.wallet && !hasEnoughMoney) _buildInsufficientBanner(missingVnd),
               _buildPrimaryAction(isVip, hasEnoughMoney),
             ],
           ],
@@ -261,7 +250,10 @@ class _UnlockChapterBottomSheetState extends ConsumerState<UnlockChapterBottomSh
                 Text(
                   widget.series!.title,
                   style: GoogleFonts.plusJakartaSans(
-                      fontSize: 12, fontWeight: FontWeight.w700, color: AppColors.primary),
+                    fontSize: 12,
+                    fontWeight: FontWeight.w700,
+                    color: AppColors.primary,
+                  ),
                   maxLines: 1,
                   overflow: TextOverflow.ellipsis,
                 ),
@@ -295,10 +287,7 @@ class _UnlockChapterBottomSheetState extends ConsumerState<UnlockChapterBottomSh
             decoration: BoxDecoration(
               color: selected ? AppColors.primary.withValues(alpha: 0.15) : AppColors.darkCard,
               borderRadius: BorderRadius.circular(12),
-              border: Border.all(
-                color: selected ? AppColors.primary : AppColors.darkBorder,
-                width: selected ? 1.5 : 1,
-              ),
+              border: Border.all(color: selected ? AppColors.primary : AppColors.darkBorder, width: selected ? 1.5 : 1),
             ),
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
@@ -325,8 +314,7 @@ class _UnlockChapterBottomSheetState extends ConsumerState<UnlockChapterBottomSh
                   ],
                 ),
                 const SizedBox(height: 4),
-                Text(subtitle,
-                    style: GoogleFonts.plusJakartaSans(fontSize: 10.5, color: AppColors.darkTextSecondary)),
+                Text(subtitle, style: GoogleFonts.plusJakartaSans(fontSize: 10.5, color: AppColors.darkTextSecondary)),
               ],
             ),
           ),
@@ -345,14 +333,18 @@ class _UnlockChapterBottomSheetState extends ConsumerState<UnlockChapterBottomSh
 
   Widget _buildWalletSummary(int balance, bool isVip, bool hasEnoughMoney) {
     Widget row(String label, String value, {Color color = Colors.white, bool bold = false}) => Row(
-          mainAxisAlignment: MainAxisAlignment.spaceBetween,
-          children: [
-            Text(label,
-                style: GoogleFonts.plusJakartaSans(
-                    fontSize: 13, color: bold ? Colors.white70 : AppColors.darkTextSecondary)),
-            Text(value, style: GoogleFonts.plusJakartaSans(fontSize: 14, fontWeight: FontWeight.w800, color: color)),
-          ],
-        );
+      mainAxisAlignment: MainAxisAlignment.spaceBetween,
+      children: [
+        Text(
+          label,
+          style: GoogleFonts.plusJakartaSans(fontSize: 13, color: bold ? Colors.white70 : AppColors.darkTextSecondary),
+        ),
+        Text(
+          value,
+          style: GoogleFonts.plusJakartaSans(fontSize: 14, fontWeight: FontWeight.w800, color: color),
+        ),
+      ],
+    );
 
     return Container(
       padding: const EdgeInsets.all(16),
@@ -365,11 +357,18 @@ class _UnlockChapterBottomSheetState extends ConsumerState<UnlockChapterBottomSh
         children: [
           row('Số dư Ví hiện tại:', formatVnd(balance)),
           const SizedBox(height: 10),
-          row('Giá mở khóa:', isVip ? '0đ (VIP)' : '-${formatVnd(_priceVnd)}',
-              color: isVip ? AppColors.mint : AppColors.primary),
+          row(
+            'Giá mở khóa:',
+            isVip ? '0đ (VIP)' : '-${formatVnd(_priceVnd)}',
+            color: isVip ? AppColors.mint : AppColors.primary,
+          ),
           const Divider(color: AppColors.darkBorder, height: 22),
-          row('Số dư sau thanh toán:', formatVnd(isVip ? balance : balance - _priceVnd),
-              color: hasEnoughMoney ? AppColors.mint : AppColors.rose, bold: true),
+          row(
+            'Số dư sau thanh toán:',
+            formatVnd(isVip ? balance : balance - _priceVnd),
+            color: hasEnoughMoney ? AppColors.mint : AppColors.rose,
+            bold: true,
+          ),
         ],
       ),
     );
@@ -431,8 +430,7 @@ class _UnlockChapterBottomSheetState extends ConsumerState<UnlockChapterBottomSh
             Expanded(
               child: Text(
                 'Số dư Ví không đủ (thiếu ${formatVnd(missingVnd)}). Nạp thêm hoặc chọn chuyển khoản VietQR.',
-                style: GoogleFonts.plusJakartaSans(
-                    fontSize: 12.5, fontWeight: FontWeight.w600, color: AppColors.rose),
+                style: GoogleFonts.plusJakartaSans(fontSize: 12.5, fontWeight: FontWeight.w600, color: AppColors.rose),
               ),
             ),
           ],

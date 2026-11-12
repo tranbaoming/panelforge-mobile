@@ -1,4 +1,5 @@
 import 'package:flutter/services.dart';
+import 'package:wakelock_plus/wakelock_plus.dart';
 import 'package:flutter/widgets.dart';
 
 /// Dịch vụ bảo mật màn hình: Giữ sáng màn hình, Khóa xoay màn hình, và phát hiện phím in ấn/chụp màn hình
@@ -12,10 +13,7 @@ class ScreenSecurityService {
   static Future<void> keepScreenAwake(bool enable) async {
     _isAwake = enable;
     try {
-      // Gửi yêu cầu qua platform channel nếu thiết bị hỗ trợ
-      await SystemChannels.platform.invokeMethod<void>(
-        enable ? 'SystemNavigator.keepAwake' : 'SystemNavigator.allowSleep',
-      );
+      await WakelockPlus.toggle(enable: enable);
     } catch (_) {
       // Bỏ qua lỗi nền tảng chưa đăng ký channel trong môi trường test/desktop
     }

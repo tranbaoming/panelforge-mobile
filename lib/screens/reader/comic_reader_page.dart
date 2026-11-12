@@ -59,7 +59,8 @@ class _ComicReaderPageState extends ConsumerState<ComicReaderPage> with WidgetsB
     super.initState();
     WidgetsBinding.instance.addObserver(this);
     HardwareKeyboard.instance.addHandler(_handleKeyEvent);
-    ScreenSecurityService.keepScreenAwake(true);
+    // Cài đặt "Giữ màn hình sáng khi đọc" ở màn Cá nhân.
+    ScreenSecurityService.keepScreenAwake(PreferencesService.getKeepScreenOn());
     _loadData();
   }
 
@@ -287,6 +288,19 @@ class _ComicReaderPageState extends ConsumerState<ComicReaderPage> with WidgetsB
           _webtoonTileSpacing = loadedPackage.manifest.webtoonTileSpacing;
           _isLoading = false;
           _currentPage = 1;
+        });
+        PreferencesService.saveReadingProgress(
+          ReadingHistoryEntry(
+            seriesId: series.id,
+            seriesTitle: series.title,
+            chapterId: currentChapter.id,
+            chapterNumber: currentChapter.number,
+            readAt: DateTime.now(),
+          ),
+        );
+        // Lượt xem thật trên catalog; lỗi mạng không ảnh hưởng việc đọc.
+        CatalogService().recordChapterView(currentChapter.id).catchError((Object e) {
+          debugPrint('[ChapterView] $e');
         });
 
         // Tiêu hao lượt xem nếu là tập thuê có giới hạn số lần xem

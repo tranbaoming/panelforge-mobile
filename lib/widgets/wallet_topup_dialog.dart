@@ -36,8 +36,7 @@ class WalletTopupDialog extends ConsumerStatefulWidget {
   ConsumerState<WalletTopupDialog> createState() => _WalletTopupDialogState();
 }
 
-class _WalletTopupDialogState extends ConsumerState<WalletTopupDialog>
-    with SingleTickerProviderStateMixin {
+class _WalletTopupDialogState extends ConsumerState<WalletTopupDialog> with SingleTickerProviderStateMixin {
   late final TabController _tabController;
 
   // Tab 1: Mệnh giá nạp VNĐ
@@ -56,11 +55,7 @@ class _WalletTopupDialogState extends ConsumerState<WalletTopupDialog>
   @override
   void initState() {
     super.initState();
-    _tabController = TabController(
-      length: 2,
-      vsync: this,
-      initialIndex: widget.initialTab.clamp(0, 1),
-    );
+    _tabController = TabController(length: 2, vsync: this, initialIndex: widget.initialTab.clamp(0, 1));
   }
 
   @override
@@ -76,11 +71,9 @@ class _WalletTopupDialogState extends ConsumerState<WalletTopupDialog>
     });
 
     try {
-      final order = await ref.read(monetizationServiceProvider).createVietQrOrder(
-            purpose: PaymentPurpose.topup,
-            amountVnd: _selectedAmountVnd,
-            seriesId: widget.seriesId,
-          );
+      final order = await ref
+          .read(monetizationServiceProvider)
+          .createVietQrOrder(purpose: PaymentPurpose.topup, amountVnd: _selectedAmountVnd, seriesId: widget.seriesId);
       if (mounted) {
         setState(() {
           _isLoadingQr = false;
@@ -142,11 +135,7 @@ class _WalletTopupDialogState extends ConsumerState<WalletTopupDialog>
                       children: [
                         Text(
                           'Ví Tiền PanelForge',
-                          style: GoogleFonts.newsreader(
-                            fontSize: 20,
-                            fontWeight: FontWeight.w700,
-                            color: Colors.white,
-                          ),
+                          style: GoogleFonts.newsreader(fontSize: 20, fontWeight: FontWeight.w700, color: Colors.white),
                         ),
                         const SizedBox(height: 4),
                         Row(
@@ -161,11 +150,7 @@ class _WalletTopupDialogState extends ConsumerState<WalletTopupDialog>
                               child: Row(
                                 mainAxisSize: MainAxisSize.min,
                                 children: [
-                                  const Icon(
-                                    Icons.account_balance_wallet_rounded,
-                                    size: 14,
-                                    color: AppColors.primary,
-                                  ),
+                                  const Icon(Icons.account_balance_wallet_rounded, size: 14, color: AppColors.primary),
                                   const SizedBox(width: 5),
                                   Text(
                                     formatVnd(currentVnd),
@@ -222,22 +207,13 @@ class _WalletTopupDialogState extends ConsumerState<WalletTopupDialog>
                 controller: _tabController,
                 indicatorSize: TabBarIndicatorSize.tab,
                 dividerColor: Colors.transparent,
-                indicator: BoxDecoration(
-                  color: AppColors.primary,
-                  borderRadius: BorderRadius.circular(10),
-                ),
+                indicator: BoxDecoration(color: AppColors.primary, borderRadius: BorderRadius.circular(10)),
                 labelColor: Colors.white,
                 unselectedLabelColor: AppColors.darkTextSecondary,
                 labelStyle: GoogleFonts.plusJakartaSans(fontSize: 13, fontWeight: FontWeight.w700),
                 tabs: const [
-                  Tab(
-                    icon: Icon(Icons.qr_code_rounded, size: 16),
-                    text: 'Nạp Tiền Vào Ví',
-                  ),
-                  Tab(
-                    icon: Icon(Icons.history_rounded, size: 16),
-                    text: 'Lịch Sử Giao Dịch',
-                  ),
+                  Tab(icon: Icon(Icons.qr_code_rounded, size: 16), text: 'Nạp Tiền Vào Ví'),
+                  Tab(icon: Icon(Icons.history_rounded, size: 16), text: 'Lịch Sử Giao Dịch'),
                 ],
               ),
             ),
@@ -247,10 +223,7 @@ class _WalletTopupDialogState extends ConsumerState<WalletTopupDialog>
             Expanded(
               child: TabBarView(
                 controller: _tabController,
-                children: [
-                  _buildTopupTab(),
-                  _buildTransactionHistoryTab(),
-                ],
+                children: [_buildTopupTab(), _buildTransactionHistoryTab()],
               ),
             ),
           ],
@@ -275,7 +248,6 @@ class _WalletTopupDialogState extends ConsumerState<WalletTopupDialog>
       );
     }
 
-
     return SingleChildScrollView(
       padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 8),
       child: Column(
@@ -283,11 +255,7 @@ class _WalletTopupDialogState extends ConsumerState<WalletTopupDialog>
         children: [
           Text(
             'Chọn mệnh giá nạp vào Ví:',
-            style: GoogleFonts.plusJakartaSans(
-              fontSize: 14,
-              fontWeight: FontWeight.w700,
-              color: Colors.white,
-            ),
+            style: GoogleFonts.plusJakartaSans(fontSize: 14, fontWeight: FontWeight.w700, color: Colors.white),
           ),
           const SizedBox(height: 12),
 
@@ -304,9 +272,7 @@ class _WalletTopupDialogState extends ConsumerState<WalletTopupDialog>
                 child: Container(
                   padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
                   decoration: BoxDecoration(
-                    color: isSelected
-                        ? AppColors.primary.withValues(alpha: 0.15)
-                        : AppColors.darkCard,
+                    color: isSelected ? AppColors.primary.withValues(alpha: 0.15) : AppColors.darkCard,
                     borderRadius: BorderRadius.circular(12),
                     border: Border.all(
                       color: isSelected ? AppColors.primary : AppColors.darkBorder,
@@ -383,20 +349,14 @@ class _WalletTopupDialogState extends ConsumerState<WalletTopupDialog>
                   )
                 : Text(
                     'Tạo Mã VietQR Thanh Toán',
-                    style: GoogleFonts.plusJakartaSans(
-                      fontSize: 15,
-                      fontWeight: FontWeight.w700,
-                    ),
+                    style: GoogleFonts.plusJakartaSans(fontSize: 15, fontWeight: FontWeight.w700),
                   ),
           ),
           const SizedBox(height: 12),
           Text(
             'Số dư được cộng ngay khi Studio xác nhận đã nhận tiền.',
             textAlign: TextAlign.center,
-            style: GoogleFonts.plusJakartaSans(
-              fontSize: 11.5,
-              color: AppColors.darkTextSecondary,
-            ),
+            style: GoogleFonts.plusJakartaSans(fontSize: 11.5, color: AppColors.darkTextSecondary),
           ),
         ],
       ),
@@ -421,29 +381,18 @@ class _WalletTopupDialogState extends ConsumerState<WalletTopupDialog>
                   shape: BoxShape.circle,
                   border: Border.all(color: AppColors.darkBorder),
                 ),
-                child: const Icon(
-                  Icons.receipt_long_outlined,
-                  size: 40,
-                  color: AppColors.darkTextSecondary,
-                ),
+                child: const Icon(Icons.receipt_long_outlined, size: 40, color: AppColors.darkTextSecondary),
               ),
               const SizedBox(height: 16),
               Text(
                 'Chưa có giao dịch nào',
-                style: GoogleFonts.newsreader(
-                  fontSize: 17,
-                  fontWeight: FontWeight.w600,
-                  color: Colors.white,
-                ),
+                style: GoogleFonts.newsreader(fontSize: 17, fontWeight: FontWeight.w600, color: Colors.white),
               ),
               const SizedBox(height: 6),
               Text(
                 'Lịch sử nạp tiền và thanh toán chapter sẽ hiển thị tại đây.',
                 textAlign: TextAlign.center,
-                style: GoogleFonts.plusJakartaSans(
-                  fontSize: 12,
-                  color: AppColors.darkTextSecondary,
-                ),
+                style: GoogleFonts.plusJakartaSans(fontSize: 12, color: AppColors.darkTextSecondary),
               ),
             ],
           ),
@@ -497,10 +446,7 @@ class _WalletTopupDialogState extends ConsumerState<WalletTopupDialog>
                     const SizedBox(height: 2),
                     Text(
                       '$dateStr • Sau GD: ${formatVnd(tx.balanceAfter)}',
-                      style: GoogleFonts.plusJakartaSans(
-                        fontSize: 11,
-                        color: AppColors.darkTextSecondary,
-                      ),
+                      style: GoogleFonts.plusJakartaSans(fontSize: 11, color: AppColors.darkTextSecondary),
                     ),
                   ],
                 ),

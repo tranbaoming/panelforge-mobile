@@ -57,12 +57,7 @@ class ComicPageData {
   final String? imageUrl;
   final List<ComicPanelData> panels;
 
-  const ComicPageData({
-    required this.pageNumber,
-    required this.title,
-    this.imageUrl,
-    this.panels = const [],
-  });
+  const ComicPageData({required this.pageNumber, required this.title, this.imageUrl, this.panels = const []});
 
   factory ComicPageData.fromPublicPage(PublicPageDto dto) {
     return ComicPageData(
@@ -209,8 +204,11 @@ class SeriesItem {
   final String coverGradientEnd;
   final String synopsisQuote;
   final String fullSynopsis;
-  final double rating;
+  /// Lượt đọc thật từ Backend (tổng / 1 ngày / 7 ngày / 30 ngày).
   final int views;
+  final int viewsLast1Day;
+  final int viewsLast7Days;
+  final int viewsLast30Days;
   final int readProgressChapter;
   final int totalChapters;
   final List<String> genres;
@@ -219,6 +217,14 @@ class SeriesItem {
   final String editorialNote;
   final int baseChapterPriceVnd;
   final int hotChapterPriceVnd;
+
+  /// Thời điểm chương mới nhất được phát hành (catalog list); null nếu chưa rõ.
+  final DateTime? latestPublishedAt;
+
+  /// URL đầy đủ của ảnh bìa bộ truyện; null = chưa có bìa (UI dùng khối màu).
+  final String? coverUrl;
+  final bool isCompleted;
+  final DateTime? createdAt;
 
   const SeriesItem({
     required this.id,
@@ -230,8 +236,10 @@ class SeriesItem {
     required this.coverGradientEnd,
     required this.synopsisQuote,
     required this.fullSynopsis,
-    required this.rating,
     required this.views,
+    this.viewsLast1Day = 0,
+    this.viewsLast7Days = 0,
+    this.viewsLast30Days = 0,
     required this.readProgressChapter,
     required this.totalChapters,
     required this.genres,
@@ -240,6 +248,10 @@ class SeriesItem {
     required this.editorialNote,
     this.baseChapterPriceVnd = 3000,
     this.hotChapterPriceVnd = 5000,
+    this.latestPublishedAt,
+    this.coverUrl,
+    this.isCompleted = false,
+    this.createdAt,
   });
 
   factory SeriesItem.fromPublicDto(PublicSeriesDto dto) {
@@ -263,8 +275,10 @@ class SeriesItem {
           ? '“${dto.synopsis!.length > 80 ? dto.synopsis!.substring(0, 80) : dto.synopsis}...„'
           : '“Tác phẩm chính thức được phát hành bởi ${dto.studioName}.„',
       fullSynopsis: dto.synopsis ?? 'Nội dung bộ truyện đang được cập nhật.',
-      rating: 4.9,
-      views: dto.publishedChapterCount * 1250,
+      views: dto.viewCount,
+      viewsLast1Day: dto.viewsLast1Day,
+      viewsLast7Days: dto.viewsLast7Days,
+      viewsLast30Days: dto.viewsLast30Days,
       readProgressChapter: 0,
       totalChapters: dto.publishedChapterCount,
       genres: [dto.genre, dto.format],
@@ -273,6 +287,10 @@ class SeriesItem {
       editorialNote: 'Phát hành chính thức bởi Studio ${dto.studioName}.',
       baseChapterPriceVnd: dto.baseChapterPriceVnd,
       hotChapterPriceVnd: dto.hotChapterPriceVnd,
+      latestPublishedAt: dto.latestPublishedAt,
+      coverUrl: dto.fullCoverUrl,
+      isCompleted: dto.isCompleted,
+      createdAt: dto.createdAt,
     );
   }
 
@@ -297,8 +315,7 @@ class SeriesItem {
           ? '“${dto.synopsis!.length > 80 ? dto.synopsis!.substring(0, 80) : dto.synopsis}...„'
           : '“Tác phẩm độc quyền bởi ${dto.studioName}.„',
       fullSynopsis: dto.synopsis ?? 'Nội dung bộ truyện đang được cập nhật.',
-      rating: 4.9,
-      views: dto.chapters.length * 1500,
+      views: dto.viewCount,
       readProgressChapter: 0,
       totalChapters: dto.chapters.length,
       genres: [dto.genre, dto.format],
@@ -307,6 +324,9 @@ class SeriesItem {
       editorialNote: 'Phát hành chính thức bởi Studio ${dto.studioName}.',
       baseChapterPriceVnd: dto.baseChapterPriceVnd,
       hotChapterPriceVnd: dto.hotChapterPriceVnd,
+      coverUrl: dto.fullCoverUrl,
+      isCompleted: dto.isCompleted,
+      createdAt: dto.createdAt,
     );
   }
 
@@ -327,8 +347,10 @@ class SeriesItem {
       coverGradientEnd: coverGradientEnd,
       synopsisQuote: synopsisQuote,
       fullSynopsis: fullSynopsis,
-      rating: rating,
       views: views,
+      viewsLast1Day: viewsLast1Day,
+      viewsLast7Days: viewsLast7Days,
+      viewsLast30Days: viewsLast30Days,
       readProgressChapter: readProgressChapter ?? this.readProgressChapter,
       totalChapters: totalChapters,
       genres: genres,
@@ -337,6 +359,10 @@ class SeriesItem {
       editorialNote: editorialNote,
       baseChapterPriceVnd: baseChapterPriceVnd ?? this.baseChapterPriceVnd,
       hotChapterPriceVnd: hotChapterPriceVnd ?? this.hotChapterPriceVnd,
+      latestPublishedAt: latestPublishedAt,
+      coverUrl: coverUrl,
+      isCompleted: isCompleted,
+      createdAt: createdAt,
     );
   }
 }

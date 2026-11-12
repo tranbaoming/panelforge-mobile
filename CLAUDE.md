@@ -14,7 +14,7 @@ flutter run
 Backend API Base URL:
 - Android Emulator: `http://10.0.2.2:5044`
 - iOS / Desktop / Web: `http://localhost:5044`
-- Server Config Dialog: Accessible via Settings icon (`tune_rounded`) in Explore Page.
+- Base URL is chosen automatically by `services/api_config.dart` (no in-app server config screen).
 
 ## Project Structure & Navigation Map
 
@@ -23,7 +23,7 @@ lib/
 ├── main.dart                          # Application entry point
 ├── navigation/
 │   ├── app_router.dart                # GoRouter route declarations & redirect logic
-│   └── scaffold_with_nav_bar.dart     # Bottom navigation shell
+│   └── scaffold_with_nav_bar.dart     # Bottom nav 5 tab: Trang chủ / Khám phá / Tìm kiếm / Cá nhân / Thông báo
 ├── models/
 │   ├── api_dtos.dart                  # Shared request/response DTOs & ApiResponse<T>
 │   ├── auth_models.dart               # AuthState, UserToken, Session models
@@ -40,12 +40,18 @@ lib/
 │   ├── preview_service.dart           # Token inspection & feedback submission (BR-16, BR-17)
 │   ├── cbz_package_service.dart       # Offline CBZ caching & package extraction
 │   ├── monetization_service.dart      # Wallet balance & chapter paywall unlocking
-│   └── preferences_service.dart       # SharedPreferences reader preferences & bookmarks
+│   ├── preferences_service.dart       # SharedPreferences: bookmarks (Đọc sau), theo dõi, lịch sử đọc, giao diện, giữ màn hình sáng
+│   └── app_info.dart                  # Phiên bản & liên kết Liên hệ / Chính sách / Cửa hàng (điền khi có)
 ├── screens/
 │   ├── auth/login_page.dart           # User login modal/page
 │   ├── explore/
-│   │   ├── explore_page.dart          # Catalog browse & series search
-│   │   └── series_detail_page.dart    # Series overview & chapter list
+│   │   ├── explore_page.dart          # Trang chủ: Tiếp tục đọc, danh mục nhanh, hàng truyện ngang
+│   │   ├── browse_page.dart           # Tab Khám phá (lọc định dạng/thể loại) & tab Tìm kiếm
+│   │   ├── series_grid_page.dart      # Xem tất cả dạng lưới 2 cột
+│   │   └── series_detail_page.dart    # Header ảnh mờ, thể loại, Giới thiệu, sheet DS Chương (mở khóa / CBZ)
+│   ├── profile/
+│   │   ├── profile_page.dart          # Tab Cá nhân: hồ sơ, Ví & VIP, danh sách, cài đặt, liên hệ, đăng xuất
+│   │   └── activity_page.dart         # Tab Thông báo: giao dịch Ví, đọc gần đây, lối vào Review (/review)
 │   ├── reader/
 │   │   └── comic_reader_page.dart     # Multi-mode manga/comic/webtoon reader
 │   └── review/
@@ -58,6 +64,8 @@ lib/
 │   ├── guided_panel_viewer.dart       # Panel-by-panel guided reading
 │   ├── sketch_drawing_dialog.dart     # Canvas drawing for pinpoint feedback
 │   ├── watermark_overlay.dart         # Security watermark overlay (BR-17)
+│   ├── vip_purchase_sheet.dart        # Mua VIP: trừ Ví hoặc VietQR (đơn VipSubscription)
+│   ├── forge_ui.dart                  # Thẻ truyện, logo, header section, lưới 2 cột (bảng màu ForgeColors)
 │   ├── wallet_chip.dart               # Header wallet balance indicator
 │   ├── wallet_topup_dialog.dart       # Wallet top-up (VietQR order) & server transaction history
 │   ├── unlock_chapter_bottom_sheet.dart # Paid chapter unlock: wallet debit or direct VietQR

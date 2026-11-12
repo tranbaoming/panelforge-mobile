@@ -15,7 +15,7 @@ class MonetizationService {
   final ApiClient _client;
 
   MonetizationService({ApiClient? client, Dio? dio})
-      : _client = client ?? (dio != null ? ApiClient(customDio: dio) : ApiClient());
+    : _client = client ?? (dio != null ? ApiClient(customDio: dio) : ApiClient());
 
   /// `GET /api/wallet/me` — số dư, VIP, chương đã mở khóa và lịch sử giao dịch.
   Future<UserWalletDto> getMyWallet() async {
@@ -31,10 +31,7 @@ class MonetizationService {
 
   /// `POST /api/wallet/unlock-chapter` — mở khóa vĩnh viễn bằng số dư Ví (hoặc miễn phí nếu VIP).
   /// Giá trừ do server lấy từ cấu hình chương của Producer.
-  Future<UnlockChapterResponse> unlockChapterWithWallet({
-    required String chapterId,
-    String? seriesId,
-  }) async {
+  Future<UnlockChapterResponse> unlockChapterWithWallet({required String chapterId, String? seriesId}) async {
     final response = await _client.post(
       '/api/wallet/unlock-chapter',
       data: UnlockChapterRequest(chapterId: chapterId, seriesId: seriesId).toJson(),
@@ -52,10 +49,7 @@ class MonetizationService {
 
   /// `POST /api/wallet/subscribe-vip` — kích hoạt VIP bằng số dư Ví.
   Future<SubscribeVipResponse> subscribeVipWithWallet({required String plan}) async {
-    final response = await _client.post(
-      '/api/wallet/subscribe-vip',
-      data: SubscribeVipRequest(plan: plan).toJson(),
-    );
+    final response = await _client.post('/api/wallet/subscribe-vip', data: SubscribeVipRequest(plan: plan).toJson());
     final resp = SubscribeVipResponse.fromJson(response.data as Map<String, dynamic>);
     await PreferencesService.setLocalVip(isVip: resp.isVip, expiresAt: resp.vipExpiresAt);
     await PreferencesService.setLocalBalanceVnd(resp.remainingCoins * 100);
@@ -95,9 +89,7 @@ class MonetizationService {
 
   /// `GET /api/wallet/transactions/{orderCode}/status` — kiểm tra đơn đã được Producer duyệt chưa.
   Future<TransactionStatusDto> getTransactionStatus(String orderCode) async {
-    final response = await _client.get(
-      '/api/wallet/transactions/${Uri.encodeComponent(orderCode)}/status',
-    );
+    final response = await _client.get('/api/wallet/transactions/${Uri.encodeComponent(orderCode)}/status');
     return TransactionStatusDto.fromJson(response.data as Map<String, dynamic>);
   }
 
@@ -166,10 +158,12 @@ class WalletNotifier extends Notifier<AsyncValue<UserWalletDto>> {
     final response = await _service.unlockChapterWithWallet(chapterId: chapterId, seriesId: seriesId);
     final current = state.asData?.value;
     if (current != null) {
-      state = AsyncData(current.copyWith(
-        balanceVnd: response.remainingBalanceVnd,
-        unlockedChapterIds: {...current.unlockedChapterIds, chapterId},
-      ));
+      state = AsyncData(
+        current.copyWith(
+          balanceVnd: response.remainingBalanceVnd,
+          unlockedChapterIds: {...current.unlockedChapterIds, chapterId},
+        ),
+      );
     }
     ref.read(unlockedChaptersProvider.notifier).add(chapterId);
     ref.read(chapterEntitlementsProvider.notifier).refresh();
@@ -179,8 +173,7 @@ class WalletNotifier extends Notifier<AsyncValue<UserWalletDto>> {
   }
 
   /// Tiêu hao lượt xem — giữ API cho Reader; Backend chỉ có quyền đọc vĩnh viễn.
-  Future<ConsumeViewResult> consumeChapterView(String chapterId) =>
-      _service.consumeChapterView(chapterId);
+  Future<ConsumeViewResult> consumeChapterView(String chapterId) => _service.consumeChapterView(chapterId);
 
   /// Kích hoạt VIP bằng số dư Ví.
   Future<SubscribeVipResponse> subscribeVip(String plan) async {
@@ -195,8 +188,7 @@ class WalletNotifier extends Notifier<AsyncValue<UserWalletDto>> {
   }
 }
 
-final walletNotifierProvider =
-    NotifierProvider<WalletNotifier, AsyncValue<UserWalletDto>>(WalletNotifier.new);
+final walletNotifierProvider = NotifierProvider<WalletNotifier, AsyncValue<UserWalletDto>>(WalletNotifier.new);
 
 /// Notifier quản lý danh sách các chapterId đã mở khóa (cache của `UnlockedChapterIds` trên server).
 class UnlockedChaptersNotifier extends Notifier<Set<String>> {
@@ -225,10 +217,7 @@ class UnlockedChaptersNotifier extends Notifier<Set<String>> {
   }
 }
 
-final unlockedChaptersProvider =
-    NotifierProvider<UnlockedChaptersNotifier, Set<String>>(
-  UnlockedChaptersNotifier.new,
-);
+final unlockedChaptersProvider = NotifierProvider<UnlockedChaptersNotifier, Set<String>>(UnlockedChaptersNotifier.new);
 
 /// Notifier quản lý quyền sở hữu từng chapter (cache cục bộ).
 class ChapterEntitlementsNotifier extends Notifier<Map<String, ChapterEntitlement>> {
@@ -251,7 +240,6 @@ class ChapterEntitlementsNotifier extends Notifier<Map<String, ChapterEntitlemen
   }
 }
 
-final chapterEntitlementsProvider =
-    NotifierProvider<ChapterEntitlementsNotifier, Map<String, ChapterEntitlement>>(
+final chapterEntitlementsProvider = NotifierProvider<ChapterEntitlementsNotifier, Map<String, ChapterEntitlement>>(
   ChapterEntitlementsNotifier.new,
 );

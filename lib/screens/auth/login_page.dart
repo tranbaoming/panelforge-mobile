@@ -4,7 +4,6 @@ import 'package:go_router/go_router.dart';
 import 'package:google_fonts/google_fonts.dart';
 import '../../providers/api_providers.dart';
 import '../../theme/app_theme.dart';
-import '../../widgets/server_config_dialog.dart';
 
 enum _LoginViewMode {
   login,
@@ -439,13 +438,11 @@ class _LoginPageState extends ConsumerState<LoginPage> {
 
               const SizedBox(height: 8),
 
-              // Brand Logo & Tiêu đề (Nhấn giữ Logo để cấu hình máy chủ cho Developer)
+              // Brand Logo & Tiêu đề
               Center(
                 child: Column(
                   children: [
-                    GestureDetector(
-                      onLongPress: () => ServerConfigDialog.show(context),
-                      child: Container(
+                    Container(
                         width: 64,
                         height: 64,
                         decoration: BoxDecoration(
@@ -472,7 +469,6 @@ class _LoginPageState extends ConsumerState<LoginPage> {
                           size: 34,
                         ),
                       ),
-                    ),
                     const SizedBox(height: 14),
                     Text(
                       'PANELFORGE',

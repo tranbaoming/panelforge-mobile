@@ -1,13 +1,18 @@
 import 'dart:convert';
 import 'package:shared_preferences/shared_preferences.dart';
 import '../models/api_dtos.dart';
-import 'api_config.dart';
 
 class PreferencesService {
   static const String _keyBaseUrl = 'panelforge_custom_base_url';
   static const String _keyReadingMode = 'panelforge_reading_mode';
   static const String _keyReaderTheme = 'panelforge_reader_theme';
   static const String _keyBookmarks = 'panelforge_bookmarks';
+  static const String _keyReadingHistory = 'panelforge_reading_history';
+  static const String _keyFavorites = 'panelforge_favorites';
+  static const String _keyAppThemeMode = 'panelforge_app_theme_mode';
+  static const String _keyFollows = 'panelforge_follows';
+  static const String _keyKeepScreenOn = 'panelforge_keep_screen_on';
+  static const String _keyLastSyncAt = 'panelforge_last_sync_at';
   static const String _keyRecentTokens = 'panelforge_recent_tokens';
   static const String _keyOfflineChapters = 'panelforge_offline_chapters';
   static const String _keyUnlockedChapters = 'panelforge_unlocked_chapters';
@@ -28,24 +33,9 @@ class PreferencesService {
 
   static Future<void> init() async {
     _prefs = await SharedPreferences.getInstance();
-    final savedUrl = _prefs?.getString(_keyBaseUrl);
-    if (savedUrl != null && savedUrl.isNotEmpty) {
-      ApiConfig.setCustomBaseUrl(savedUrl);
-    }
-  }
-
-  // ─── Base URL ─────────────────────────────────────────────────────────────
-  static String? getCustomBaseUrl() {
-    return _prefs?.getString(_keyBaseUrl);
-  }
-
-  static Future<void> setCustomBaseUrl(String? url) async {
-    if (url == null || url.trim().isEmpty) {
+    // Màn hình cấu hình máy chủ đã bị gỡ: xóa địa chỉ tùy chỉnh còn lưu từ trước để app luôn dùng ApiConfig mặc định.
+    if (_prefs?.containsKey(_keyBaseUrl) ?? false) {
       await _prefs?.remove(_keyBaseUrl);
-      ApiConfig.setCustomBaseUrl(null);
-    } else {
-      await _prefs?.setString(_keyBaseUrl, url.trim());
-      ApiConfig.setCustomBaseUrl(url.trim());
     }
   }
 
@@ -69,6 +59,75 @@ class PreferencesService {
 
   static bool isBookmarked(String seriesId) {
     return getBookmarks().contains(seriesId);
+  }
+
+  // ─── Chế độ Sáng / Tối của ứng dụng ─────────────────────────────────────
+  /// 'dark' (mặc định) | 'light' | 'system'.
+  static String getAppThemeMode() => _prefs?.getString(_keyAppThemeMode) ?? 'dark';
+
+  static Future<void> setAppThemeMode(String mode) async => _prefs?.setString(_keyAppThemeMode, mode);
+
+  // ─── Theo dõi (🔔) — tách khỏi Bookmark "Đọc sau" (🔖) ─────────────────
+  static Set<String> getFollows() => (_prefs?.getStringList(_keyFollows) ?? const <String>[]).toSet();
+
+  static bool isFollowing(String seriesId) => getFollows().contains(seriesId);
+
+  static Future<bool> toggleFollow(String seriesId) async {
+    final current = getFollows();
+    final added = current.add(seriesId);
+    if (!added) current.remove(seriesId);
+    await _prefs?.setStringList(_keyFollows, current.toList());
+    return added;
+  }
+
+  // ─── Cài đặt màn Cá nhân ────────────────────────────────────────────────
+  static bool getKeepScreenOn() => _prefs?.getBool(_keyKeepScreenOn) ?? false;
+
+  static Future<void> setKeepScreenOn(bool value) async => _prefs?.setBool(_keyKeepScreenOn, value);
+
+  static DateTime? getLastSyncAt() => DateTime.tryParse(_prefs?.getString(_keyLastSyncAt) ?? '');
+
+  static Future<void> setLastSyncAt(DateTime time) async => _prefs?.setString(_keyLastSyncAt, time.toIso8601String());
+
+  // ─── Favorites (Yêu thích) ──────────────────────────────────────────────
+  static Set<String> getFavorites() => (_prefs?.getStringList(_keyFavorites) ?? const <String>[]).toSet();
+
+  static bool isFavorite(String seriesId) => getFavorites().contains(seriesId);
+
+  static Future<bool> toggleFavorite(String seriesId) async {
+    final current = getFavorites();
+    final added = current.add(seriesId);
+    if (!added) current.remove(seriesId);
+    await _prefs?.setStringList(_keyFavorites, current.toList());
+    return added;
+  }
+
+  // ─── Reading History (Tiếp tục đọc) ───────────────────────────────────────
+  /// Lịch sử đọc mới nhất trước, mỗi bộ truyện một mục, tối đa 30 mục.
+  static List<ReadingHistoryEntry> getReadingHistory() {
+    final list = _prefs?.getStringList(_keyReadingHistory) ?? const [];
+    final result = <ReadingHistoryEntry>[];
+    for (final raw in list) {
+      try {
+        result.add(ReadingHistoryEntry.fromJson(jsonDecode(raw) as Map<String, dynamic>));
+      } catch (_) {}
+    }
+    return result;
+  }
+
+  static ReadingHistoryEntry? getReadingHistoryFor(String seriesId) {
+    for (final e in getReadingHistory()) {
+      if (e.seriesId == seriesId) return e;
+    }
+    return null;
+  }
+
+  static Future<void> clearReadingHistory() async => _prefs?.remove(_keyReadingHistory);
+
+  static Future<void> saveReadingProgress(ReadingHistoryEntry entry) async {
+    final rest = getReadingHistory().where((e) => e.seriesId != entry.seriesId);
+    final next = [entry, ...rest].take(30).map((e) => jsonEncode(e.toJson())).toList();
+    await _prefs?.setStringList(_keyReadingHistory, next);
   }
 
   // ─── Reading Mode & Theme ─────────────────────────────────────────────────
@@ -161,12 +220,7 @@ class PreferencesService {
     if (rawStr == null || rawStr.isEmpty) return {};
     try {
       final decoded = jsonDecode(rawStr) as Map<String, dynamic>;
-      return decoded.map(
-        (key, value) => MapEntry(
-          key,
-          ChapterEntitlement.fromJson(value as Map<String, dynamic>),
-        ),
-      );
+      return decoded.map((key, value) => MapEntry(key, ChapterEntitlement.fromJson(value as Map<String, dynamic>)));
     } catch (_) {
       return {};
     }
@@ -206,7 +260,8 @@ class PreferencesService {
     final clean = serverIds.map((e) => e.trim()).where((e) => e.isNotEmpty).toSet();
     final entitlements = <String, ChapterEntitlement>{
       for (final id in clean)
-        id: getChapterEntitlement(id) ??
+        id:
+            getChapterEntitlement(id) ??
             ChapterEntitlement(chapterId: id, isPermanent: true, unlockedAt: DateTime.now()),
     };
     final encoded = jsonEncode(entitlements.map((k, v) => MapEntry(k, v.toJson())));
@@ -307,8 +362,7 @@ class PreferencesService {
   static Future<void> saveAuthUser(Map<String, dynamic> userMap) async {
     await _prefs?.setString(_keyAuthUser, jsonEncode(userMap));
     // Khởi tạo số dư ví mặc định 50.000đ cho độc giả mới nếu chưa có
-    if (_prefs?.getInt(_keyWalletBalanceVnd) == null &&
-        _prefs?.getInt(_keyWalletBalance) == null) {
+    if (_prefs?.getInt(_keyWalletBalanceVnd) == null && _prefs?.getInt(_keyWalletBalance) == null) {
       await setLocalBalanceVnd(50000);
       await addWalletTransaction(
         WalletTransactionDto(
@@ -361,3 +415,35 @@ class PreferencesService {
   }
 }
 
+/// Một mục lịch sử đọc: chương gần nhất của một bộ truyện.
+class ReadingHistoryEntry {
+  final String seriesId;
+  final String seriesTitle;
+  final String chapterId;
+  final int chapterNumber;
+  final DateTime readAt;
+
+  const ReadingHistoryEntry({
+    required this.seriesId,
+    required this.seriesTitle,
+    required this.chapterId,
+    required this.chapterNumber,
+    required this.readAt,
+  });
+
+  factory ReadingHistoryEntry.fromJson(Map<String, dynamic> json) => ReadingHistoryEntry(
+    seriesId: json['seriesId'] as String,
+    seriesTitle: json['seriesTitle'] as String? ?? '',
+    chapterId: json['chapterId'] as String,
+    chapterNumber: (json['chapterNumber'] as num?)?.toInt() ?? 1,
+    readAt: DateTime.tryParse(json['readAt'] as String? ?? '') ?? DateTime.now(),
+  );
+
+  Map<String, dynamic> toJson() => {
+    'seriesId': seriesId,
+    'seriesTitle': seriesTitle,
+    'chapterId': chapterId,
+    'chapterNumber': chapterNumber,
+    'readAt': readAt.toIso8601String(),
+  };
+}
