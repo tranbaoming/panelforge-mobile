@@ -67,5 +67,5 @@ PanelForge Mobile là ứng dụng di động Flutter dành cho độc giả đ�
 
 ## Đặc tả & theo dõi công việc
 
-- Đặc tả nghiệp vụ dùng chung: [`panelforge-fe/docs/PANELFORGE_MASTER_SPECIFICATION_V2_6.md`](../panelforge-fe/docs/PANELFORGE_MASTER_SPECIFICATION_V2_6.md) (repo `panelforge-fe`). Phần của Mobile chủ yếu ở Module 5: Ví VNĐ, mở khoá theo ấn bản ngôn ngữ, chọn ngôn ngữ đọc, thống kê đọc (BR-32, BR-33, BR-34).
-- Ai đang làm gì: [`panelforge-fe/docs/TEAM_WORKBOARD.md`](../panelforge-fe/docs/TEAM_WORKBOARD.md). Bắt buộc cập nhật khi bắt đầu và khi xong việc, kể cả việc làm trong repo này.
+- Đặc tả nghiệp vụ dùng chung: [`panelforge-hub/docs/V2.6/PANELFORGE_MASTER_SPECIFICATION_V2_6.md`](../panelforge-hub/docs/V2.6/PANELFORGE_MASTER_SPECIFICATION_V2_6.md) (repo `panelforge-hub`). Phần của Mobile chủ yếu ở Module 5: Ví VNĐ, mở khoá theo ấn bản ngôn ngữ, chọn ngôn ngữ đọc, thống kê đọc (BR-32, BR-33, BR-34).
+- Ai đang làm gì: [`panelforge-hub/docs/tracking/TEAM_WORKBOARD.md`](../panelforge-hub/docs/tracking/TEAM_WORKBOARD.md). Bắt buộc cập nhật khi bắt đầu và khi xong việc, kể cả việc làm trong repo này.

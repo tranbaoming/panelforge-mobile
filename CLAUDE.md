@@ -2,11 +2,14 @@
 
 Flutter 3.44+ & Dart 3.12+ · Riverpod (`flutter_riverpod`) · GoRouter (`go_router`) · Dio (`dio`) · CachedNetworkImage · Offline Bookmarks & Audio/Sketch Annotations.
 
-## Spec & team workboard (shared by backend, frontend and mobile)
+## Central Knowledge Base & Spec (Tất cả tài liệu đọc tại Hub)
 
-- Business spec for all three repos: `../panelforge-fe/docs/PANELFORGE_MASTER_SPECIFICATION_V2_6.md` (in the `panelforge-fe` repo; decision log Q1–Q14 at the top). Cite BR-xx / Module / Q-n in commits.
-- **Team workboard `../panelforge-fe/docs/TEAM_WORKBOARD.md` is mandatory**, also for work done in this repo: before coding, pull `panelforge-fe` `trungkien`, add one row to §2 "Đang làm", commit `docs(tracker): start <task>` in `panelforge-fe` and push; when merged, move the row to §3 "Đã xong" with any API/DB/enum change other repos must know, commit `docs(tracker): finish <task>`.
-- Do not add implementation-plan files to this repo.
+> 🚨 **QUY TẮC CỐT LÕI:** Tất cả tài liệu đặc tả, nghiệp vụ, hiểu biết hệ thống, kiến trúc và kế hoạch triển khai **ĐƯỢC ĐỌC TẬP TRUNG TẠI `../panelforge-hub/docs/`**, KHÔNG đọc tại các repo riêng lẻ.
+
+- **Master Spec V2.6:** `../panelforge-hub/docs/V2.6/PANELFORGE_MASTER_SPECIFICATION_V2_6.md` (quyết định Q1–Q14, BR-xx, 5 vai trò, 5 luồng CF1–CF5). Trích dẫn mã BR-xx / Module trong commit.
+- **Kế hoạch triển khai (Plans):** `../panelforge-hub/docs/note/PANELFORGE_V2_6_IMPLEMENTATION_PLAN.md` và `../panelforge-hub/docs/note/plans/07_READER_PLAN.md`. Không tạo hay lưu file plan trong repo này.
+- **Thuật ngữ & State Machines:** `../panelforge-hub/docs/standards/` (Ubiquitous Language, State Machine standards).
+- **Team Workboard:** `../panelforge-hub/docs/tracking/TEAM_WORKBOARD.md`. Cập nhật trạng thái tác vụ cho cả nhóm xem.
 ## Quick Commands
 
 ```bash
