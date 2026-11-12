@@ -64,3 +64,7 @@ PanelForge Mobile là ứng dụng di động Flutter dành cho độc giả đ�
    ```bash
    flutter run
    ```
+
+## Kế hoạch triển khai
+
+Kế hoạch của cả Backend, Frontend và Mobile dùng chung một bộ plan ở thư mục workspace gốc: `Github/note/plans/` (quy tắc phối hợp ở `README.md` §2) và plan tổng `Github/note/PANELFORGE_V2_6_IMPLEMENTATION_PLAN.md`. Việc của Mobile là các sub-task có tiền tố `[MO]`, chủ yếu trong `07_READER_PLAN.md` (ví, mở khoá theo ấn bản ngôn ngữ, chọn ngôn ngữ đọc, thống kê đọc).

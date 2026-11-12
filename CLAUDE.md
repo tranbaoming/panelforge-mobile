@@ -2,6 +2,13 @@
 
 Flutter 3.44+ & Dart 3.12+ · Riverpod (`flutter_riverpod`) · GoRouter (`go_router`) · Dio (`dio`) · CachedNetworkImage · Offline Bookmarks & Audio/Sketch Annotations.
 
+## Implement plan (shared by backend, frontend and mobile)
+
+One plan set covers all three repos; it lives in the workspace root, not in this repo:
+
+- Spec: `Github/note/PANELFORGE_MASTER_SPECIFICATION_V2_6.md` (the copy under `docs/`, if present, is read-only).
+- Master plan: `Github/note/PANELFORGE_V2_6_IMPLEMENTATION_PLAN.md`.
+- Module plans and **coordination rules**: `Github/note/plans/README.md` §2 (single source of rules). Before coding a task: claim it in §5 "Đang làm", create a worktree per task (`-AgentRole <task-id>`), do only the `[MO]` sub-tasks of this repo, follow API-contract-first ordering (DB → BE → FE/MO). Never add plan files under `docs/`.
 ## Quick Commands
 
 ```bash
