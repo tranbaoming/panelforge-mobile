@@ -35,22 +35,45 @@ class CatalogService {
 
   /// Lấy chi tiết Series và danh sách các chương đã Published
   /// GET /api/catalog/series/{seriesId}
-  Future<PublicSeriesDetailDto> getSeriesDetail(String seriesId) async {
-    final response = await _client.get('/api/catalog/series/$seriesId');
+  Future<PublicSeriesDetailDto> getSeriesDetail(String seriesId, {String? lang}) async {
+    final response = await _client.get(
+      '/api/catalog/series/$seriesId',
+      queryParameters: lang != null && lang != 'vi' ? {'lang': lang} : null,
+    );
     return PublicSeriesDetailDto.fromJson(response.data as Map<String, dynamic>);
   }
 
   /// Ghi một lượt đọc thật sau khi Reader mở xong chương (Backend gộp lượt đọc lại trong 30 phút).
   /// POST /api/catalog/chapters/{chapterId}/views
-  Future<void> recordChapterView(String chapterId) async {
-    await _client.post('/api/catalog/chapters/$chapterId/views');
+  Future<void> recordChapterView(String chapterId, {String? lang}) async {
+    await _client.post(lang != null && lang != 'vi'
+        ? '/api/catalog/chapters/$chapterId/views?lang=$lang'
+        : '/api/catalog/chapters/$chapterId/views');
   }
 
   /// Lấy nội dung chương đọc cho Reader: hướng đọc và danh sách URL ảnh các trang
   /// GET /api/catalog/chapters/{chapterId}
-  Future<PublicChapterReadDto> readChapter(String chapterId) async {
-    final response = await _client.get('/api/catalog/chapters/$chapterId');
+  /// [lang]: bản ngôn ngữ (vi/en/ja). 404 nếu bản đó chưa phát hành, 403 nếu chưa mua bản đó.
+  Future<PublicChapterReadDto> readChapter(String chapterId, {String? lang}) async {
+    final response = await _client.get(
+      '/api/catalog/chapters/$chapterId',
+      queryParameters: lang != null && lang != 'vi' ? {'lang': lang} : null,
+    );
     return PublicChapterReadDto.fromJson(response.data as Map<String, dynamic>);
+  }
+
+  /// Đánh giá 1–5 sao cho bộ truyện (cần đăng nhập). PUT /api/catalog/series/{seriesId}/rating
+  /// Trả (điểm trung bình, số lượt đánh giá).
+  Future<({double average, int count})> rateSeries(String seriesId, int stars, {String? lang}) async {
+    final response = await _client.put(
+      '/api/catalog/series/$seriesId/rating',
+      data: {'stars': stars, 'language': ?lang},
+    );
+    final data = response.data as Map<String, dynamic>;
+    return (
+      average: (data['ratingAverage'] as num?)?.toDouble() ?? 0,
+      count: (data['ratingCount'] as num?)?.toInt() ?? 0,
+    );
   }
 }
 

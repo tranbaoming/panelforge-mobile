@@ -215,6 +215,40 @@ class PublicSeriesDto {
   }
 }
 
+/// Ngôn ngữ bản phát hành: vi = bản gốc Studio; en/ja = bản dịch (Publisher upload ảnh từng trang).
+/// Mua chương/trang theo từng ngôn ngữ.
+const List<String> kContentLanguages = ['vi', 'en', 'ja'];
+
+String contentLanguageLabel(String code) => switch (code) {
+  'en' => 'English',
+  'ja' => '日本語',
+  _ => 'Tiếng Việt',
+};
+
+/// Một bản ngôn ngữ đã phát hành của chương (`PublicChapterLanguageDto`).
+class ChapterLanguageOption {
+  final String language;
+
+  /// Giá mở khóa chương trả phí ở ngôn ngữ này (0 với chương miễn phí).
+  final int priceVnd;
+
+  /// Người đọc đã có quyền đọc bản này.
+  final bool isUnlocked;
+
+  const ChapterLanguageOption({required this.language, this.priceVnd = 0, this.isUnlocked = true});
+
+  factory ChapterLanguageOption.fromJson(Map<String, dynamic> json) => ChapterLanguageOption(
+    language: json['language']?.toString() ?? 'vi',
+    priceVnd: (json['priceVnd'] as num?)?.toInt() ?? 0,
+    isUnlocked: json['isUnlocked'] as bool? ?? true,
+  );
+
+  Map<String, dynamic> toJson() => {'language': language, 'priceVnd': priceVnd, 'isUnlocked': isUnlocked};
+
+  static List<ChapterLanguageOption> listFromJson(dynamic raw) =>
+      (raw as List<dynamic>? ?? const []).map((e) => ChapterLanguageOption.fromJson(e as Map<String, dynamic>)).toList();
+}
+
 class PublicChapterSummaryDto {
   final String id;
   final double chapterNumber;
@@ -232,6 +266,9 @@ class PublicChapterSummaryDto {
   final String? cbzPackageUrl;
   final String? manifestUrl;
 
+  /// Các bản ngôn ngữ đã phát hành (giá + trạng thái mở khóa theo từng bản).
+  final List<ChapterLanguageOption> languages;
+
   PublicChapterSummaryDto({
     required this.id,
     required this.chapterNumber,
@@ -248,6 +285,7 @@ class PublicChapterSummaryDto {
     this.isWeeklyHot = false,
     this.cbzPackageUrl,
     this.manifestUrl,
+    this.languages = const [],
   });
 
   /// Đọc trạng thái khóa trực tiếp từ `GET /api/catalog/series/{id}` (PublicChapterDto):
@@ -282,6 +320,7 @@ class PublicChapterSummaryDto {
       isWeeklyHot: isHot,
       cbzPackageUrl: json['cbzPackageUrl']?.toString(),
       manifestUrl: json['manifestUrl']?.toString(),
+      languages: ChapterLanguageOption.listFromJson(json['languages']),
     );
   }
 
@@ -335,6 +374,13 @@ class PublicSeriesDetailDto {
   /// Lượt đọc thật (bảng chapter_views).
   final int viewCount;
 
+  /// Đánh giá 1–5 sao của độc giả.
+  final double ratingAverage;
+  final int ratingCount;
+
+  /// Đánh giá của người đang đăng nhập (null nếu chưa đánh giá).
+  final int? myRating;
+
   PublicSeriesDetailDto({
     required this.id,
     required this.title,
@@ -350,6 +396,9 @@ class PublicSeriesDetailDto {
     this.isCompleted = false,
     this.createdAt,
     this.viewCount = 0,
+    this.ratingAverage = 0,
+    this.ratingCount = 0,
+    this.myRating,
   });
 
   String? get fullCoverUrl => coverUrl != null && coverUrl!.isNotEmpty ? ApiConfig.resolveUrl(coverUrl!) : null;
@@ -373,6 +422,9 @@ class PublicSeriesDetailDto {
       coverUrl: json['coverUrl']?.toString(),
       isCompleted: json['isCompleted'] == true,
       createdAt: json['createdAt'] != null ? DateTime.tryParse(json['createdAt'].toString()) : null,
+      ratingAverage: (json['ratingAverage'] as num?)?.toDouble() ?? 0,
+      ratingCount: (json['ratingCount'] as num?)?.toInt() ?? 0,
+      myRating: (json['myRating'] as num?)?.toInt(),
       viewCount: (json['viewCount'] as num?)?.toInt() ?? 0,
     );
   }
@@ -383,15 +435,47 @@ class PublicPageDto {
   final int pageNumber;
   final String? relativeImageUrl;
 
-  PublicPageDto({required this.id, required this.pageNumber, this.relativeImageUrl});
+  /// Trang nằm sau paywall: thuộc chương trả phí và không phải trang xem trước.
+  final bool isLocked;
+
+  /// Người đọc đã được xem trang (trang xem trước, đã mua chương, VIP, staff). Khi false server không trả ảnh
+  /// ([relativeImageUrl] = null) và endpoint ảnh trả 403 — client chỉ hiển thị lớp làm mờ + nút mở khóa chương.
+  final bool isUnlocked;
+
+  /// Trang xem trước của chương trả phí (ai cũng xem được, Publisher chọn trên web).
+  final bool isPreview;
+
+  PublicPageDto({
+    required this.id,
+    required this.pageNumber,
+    this.relativeImageUrl,
+    this.isLocked = false,
+    this.isUnlocked = true,
+    this.isPreview = false,
+  });
+
+  /// Trang đang bị khóa với người đọc hiện tại.
+  bool get isPaywalled => isLocked && !isUnlocked;
 
   factory PublicPageDto.fromJson(Map<String, dynamic> json) {
     return PublicPageDto(
       id: json['id']?.toString() ?? '',
       pageNumber: (json['pageNumber'] as num?)?.toInt() ?? 1,
       relativeImageUrl: json['imageUrl']?.toString(),
+      isLocked: json['isLocked'] as bool? ?? false,
+      isUnlocked: json['isUnlocked'] as bool? ?? true,
+      isPreview: json['isPreview'] as bool? ?? false,
     );
   }
+
+  Map<String, dynamic> toJson() => {
+    'id': id,
+    'pageNumber': pageNumber,
+    'imageUrl': relativeImageUrl,
+    'isLocked': isLocked,
+    'isUnlocked': isUnlocked,
+    'isPreview': isPreview,
+  };
 
   String? get fullImageUrl => relativeImageUrl != null ? ApiConfig.resolveUrl(relativeImageUrl) : null;
 }
@@ -416,6 +500,12 @@ class PublicChapterReadDto {
   final String? cbzPackageUrl;
   final String? manifestUrl;
 
+  /// Bản ngôn ngữ của nội dung trả về.
+  final String language;
+
+  /// Các bản ngôn ngữ đã phát hành của chương.
+  final List<ChapterLanguageOption> languages;
+
   PublicChapterReadDto({
     required this.id,
     required this.seriesId,
@@ -435,6 +525,8 @@ class PublicChapterReadDto {
     this.isWeeklyHot = false,
     this.cbzPackageUrl,
     this.manifestUrl,
+    this.language = 'vi',
+    this.languages = const [],
   });
 
   factory PublicChapterReadDto.fromJson(Map<String, dynamic> json) {
@@ -476,6 +568,8 @@ class PublicChapterReadDto {
       isWeeklyHot: isHot,
       cbzPackageUrl: json['cbzPackageUrl']?.toString(),
       manifestUrl: json['manifestUrl']?.toString(),
+      language: json['language']?.toString() ?? 'vi',
+      languages: ChapterLanguageOption.listFromJson(json['languages']),
     );
   }
 
@@ -483,11 +577,13 @@ class PublicChapterReadDto {
     'id': id,
     'seriesId': seriesId,
     'seriesTitle': seriesTitle,
+    'language': language,
+    'languages': languages.map((l) => l.toJson()).toList(),
     'readingDirection': readingDirection.apiValue,
     'chapterNumber': chapterNumber,
     if (title != null) 'title': title,
     if (publishedAt != null) 'publishedAt': publishedAt!.toIso8601String(),
-    'pages': pages.map((p) => {'id': p.id, 'pageNumber': p.pageNumber, 'imageUrl': p.relativeImageUrl}).toList(),
+    'pages': pages.map((p) => p.toJson()).toList(),
     'isFree': isFree,
     'isUnlocked': isUnlocked,
     'priceCoins': priceCoins,
@@ -870,12 +966,16 @@ class UnlockChapterRequest {
   final bool isPermanent;
   final int? rentalViews;
 
+  /// Bản ngôn ngữ mua (mua theo từng ngôn ngữ).
+  final String? language;
+
   const UnlockChapterRequest({
     required this.chapterId,
     this.priceVnd,
     this.seriesId,
     this.isPermanent = true,
     this.rentalViews,
+    this.language,
   });
 
   factory UnlockChapterRequest.fromJson(Map<String, dynamic> json) {
@@ -894,6 +994,7 @@ class UnlockChapterRequest {
     if (seriesId != null) 'seriesId': seriesId,
     'isPermanent': isPermanent,
     if (rentalViews != null) 'rentalViews': rentalViews,
+    if (language != null) 'language': language,
   };
 }
 
@@ -1018,6 +1119,9 @@ class TopupRequest {
   final String? chapterId;
   final String? vipPlan;
 
+  /// Bản ngôn ngữ mua khi trả VietQR trực tiếp để mở chương.
+  final String? language;
+
   const TopupRequest({
     this.amountVnd,
     this.paymentMethod = 'vietqr',
@@ -1025,6 +1129,7 @@ class TopupRequest {
     this.workspaceId,
     this.seriesId,
     this.chapterId,
+    this.language,
     this.vipPlan,
   });
 
@@ -1035,6 +1140,7 @@ class TopupRequest {
     if (workspaceId != null) 'workspaceId': workspaceId,
     if (seriesId != null) 'seriesId': seriesId,
     if (chapterId != null) 'chapterId': chapterId,
+    if (language != null) 'language': language,
     if (vipPlan != null) 'vipPlan': vipPlan,
   };
 }
@@ -1141,3 +1247,4 @@ class TransactionStatusDto {
     );
   }
 }
+

@@ -1,8 +1,13 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
+import 'package:panelforge/screens/explore/series_grid_page.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'package:panelforge/main.dart';
+import 'package:panelforge/navigation/app_router.dart';
+import 'package:panelforge/providers/api_providers.dart';
+import 'package:panelforge/screens/auth/login_page.dart';
+import 'package:panelforge/screens/reader/comic_reader_page.dart';
 import 'package:panelforge/services/preferences_service.dart';
 import 'package:panelforge/theme/app_theme.dart';
 import 'package:panelforge/widgets/forge_ui.dart';
@@ -16,74 +21,114 @@ void main() {
   });
 
   group('PanelForge App UI & Navigation Automated Tests', () {
-    Future<void> enterExploreAsGuest(WidgetTester tester) async {
+    // Lazy Authentication: mở app vào thẳng Trang chủ, không qua màn Đăng nhập.
+    Future<void> openApp(WidgetTester tester) async {
       await tester.pumpWidget(const ProviderScope(child: PanelForgeApp()));
       await tester.pumpAndSettle();
-
-      final guestBtn = find.text('Tiếp tục với tư cách Khách (Guest)');
-      if (guestBtn.evaluate().isNotEmpty) {
-        await tester.ensureVisible(guestBtn);
-        await tester.pumpAndSettle();
-        await tester.tap(guestBtn);
-        await tester.pumpAndSettle();
-      }
     }
 
-    testWidgets('App initially displays LoginPage when unauthenticated and routes to Home after choosing Guest', (
-      WidgetTester tester,
-    ) async {
-      await tester.pumpWidget(const ProviderScope(child: PanelForgeApp()));
-      await tester.pumpAndSettle();
+    ProviderContainer containerOf(WidgetTester tester) =>
+        ProviderScope.containerOf(tester.element(find.byType(PanelForgeApp)));
 
-      // Verify that LoginPage is shown first
-      expect(find.text('Đăng Nhập Độc Giả'), findsOneWidget);
-      expect(find.text('Tiếp tục với tư cách Khách (Guest)'), findsOneWidget);
-      // Bottom navigation bar should NOT be shown on LoginPage
-      expect(find.text('Trang chủ'), findsNothing);
+    void signInAsReader(WidgetTester tester) {
+      containerOf(tester)
+          .read(authStateProvider.notifier)
+          .updateState(
+            const AuthState(
+              role: MobileAuthRole.reader,
+              user: AuthUser(id: 'u1', email: 'reader@example.com', fullName: 'Reader', isActive: true),
+            ),
+          );
+    }
 
-      final guestBtn = find.text('Tiếp tục với tư cách Khách (Guest)');
-      await tester.ensureVisible(guestBtn);
-      await tester.pumpAndSettle();
-      await tester.tap(guestBtn);
-      await tester.pumpAndSettle();
+    testWidgets('App opens straight to Home with 5 tabs when not signed in', (WidgetTester tester) async {
+      await openApp(tester);
 
-      // Home with 5-tab bottom navigation
+      expect(find.byType(LoginPage), findsNothing);
       expect(find.byType(ForgeBrandLogo), findsOneWidget);
       for (final tab in ['Trang chủ', 'Khám phá', 'Tìm kiếm', 'Cá nhân', 'Thông báo']) {
-        expect(find.text(tab), findsOneWidget);
+        expect(find.byTooltip(tab), findsOneWidget);
       }
     });
 
-    testWidgets('Home shows brand logo, guest login and offline error state', (WidgetTester tester) async {
-      await enterExploreAsGuest(tester);
+    testWidgets('Opening a chapter while signed out asks to sign in; closing returns to browsing', (
+      WidgetTester tester,
+    ) async {
+      await openApp(tester);
+
+      containerOf(tester).read(appRouterProvider).push('/reader/s1?chapterId=c1');
+      await tester.pumpAndSettle();
+
+      expect(find.byType(LoginPage), findsOneWidget);
+      expect(find.byType(ComicReaderPage), findsNothing);
+      // Không còn lối "Khách" — đóng bằng nút ← (tooltip Đóng).
+      expect(find.text('Tiếp tục với tư cách Khách (Guest)'), findsNothing);
+
+      await tester.tap(find.byTooltip('Đóng'));
+      await tester.pumpAndSettle();
+      expect(find.byType(LoginPage), findsNothing);
+      expect(find.byTooltip('Trang chủ'), findsOneWidget);
+    });
+
+    testWidgets('After signing in from a chapter link, the requested chapter opens', (WidgetTester tester) async {
+      await openApp(tester);
+
+      final router = containerOf(tester).read(appRouterProvider);
+      router.push('/reader/s1?chapterId=c1');
+      await tester.pumpAndSettle();
+      expect(find.byType(LoginPage), findsOneWidget);
+
+      signInAsReader(tester);
+      await tester.pump();
+      await tester.pump(const Duration(milliseconds: 500));
+
+      expect(find.byType(LoginPage), findsNothing);
+      final reader = tester.widget<ComicReaderPage>(find.byType(ComicReaderPage));
+      expect(reader.seriesId, 's1');
+      expect(reader.chapterId, 'c1');
+    });
+
+    testWidgets('Home top bar shows only the brand logo (no sign-in / theme buttons) and offline error state',
+        (WidgetTester tester) async {
+      await openApp(tester);
 
       expect(find.text('PANEL'), findsOneWidget);
       expect(find.text('FORGE'), findsOneWidget);
-      expect(find.text('Đăng nhập'), findsOneWidget);
+      expect(find.text('Đăng nhập'), findsNothing);
+      expect(find.byType(ThemeToggleButton), findsNothing);
 
       // Backend is unreachable in tests → clear error state with retry.
       expect(find.text('Không thể kết nối đến máy chủ'), findsOneWidget);
       expect(find.text('Thử lại'), findsOneWidget);
     });
 
-    testWidgets('Explore tab shows format filter chips that can be toggled', (WidgetTester tester) async {
-      await enterExploreAsGuest(tester);
+    testWidgets('Explore tab is a genre grid; tapping a genre opens its series grid', (WidgetTester tester) async {
+      await openApp(tester);
 
-      await tester.tap(find.text('Khám phá'));
+      // Thanh điều hướng chỉ có biểu tượng, không chữ chú thích.
+      expect(find.text('Khám phá'), findsNothing);
+      await tester.tap(find.byTooltip('Khám phá'));
       await tester.pumpAndSettle();
 
-      expect(find.text('Tất Cả'), findsOneWidget);
-      expect(find.text('Comic'), findsOneWidget);
-      await tester.tap(find.text('Manga'));
+      for (final f in ['Comic', 'Manga', 'Webtoon']) {
+        expect(find.text(genreLabel(f)), findsOneWidget);
+      }
+      expect(find.text('Tất Cả'), findsNothing);
+
+      await tester.tap(find.text(genreLabel('Manga')));
       await tester.pumpAndSettle();
-      await tester.tap(find.text('Webtoon'));
+      expect(find.byType(SeriesGridPage), findsOneWidget);
+      expect(find.text(genreLabel('Manga')), findsOneWidget); // tiêu đề màn lưới
+
+      await tester.tap(find.byIcon(Icons.arrow_back_rounded));
       await tester.pumpAndSettle();
+      expect(find.byType(SeriesGridPage), findsNothing);
     });
 
     testWidgets('Search tab responds to text input', (WidgetTester tester) async {
-      await enterExploreAsGuest(tester);
+      await openApp(tester);
 
-      await tester.tap(find.text('Tìm kiếm'));
+      await tester.tap(find.byTooltip('Tìm kiếm'));
       await tester.pumpAndSettle();
 
       await tester.enterText(find.byType(TextField).first, 'Solo Leveling');
@@ -92,31 +137,39 @@ void main() {
       expect(find.text('Solo Leveling'), findsOneWidget);
     });
 
-    testWidgets('Theme toggle switches between dark and light and is remembered', (WidgetTester tester) async {
-      await enterExploreAsGuest(tester);
+    testWidgets('Theme setting in Profile switches between dark and light and is remembered', (WidgetTester tester) async {
+      await openApp(tester);
       expect(ForgeColors.isDark, isTrue);
 
-      await tester.tap(find.byType(ThemeToggleButton));
-      await tester.pumpAndSettle();
+      Future<void> pickTheme(String label) async {
+        await tester.tap(find.byTooltip('Cá nhân'));
+        await tester.pumpAndSettle();
+        final themeRow = find.text('Giao diện');
+        await tester.ensureVisible(themeRow);
+        await tester.tap(themeRow);
+        await tester.pumpAndSettle();
+        await tester.tap(find.text(label).last);
+        await tester.pumpAndSettle();
+        if (find.text(label).evaluate().isNotEmpty) {
+          await tester.tapAt(const Offset(10, 10)); // đóng sheet nếu còn mở
+          await tester.pumpAndSettle();
+        }
+      }
+
+      await pickTheme('Sáng');
       expect(ForgeColors.isDark, isFalse);
       expect(PreferencesService.getAppThemeMode(), 'light');
 
-      await tester.tap(find.text('Cá nhân'));
-      await tester.pumpAndSettle();
-      final themeRow = find.text('Giao diện');
-      await tester.ensureVisible(themeRow);
-      await tester.tap(themeRow);
-      await tester.pumpAndSettle();
-      await tester.tap(find.text('Tối').last);
+      await pickTheme('Tối');
       await tester.pumpAndSettle();
       expect(ForgeColors.isDark, isTrue);
       expect(PreferencesService.getAppThemeMode(), 'dark');
     });
 
-    testWidgets('Profile tab shows guest prompt, my lists, settings and contact groups', (WidgetTester tester) async {
-      await enterExploreAsGuest(tester);
+    testWidgets('Profile tab shows sign-in prompt, my lists, settings and contact groups', (WidgetTester tester) async {
+      await openApp(tester);
 
-      await tester.tap(find.text('Cá nhân'));
+      await tester.tap(find.byTooltip('Cá nhân'));
       await tester.pumpAndSettle();
 
       expect(find.text('Đăng nhập / Đăng ký'), findsOneWidget);
@@ -138,14 +191,14 @@ void main() {
         await tester.scrollUntilVisible(row, 200, scrollable: find.byType(Scrollable).first);
         expect(row, findsOneWidget);
       }
-      // Guest: không có Đổi mật khẩu / Xoá tài khoản / Đăng xuất.
+      // Chưa đăng nhập: không có Đổi mật khẩu / Xoá tài khoản / Đăng xuất.
       expect(find.text('Xoá tài khoản'), findsNothing);
       expect(find.text('ĐĂNG XUẤT'), findsNothing);
     });
 
     testWidgets('Keep-screen-on switch is saved to preferences', (WidgetTester tester) async {
-      await enterExploreAsGuest(tester);
-      await tester.tap(find.text('Cá nhân'));
+      await openApp(tester);
+      await tester.tap(find.byTooltip('Cá nhân'));
       await tester.pumpAndSettle();
 
       final toggle = find.byType(Switch);
@@ -157,8 +210,8 @@ void main() {
     });
 
     testWidgets('Notifications tab lists activity and links to Review center', (WidgetTester tester) async {
-      await enterExploreAsGuest(tester);
-      await tester.tap(find.text('Thông báo'));
+      await openApp(tester);
+      await tester.tap(find.byTooltip('Thông báo'));
       await tester.pumpAndSettle();
 
       expect(find.text('GIAO DỊCH VÍ'), findsOneWidget);
@@ -169,10 +222,10 @@ void main() {
     testWidgets('Navigates smoothly to Review Hub tab and verifies Dark Obsidian UI elements', (
       WidgetTester tester,
     ) async {
-      await enterExploreAsGuest(tester);
+      await openApp(tester);
 
       // Review Hub mở từ dòng "Trung tâm Review bản thảo" ở tab Cá nhân.
-      await tester.tap(find.text('Cá nhân'));
+      await tester.tap(find.byTooltip('Cá nhân'));
       await tester.pumpAndSettle();
       final reviewRow = find.text('Trung tâm Review bản thảo');
       await tester.ensureVisible(reviewRow);

@@ -54,12 +54,30 @@ class CbzPackageService {
   }
 
   /// Tải gói Single-file CBZ và giải nén vào thư mục offline của ứng dụng
+  /// Gói offline chỉ chứa trang người đọc được xem: chặn tải khi chương trả phí chưa mua (chỉ có trang xem trước).
+  /// Server là nguồn sự thật:
+  /// `GET /api/catalog/chapters/{id}` trả `isLocked`/`isUnlocked` theo tài khoản, VIP coi như đã mở).
+  Future<void> ensureNoLockedPagesForOffline(String chapterId) async {
+    final chapter = await _catalogService.readChapter(chapterId);
+    final locked = chapter.pages.where((p) => p.isPaywalled).toList();
+    if (locked.isNotEmpty) {
+      final numbers = locked.map((p) => p.pageNumber).join(', ');
+      throw LockedPagesOfflineException(
+        'Chương còn ${locked.length} trang ngoài phần xem trước (trang $numbers). '
+        'Hãy mở khóa chương trước khi tải offline.',
+      );
+    }
+  }
+
   Future<LoadedComicPackage> downloadAndExtractCbzPackage({
     required String chapterId,
     String? customDownloadUrl,
     void Function(double progress, int receivedBytes, int totalBytes)? onProgress,
     void Function(DownloadStatus status)? onStatusChanged,
   }) async {
+    // Gói offline không được chứa trang trả phí chưa mở khóa: hỏi server quyền xem từng trang trước khi tải.
+    await ensureNoLockedPagesForOffline(chapterId);
+
     onStatusChanged?.call(DownloadStatus.downloading);
 
     final targetDir = await getChapterOfflineDirectory(chapterId);
@@ -524,3 +542,13 @@ final downloadedChaptersProvider =
     NotifierProvider<DownloadedChaptersNotifier, Set<String>>(
   DownloadedChaptersNotifier.new,
 );
+
+/// Tải offline bị từ chối vì chương còn trang trả phí chưa mở khóa.
+class LockedPagesOfflineException implements Exception {
+  final String message;
+
+  const LockedPagesOfflineException(this.message);
+
+  @override
+  String toString() => message;
+}

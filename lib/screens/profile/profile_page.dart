@@ -9,6 +9,7 @@ import 'package:path_provider/path_provider.dart';
 import 'package:url_launcher/url_launcher.dart';
 import '../../models/api_dtos.dart';
 import '../../models/comic_model.dart';
+import '../../navigation/read_guard.dart';
 import '../../providers/api_providers.dart';
 import '../../services/app_info.dart';
 import '../../services/catalog_service.dart';
@@ -87,7 +88,7 @@ class _ProfilePageState extends ConsumerState<ProfilePage> {
   Future<void> _syncNow() async {
     setState(() => _syncing = true);
     try {
-      if (!ref.read(authStateProvider).isGuest) {
+      if (ref.read(authStateProvider).isAuthenticated) {
         await ref.read(walletNotifierProvider.notifier).refresh();
       }
       await _loadCatalog();
@@ -186,7 +187,10 @@ class _ProfilePageState extends ConsumerState<ProfilePage> {
     context: context,
     builder: (ctx) => AlertDialog(
       backgroundColor: ForgeColors.card,
-      title: Text(title, style: GoogleFonts.plusJakartaSans(color: ForgeColors.text, fontWeight: FontWeight.w800)),
+      title: Text(
+        title,
+        style: GoogleFonts.plusJakartaSans(color: ForgeColors.text, fontWeight: FontWeight.w800),
+      ),
       content: Text(message, style: GoogleFonts.plusJakartaSans(color: ForgeColors.textSoft)),
       actions: [
         TextButton(onPressed: () => Navigator.of(ctx).pop(false), child: const Text('Huỷ')),
@@ -210,18 +214,12 @@ class _ProfilePageState extends ConsumerState<ProfilePage> {
 
     return Scaffold(
       backgroundColor: ForgeColors.bg,
-      appBar: AppBar(
-        backgroundColor: ForgeColors.navBar,
-        surfaceTintColor: Colors.transparent,
-        automaticallyImplyLeading: false,
-        titleSpacing: 16,
-        title: const ForgeBrandLogo(),
-      ),
+      appBar: const ForgeTopBar(),
       body: ListView(
         padding: const EdgeInsets.only(bottom: 32),
         children: [
           _buildHeader(auth),
-          if (!auth.isGuest) _buildWalletCard(wallet),
+          if (auth.isAuthenticated) _buildWalletCard(wallet),
           const ForgeSectionHeader(title: 'DANH SÁCH CỦA TÔI'),
           SizedBox(
             height: 76,
@@ -248,15 +246,12 @@ class _ProfilePageState extends ConsumerState<ProfilePage> {
                   ForgeColors.green,
                   'ĐÃ MỞ KHÓA',
                   '${unlocked.length} Chương',
-                  auth.isGuest ? null : () => WalletTopupDialog.show(context, initialTab: 1),
+                  auth.isAuthenticated ? () => WalletTopupDialog.show(context, initialTab: 1) : null,
                 ),
               ],
             ),
           ),
-          ForgeSectionHeader(
-            title: 'TIẾP TỤC ĐỌC',
-            onMore: history.isEmpty ? null : () => context.go('/activity'),
-          ),
+          ForgeSectionHeader(title: 'TIẾP TỤC ĐỌC', onMore: history.isEmpty ? null : () => context.go('/activity')),
           if (history.isEmpty)
             Padding(
               padding: const EdgeInsets.symmetric(horizontal: 16),
@@ -316,11 +311,21 @@ class _ProfilePageState extends ConsumerState<ProfilePage> {
               trailing: 'Nhập mã REV',
               onTap: () => context.push('/review'),
             ),
-            if (!auth.isGuest) ...[
-              _row(Icons.lock_outline_rounded, 'Đổi mật khẩu', onTap: () => ReaderProfileSheet.show(context)),
+            if (auth.isAuthenticated) ...[
+              _row(Icons.lock_outline_rounded, 'Đổi mật khẩu', onTap: () => showChangePasswordDialog(context, ref)),
               _row(Icons.person_remove_outlined, 'Xoá tài khoản', danger: true, onTap: _deleteAccount),
             ],
-            _row(Icons.info_outline_rounded, 'Phiên bản', trailing: AppInfo.version),
+            _row(
+              Icons.info_outline_rounded,
+              'Phiên bản',
+              trailing: AppInfo.version,
+              onTap: () => showAboutDialog(
+                context: context,
+                applicationName: 'PanelForge',
+                applicationVersion: AppInfo.version,
+                applicationLegalese: 'Ứng dụng đọc truyện tranh bản quyền PanelForge.',
+              ),
+            ),
           ]),
           const ForgeSectionHeader(title: 'LIÊN HỆ'),
           _group([
@@ -337,7 +342,7 @@ class _ProfilePageState extends ConsumerState<ProfilePage> {
             ),
             _row(Icons.share_outlined, 'Chia Sẻ Ứng Dụng', onTap: _shareApp),
           ]),
-          if (!auth.isGuest)
+          if (auth.isAuthenticated)
             Padding(
               padding: const EdgeInsets.fromLTRB(8, 20, 16, 0),
               child: Align(
@@ -377,7 +382,7 @@ class _ProfilePageState extends ConsumerState<ProfilePage> {
 
   Widget _buildHeader(AuthState auth) {
     final user = auth.user;
-    if (auth.isGuest || user == null) {
+    if (!auth.isAuthenticated || user == null) {
       return Padding(
         padding: const EdgeInsets.fromLTRB(16, 16, 16, 4),
         child: Container(
@@ -437,7 +442,11 @@ class _ProfilePageState extends ConsumerState<ProfilePage> {
                   name,
                   maxLines: 1,
                   overflow: TextOverflow.ellipsis,
-                  style: GoogleFonts.plusJakartaSans(fontSize: 17, fontWeight: FontWeight.w800, color: ForgeColors.text),
+                  style: GoogleFonts.plusJakartaSans(
+                    fontSize: 17,
+                    fontWeight: FontWeight.w800,
+                    color: ForgeColors.text,
+                  ),
                 ),
                 Text(
                   user.email,
@@ -483,11 +492,7 @@ class _ProfilePageState extends ConsumerState<ProfilePage> {
                   style: GoogleFonts.plusJakartaSans(fontWeight: FontWeight.w700, color: ForgeColors.text),
                 ),
                 const Spacer(),
-                Icon(
-                  Icons.workspace_premium_rounded,
-                  size: 16,
-                  color: hasVip ? ForgeColors.accent : ForgeColors.muted,
-                ),
+                Icon(Icons.workspace_premium_rounded, size: 16, color: hasVip ? ForgeColors.accent : ForgeColors.muted),
                 const SizedBox(width: 4),
                 Text(vipText, style: GoogleFonts.plusJakartaSans(fontSize: 12, color: ForgeColors.muted)),
               ],
@@ -615,7 +620,7 @@ class _ProfilePageState extends ConsumerState<ProfilePage> {
                 ),
                 const SizedBox(height: 8),
                 OutlinedButton(
-                  onPressed: () => context.push('/reader/${h.seriesId}?chapterId=${h.chapterId}'),
+                  onPressed: () => openReaderGuarded(context, ref, h.seriesId, h.chapterId),
                   style: OutlinedButton.styleFrom(
                     foregroundColor: ForgeColors.text,
                     side: BorderSide(color: ForgeColors.border),
@@ -662,7 +667,10 @@ class _ProfilePageState extends ConsumerState<ProfilePage> {
     return ListTile(
       onTap: onTap,
       leading: Icon(icon, color: danger ? ForgeColors.danger : ForgeColors.muted),
-      title: Text(label, style: GoogleFonts.plusJakartaSans(color: color, fontWeight: FontWeight.w600)),
+      title: Text(
+        label,
+        style: GoogleFonts.plusJakartaSans(color: color, fontWeight: FontWeight.w600),
+      ),
       trailing:
           trailingWidget ??
           Row(

@@ -1,28 +1,31 @@
 import 'package:flutter/material.dart';
-import 'package:go_router/go_router.dart';
 import 'package:google_fonts/google_fonts.dart';
 import '../../models/comic_model.dart';
 import '../../services/catalog_service.dart';
 import '../../theme/app_theme.dart';
 import '../../widgets/forge_ui.dart';
+import 'series_grid_page.dart';
 
-/// Tab Khám phá / Danh mục (lọc theo định dạng & thể loại) và tab Tìm kiếm (`searchMode`).
+/// Tab Khám phá: chỉ là lưới thể loại 2 cột (định dạng Comic/Manga/Webtoon trước, sau đó các thể loại có trong
+/// catalog). Chạm một ô → mở lưới bộ truyện thuộc thể loại đó (`SeriesGridPage`). Tìm kiếm nằm ở `search_page.dart`.
 class BrowsePage extends StatefulWidget {
-  final bool searchMode;
-  const BrowsePage({super.key, this.searchMode = false});
+  const BrowsePage({super.key});
 
   @override
   State<BrowsePage> createState() => _BrowsePageState();
 }
 
+/// Một ô thể loại: định dạng (Manga…) hoặc thể loại (Action…).
+class _Category {
+  final String label;
+  final bool Function(SeriesItem) matches;
+  const _Category(this.label, this.matches);
+}
+
 class _BrowsePageState extends State<BrowsePage> {
-  final _searchController = TextEditingController();
   List<SeriesItem> _series = [];
   bool _isLoading = false;
   bool _hasError = false;
-  ComicFormat? _format;
-  String? _genre;
-  String _query = '';
 
   @override
   void initState() {
@@ -30,22 +33,25 @@ class _BrowsePageState extends State<BrowsePage> {
     _fetch();
   }
 
-  @override
-  void dispose() {
-    _searchController.dispose();
-    super.dispose();
-  }
-
+  /// Tải toàn bộ catalog (server giới hạn 50 bộ/trang) để mỗi thể loại liệt kê đủ bộ truyện.
   Future<void> _fetch() async {
     setState(() {
       _isLoading = true;
       _hasError = false;
     });
     try {
-      final res = await CatalogService().getSeries(search: _query.isEmpty ? null : _query, pageSize: 50);
+      final service = CatalogService();
+      final all = <SeriesItem>[];
+      var page = 1;
+      while (true) {
+        final res = await service.getSeries(pageIndex: page, pageSize: 50);
+        all.addAll(res.items.map(SeriesItem.fromPublicDto));
+        if (page >= res.totalPages || res.items.isEmpty || page >= 20) break;
+        page++;
+      }
       if (!mounted) return;
       setState(() {
-        _series = res.items.map((e) => SeriesItem.fromPublicDto(e)).toList();
+        _series = all;
         _isLoading = false;
       });
     } catch (e) {
@@ -59,141 +65,114 @@ class _BrowsePageState extends State<BrowsePage> {
     }
   }
 
-  List<String> get _genres => {for (final s in _series) s.genres.first}.where((g) => g.isNotEmpty).toList()..sort();
+  List<_Category> get _categories {
+    final genres = {for (final s in _series) s.genres.first.trim()}.where((g) => g.isNotEmpty).toList()
+      ..sort((a, b) => a.toLowerCase().compareTo(b.toLowerCase()));
+    final formatLabels = {for (final f in ComicFormat.values) f.label.toLowerCase()};
+    return [
+      for (final f in ComicFormat.values) _Category(f.label, (s) => s.format == f),
+      for (final g in genres)
+        if (!formatLabels.contains(g.toLowerCase())) _Category(g, (s) => s.genres.first.trim() == g),
+    ];
+  }
 
-  List<SeriesItem> get _filtered => _series.where((s) {
-    final q = _query.toLowerCase();
-    final matchesQuery =
-        q.isEmpty ||
-        s.title.toLowerCase().contains(q) ||
-        s.author.toLowerCase().contains(q) ||
-        s.genres.any((g) => g.toLowerCase().contains(q));
-    return matchesQuery && (_format == null || s.format == _format) && (_genre == null || s.genres.contains(_genre));
-  }).toList();
+  void _open(_Category c) {
+    final list = _series.where(c.matches).toList()
+      ..sort((a, b) {
+        final ta = a.latestPublishedAt, tb = b.latestPublishedAt;
+        if (ta == null && tb == null) return 0;
+        if (ta == null) return 1;
+        if (tb == null) return -1;
+        return tb.compareTo(ta);
+      });
+    SeriesGridPage.open(
+      context,
+      title: genreLabel(c.label),
+      series: list,
+      emptyMessage: _hasError ? 'Không thể kết nối đến máy chủ' : 'Chưa có bộ truyện nào thuộc thể loại này.',
+    );
+  }
 
   @override
   Widget build(BuildContext context) {
-    final results = _filtered;
+    final categories = _categories;
     return Scaffold(
       backgroundColor: ForgeColors.bg,
+      appBar: const ForgeTopBar(),
       body: SafeArea(
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            Padding(
-              padding: const EdgeInsets.fromLTRB(16, 14, 16, 8),
-              child: Text(
-                widget.searchMode ? 'Tìm Kiếm' : 'Khám Phá',
-                style: GoogleFonts.plusJakartaSans(fontSize: 20, fontWeight: FontWeight.w800, color: ForgeColors.text),
-              ),
-            ),
-            if (widget.searchMode)
-              Padding(
-                padding: const EdgeInsets.fromLTRB(16, 0, 16, 8),
-                child: TextField(
-                  controller: _searchController,
-                  autofocus: false,
-                  textInputAction: TextInputAction.search,
-                  style: TextStyle(color: ForgeColors.text),
-                  onChanged: (v) => setState(() => _query = v.trim()),
-                  onSubmitted: (_) => _fetch(),
-                  decoration: InputDecoration(
-                    hintText: 'Tên truyện, studio, thể loại...',
-                    hintStyle: const TextStyle(color: ForgeColors.muted),
-                    prefixIcon: const Icon(Icons.search_rounded, color: ForgeColors.muted),
-                    suffixIcon: _query.isEmpty
-                        ? null
-                        : IconButton(
-                            icon: const Icon(Icons.close_rounded, color: ForgeColors.muted),
-                            onPressed: () {
-                              _searchController.clear();
-                              setState(() => _query = '');
-                              _fetch();
-                            },
-                          ),
-                    filled: true,
-                    fillColor: ForgeColors.surface,
-                    border: OutlineInputBorder(borderRadius: BorderRadius.circular(12), borderSide: BorderSide.none),
+        child: RefreshIndicator(
+          onRefresh: _fetch,
+          color: ForgeColors.accent,
+          child: CustomScrollView(
+            physics: const AlwaysScrollableScrollPhysics(parent: BouncingScrollPhysics()),
+            slivers: [
+              SliverPadding(
+                padding: const EdgeInsets.fromLTRB(16, 16, 16, 12),
+                sliver: SliverGrid(
+                  gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
+                    crossAxisCount: 2,
+                    mainAxisSpacing: 12,
+                    crossAxisSpacing: 12,
+                    mainAxisExtent: 52,
+                  ),
+                  delegate: SliverChildBuilderDelegate(
+                    (context, i) => _GenreTile(label: genreLabel(categories[i].label), onTap: () => _open(categories[i])),
+                    childCount: categories.length,
                   ),
                 ),
-              )
-            else ...[
-              _chipRow([
-                _chip('Tất Cả', _format == null, () => setState(() => _format = null)),
-                for (final f in ComicFormat.values)
-                  _chip(f.label, _format == f, () => setState(() => _format = _format == f ? null : f)),
-              ]),
-              if (_genres.isNotEmpty)
-                _chipRow([
-                  for (final g in _genres)
-                    _chip(genreLabel(g), _genre == g, () => setState(() => _genre = _genre == g ? null : g)),
-                ]),
+              ),
+              if (_isLoading)
+                const SliverToBoxAdapter(
+                  child: Padding(
+                    padding: EdgeInsets.all(16),
+                    child: Center(child: CircularProgressIndicator(color: ForgeColors.accent)),
+                  ),
+                )
+              else if (_hasError)
+                SliverToBoxAdapter(
+                  child: ForgeEmptyState(
+                    icon: Icons.cloud_off_rounded,
+                    message: 'Không thể kết nối đến máy chủ',
+                    actionLabel: 'Thử lại',
+                    onAction: _fetch,
+                  ),
+                ),
             ],
-            Expanded(child: _buildBody(results)),
-          ],
+          ),
         ),
       ),
     );
   }
+}
 
-  Widget _buildBody(List<SeriesItem> results) {
-    if (_isLoading) return const Center(child: CircularProgressIndicator(color: ForgeColors.accent));
-    if (_hasError) {
-      return Center(
-        child: ForgeEmptyState(
-          icon: Icons.cloud_off_rounded,
-          message: 'Không thể kết nối đến máy chủ',
-          actionLabel: 'Thử lại',
-          onAction: _fetch,
+class _GenreTile extends StatelessWidget {
+  final String label;
+  final VoidCallback onTap;
+  const _GenreTile({required this.label, required this.onTap});
+
+  @override
+  Widget build(BuildContext context) {
+    return Material(
+      color: ForgeColors.card,
+      borderRadius: BorderRadius.circular(12),
+      child: InkWell(
+        onTap: onTap,
+        borderRadius: BorderRadius.circular(12),
+        child: Container(
+          alignment: Alignment.center,
+          padding: const EdgeInsets.symmetric(horizontal: 8),
+          decoration: BoxDecoration(
+            borderRadius: BorderRadius.circular(12),
+            border: Border.all(color: ForgeColors.divider),
+          ),
+          child: Text(
+            label,
+            maxLines: 1,
+            overflow: TextOverflow.ellipsis,
+            style: GoogleFonts.plusJakartaSans(fontSize: 15, fontWeight: FontWeight.w700, color: ForgeColors.text),
+          ),
         ),
-      );
-    }
-    if (results.isEmpty) {
-      return Center(
-        child: ForgeEmptyState(
-          icon: Icons.search_off_rounded,
-          message: widget.searchMode && _query.isEmpty
-              ? 'Nhập tên truyện để tìm kiếm.'
-              : 'Không tìm thấy bộ truyện phù hợp.',
-        ),
-      );
-    }
-    return RefreshIndicator(
-      onRefresh: _fetch,
-      color: ForgeColors.accent,
-      child: ComicGrid(series: results, onOpen: (s) => context.push('/series/${s.id}')),
+      ),
     );
   }
-
-  Widget _chipRow(List<Widget> chips) => SizedBox(
-    height: 44,
-    child: ListView.separated(
-      padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 4),
-      scrollDirection: Axis.horizontal,
-      itemCount: chips.length,
-      separatorBuilder: (_, _) => const SizedBox(width: 8),
-      itemBuilder: (_, i) => chips[i],
-    ),
-  );
-
-  Widget _chip(String label, bool selected, VoidCallback onTap) => InkWell(
-    onTap: onTap,
-    borderRadius: BorderRadius.circular(20),
-    child: Container(
-      padding: const EdgeInsets.symmetric(horizontal: 14),
-      alignment: Alignment.center,
-      decoration: BoxDecoration(
-        color: selected ? ForgeColors.accent : ForgeColors.chip,
-        borderRadius: BorderRadius.circular(20),
-      ),
-      child: Text(
-        label,
-        style: GoogleFonts.plusJakartaSans(
-          fontSize: 12.5,
-          fontWeight: FontWeight.w700,
-          color: selected ? Colors.white : ForgeColors.text,
-        ),
-      ),
-    ),
-  );
 }

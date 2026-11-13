@@ -1,6 +1,5 @@
 import 'package:flutter/material.dart';
 import 'package:go_router/go_router.dart';
-import 'package:google_fonts/google_fonts.dart';
 import '../theme/app_theme.dart';
 
 /// Thanh điều hướng dưới cùng nền đen, icon cam khi active.
@@ -41,29 +40,24 @@ class ScaffoldWithNavBar extends StatelessWidget {
               children: [
                 for (var i = 0; i < _tabs.length; i++)
                   Expanded(
-                    child: InkWell(
-                      onTap: () => _onTap(i),
-                      child: Semantics(
-                        selected: i == current,
-                        button: true,
-                        child: Column(
-                          mainAxisAlignment: MainAxisAlignment.center,
-                          children: [
-                            Icon(
-                              i == current ? _tabs[i].$2 : _tabs[i].$1,
-                              size: 24,
-                              color: i == current ? ForgeColors.accent : ForgeColors.muted,
-                            ),
-                            const SizedBox(height: 3),
-                            Text(
-                              _tabs[i].$3,
-                              style: GoogleFonts.plusJakartaSans(
-                                fontSize: 10.5,
-                                fontWeight: i == current ? FontWeight.w800 : FontWeight.w600,
-                                color: i == current ? ForgeColors.accent : ForgeColors.muted,
-                              ),
-                            ),
-                          ],
+                    // Chỉ biểu tượng, không chữ chú thích; tên tab giữ ở tooltip (nhấn giữ) + trình đọc màn hình.
+                    child: Tooltip(
+                      message: _tabs[i].$3,
+                      child: InkWell(
+                        onTap: () => _onTap(i),
+                        child: Semantics(
+                          selected: i == current,
+                          button: true,
+                          child: Center(
+                            child: i == current
+                                ? Container(
+                                    width: 40,
+                                    height: 40,
+                                    decoration: BoxDecoration(color: ForgeColors.accent, shape: BoxShape.circle),
+                                    child: Icon(_tabs[i].$2, size: 24, color: Colors.white),
+                                  )
+                                : Icon(_tabs[i].$1, size: 26, color: ForgeColors.muted),
+                          ),
                         ),
                       ),
                     ),

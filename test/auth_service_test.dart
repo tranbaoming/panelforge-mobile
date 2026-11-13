@@ -354,113 +354,108 @@ void main() {
       expect(find.text('Đăng Xuất Khỏi Thiết Bị'), findsOneWidget);
     });
 
-    testWidgets('LoginPage renders brand title, server config and Continue as Guest', (WidgetTester tester) async {
-      await tester.pumpWidget(
-        const ProviderScope(
-          child: MaterialApp(
-            home: LoginPage(),
-          ),
-        ),
-      );
+    Widget loginApp({bool emailExists = false, List<String>? checked}) => ProviderScope(
+          overrides: [
+            authServiceProvider.overrideWithValue(_FakeAuthService(emailExists, checked ?? [])),
+          ],
+          child: const MaterialApp(home: LoginPage()),
+        );
+
+    testWidgets('LoginPage starts at the email step with guidance, Next button, Google and Maybe-later',
+        (WidgetTester tester) async {
+      await tester.pumpWidget(loginApp());
       await tester.pumpAndSettle();
 
-      // Brand Title & Slogan
-      expect(find.text('PANELFORGE'), findsOneWidget);
-      expect(find.text('Nền Tảng Đọc Truyện & Review Bản Quyền'), findsOneWidget);
-
-      expect(find.byIcon(Icons.auto_stories_rounded), findsOneWidget);
-
-      // Reader Login Form & Tabs
-      expect(find.text('Đăng Nhập'), findsNWidgets(2)); // Tab and button
-      expect(find.text('Đăng Ký Độc Giả'), findsOneWidget);
-      expect(find.text('Email'), findsOneWidget);
-      expect(find.text('Password'), findsOneWidget);
-      expect(find.text('Quên mật khẩu?'), findsOneWidget);
-      expect(find.text('Đăng nhập với Google'), findsOneWidget);
-
-      // Switch to Register tab
-      await tester.tap(find.text('Đăng Ký Độc Giả'));
-      await tester.pumpAndSettle();
-      expect(find.text('Đăng Ký Độc Giả Mới'), findsOneWidget);
-      expect(find.text('Họ và tên:'), findsOneWidget);
-      expect(find.text('Tạo Tài Khoản Độc Giả'), findsOneWidget);
-
-      // Switch back to Login tab
-      await tester.tap(find.text('Đăng Nhập').first);
-      await tester.pumpAndSettle();
-      expect(find.text('Đăng Nhập Độc Giả'), findsOneWidget);
-
-      // Verify Google login button is present
-      final googleBtn = find.text('Đăng nhập với Google');
-      await tester.ensureVisible(googleBtn);
-      await tester.pumpAndSettle();
-      expect(googleBtn, findsOneWidget);
-
-      // Continue as Guest Option
-      final guestBtn = find.text('Tiếp tục với tư cách Khách (Guest)');
-      await tester.ensureVisible(guestBtn);
-      await tester.pumpAndSettle();
-      expect(guestBtn, findsOneWidget);
-      expect(find.text('Đọc truyện miễn phí và quét QR Review không cần tài khoản'), findsOneWidget);
+      expect(find.text('PANEL'), findsOneWidget);
+      expect(find.text('FORGE'), findsOneWidget);
+      expect(
+          find.text('Nhập email của bạn để đăng nhập. Nếu bạn chưa có tài khoản, chúng tôi sẽ tạo một tài khoản mới cho bạn.'),
+          findsOneWidget);
+      expect(find.byKey(const ValueKey('auth-email')), findsOneWidget);
+      expect(find.text('Tiếp Theo'), findsOneWidget);
+      expect(find.byKey(const ValueKey('auth-password')), findsNothing);
+      expect(find.text('Tiếp tục với Google'), findsOneWidget);
+      expect(find.byTooltip('Đóng'), findsOneWidget);
     });
 
-    testWidgets('LoginPage Email and Password inputs support focus ring and reactive styling', (WidgetTester tester) async {
-      await tester.pumpWidget(
-        const ProviderScope(
-          child: MaterialApp(
-            home: LoginPage(),
-          ),
-        ),
-      );
+    testWidgets('Invalid email stays on step 1 and does not call the API', (WidgetTester tester) async {
+      final checked = <String>[];
+      await tester.pumpWidget(loginApp(checked: checked));
       await tester.pumpAndSettle();
 
-      // Email and Password fields are rendered
-      expect(find.text('Email'), findsOneWidget);
-      expect(find.text('Password'), findsOneWidget);
-      expect(find.text('Quên mật khẩu?'), findsOneWidget);
-
-      // Verify Icons
-      expect(find.byIcon(Icons.email_outlined), findsOneWidget);
-      expect(find.byIcon(Icons.key_rounded), findsOneWidget);
-      expect(find.byIcon(Icons.visibility_outlined), findsOneWidget);
-
-      // Verify Autofocus on Email
-      final emailIcon = tester.widget<Icon>(find.byIcon(Icons.email_outlined));
-      expect(emailIcon.color, const Color(0xFFF97316));
-
-      // Tap Password to transfer focus
-      final passwordField = find.byType(TextField).at(1);
-      await tester.tap(passwordField);
+      await tester.enterText(find.byKey(const ValueKey('auth-email')), 'not-an-email');
+      await tester.tap(find.text('Tiếp Theo'));
       await tester.pumpAndSettle();
 
-      // Password icon becomes primary orange
-      final passwordIcon = tester.widget<Icon>(find.byIcon(Icons.key_rounded));
-      expect(passwordIcon.color, const Color(0xFFF97316));
-
-      // Suffix eye icon remains subtle grey
-      final eyeIcon = tester.widget<Icon>(find.byIcon(Icons.visibility_outlined));
-      expect(eyeIcon.color, const Color(0xFF94A3B8));
+      expect(find.text('Vui lòng nhập địa chỉ Email hợp lệ.'), findsOneWidget);
+      expect(checked, isEmpty);
     });
 
-    testWidgets('LoginPage Google button triggers real authentication flow without fake dialog', (WidgetTester tester) async {
-      await tester.pumpWidget(
-        const ProviderScope(
-          child: MaterialApp(
-            home: LoginPage(),
-          ),
-        ),
-      );
+    testWidgets('New email goes to the register step with nickname, password and confirm fields',
+        (WidgetTester tester) async {
+      final checked = <String>[];
+      await tester.pumpWidget(loginApp(checked: checked));
       await tester.pumpAndSettle();
 
-      // Find the Google button
-      final googleBtn = find.text('Đăng nhập với Google');
-      await tester.ensureVisible(googleBtn);
-      expect(googleBtn, findsOneWidget);
+      await tester.enterText(find.byKey(const ValueKey('auth-email')), '  New@Reader.com ');
+      await tester.tap(find.text('Tiếp Theo'));
+      await tester.pumpAndSettle();
 
-      // Verify no fake dialog or fake input is rendered
-      expect(find.text('Địa chỉ Gmail'), findsNothing);
-      expect(find.text('Mật khẩu Google / Xác thực'), findsNothing);
-      expect(find.text('reader.panelforge@gmail.com'), findsNothing);
+      expect(checked, ['new@reader.com']);
+      expect(find.text('Có vẻ như bạn chưa có tài khoản. Hãy tạo một tài khoản mới với email này nhé.'), findsOneWidget);
+      expect(find.text('new@reader.com'), findsOneWidget);
+      for (final key in ['auth-nickname', 'auth-register-password', 'auth-confirm-password']) {
+        expect(find.byKey(ValueKey(key)), findsOneWidget);
+      }
+
+      // Mật khẩu nhập lại không khớp → báo lỗi, không gọi đăng ký.
+      await tester.enterText(find.byKey(const ValueKey('auth-nickname')), 'Reader');
+      await tester.enterText(find.byKey(const ValueKey('auth-register-password')), 'secret123');
+      await tester.enterText(find.byKey(const ValueKey('auth-confirm-password')), 'secret999');
+      final registerBtn = find.text('Đăng ký');
+      await tester.ensureVisible(registerBtn);
+      await tester.tap(registerBtn);
+      await tester.pumpAndSettle();
+      expect(find.text('Mật khẩu nhập lại không khớp.'), findsOneWidget);
+
+      // "Đã có tài khoản? Đăng nhập" → về bước nhập Email.
+      final back = find.byType(TextButton).last;
+      await tester.ensureVisible(back);
+      await tester.tap(back);
+      await tester.pumpAndSettle();
+      expect(find.text('Tiếp Theo'), findsOneWidget);
+    });
+
+    testWidgets('Existing email goes to the password step; back arrow returns to step 1', (WidgetTester tester) async {
+      await tester.pumpWidget(loginApp(emailExists: true));
+      await tester.pumpAndSettle();
+
+      await tester.enterText(find.byKey(const ValueKey('auth-email')), 'reader@panelforge.com');
+      await tester.tap(find.text('Tiếp Theo'));
+      await tester.pumpAndSettle();
+
+      expect(find.text('Chào mừng bạn quay lại.'), findsOneWidget);
+      expect(find.text('reader@panelforge.com'), findsOneWidget);
+      expect(find.byKey(const ValueKey('auth-password')), findsOneWidget);
+      expect(find.text('Quên mật khẩu?'), findsOneWidget);
+      expect(find.text('Đăng Nhập'), findsOneWidget);
+
+      await tester.tap(find.byTooltip('Quay lại'));
+      await tester.pumpAndSettle();
+      expect(find.byKey(const ValueKey('auth-email')), findsOneWidget);
+      expect(find.byKey(const ValueKey('auth-password')), findsNothing);
     });
   });
+}
+
+class _FakeAuthService extends AuthService {
+  _FakeAuthService(this.exists, this.checked);
+  final bool exists;
+  final List<String> checked;
+
+  @override
+  Future<bool> checkEmail(String email) async {
+    checked.add(email);
+    return exists;
+  }
 }

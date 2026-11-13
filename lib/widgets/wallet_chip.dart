@@ -32,7 +32,7 @@ class WalletChip extends ConsumerWidget {
     return InkWell(
       onTap: () {
         final authState = ref.read(authStateProvider);
-        if (authState.isGuest) {
+        if (!authState.isAuthenticated) {
           ScaffoldMessenger.of(context).showSnackBar(
             SnackBar(
               backgroundColor: AppColors.darkSurface,
@@ -58,43 +58,25 @@ class WalletChip extends ConsumerWidget {
         decoration: BoxDecoration(
           color: AppColors.darkSurface,
           borderRadius: BorderRadius.circular(20),
-          border: Border.all(
-            color: isVip ? AppColors.mint.withValues(alpha: 0.6) : AppColors.darkBorder,
-            width: 1,
-          ),
+          border: Border.all(color: isVip ? AppColors.mint.withValues(alpha: 0.6) : AppColors.darkBorder, width: 1),
           boxShadow: [
-            BoxShadow(
-              color: Colors.black.withValues(alpha: 0.25),
-              blurRadius: 4,
-              offset: const Offset(0, 2),
-            ),
+            BoxShadow(color: Colors.black.withValues(alpha: 0.25), blurRadius: 4, offset: const Offset(0, 2)),
           ],
         ),
         child: Row(
           mainAxisSize: MainAxisSize.min,
           children: [
-            const Icon(
-              Icons.account_balance_wallet_rounded,
-              color: AppColors.primary,
-              size: 15,
-            ),
+            const Icon(Icons.account_balance_wallet_rounded, color: AppColors.primary, size: 15),
             const SizedBox(width: 5),
             Text(
               formatVnd(balanceVnd),
-              style: GoogleFonts.plusJakartaSans(
-                fontSize: 12,
-                fontWeight: FontWeight.w800,
-                color: Colors.white,
-              ),
+              style: GoogleFonts.plusJakartaSans(fontSize: 12, fontWeight: FontWeight.w800, color: Colors.white),
             ),
             if (isVip) ...[
               const SizedBox(width: 6),
               Container(
                 padding: const EdgeInsets.symmetric(horizontal: 5, vertical: 1.5),
-                decoration: BoxDecoration(
-                  color: AppColors.mint,
-                  borderRadius: BorderRadius.circular(4),
-                ),
+                decoration: BoxDecoration(color: AppColors.mint, borderRadius: BorderRadius.circular(4)),
                 child: Text(
                   'VIP',
                   style: GoogleFonts.plusJakartaSans(

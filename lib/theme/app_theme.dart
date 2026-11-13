@@ -291,6 +291,7 @@ class ForgeColors {
   static Color get chip => _dark ? const Color(0xFF2C2C34) : const Color(0xFFEDEDF0);
   static Color get divider => _dark ? const Color(0xFF1E1E24) : const Color(0xFFE5E5EA);
   static Color get border => _dark ? const Color(0xFF2A2A32) : const Color(0xFFDCDCE1);
+  static Color get searchBorder => _dark ? const Color(0xFF4A4856) : const Color(0xFFC7C7CC);
   static Color get text => _dark ? Colors.white : const Color(0xFF1C1C1E);
   static Color get textSoft => _dark ? Colors.white70 : const Color(0xFF3A3A3C);
   static const Color accent = Color(0xFFFF6B00);

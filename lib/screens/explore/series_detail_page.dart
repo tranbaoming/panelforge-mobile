@@ -6,11 +6,13 @@ import 'package:go_router/go_router.dart';
 import 'package:google_fonts/google_fonts.dart';
 import '../../models/api_dtos.dart';
 import '../../models/comic_model.dart';
+import '../../navigation/read_guard.dart';
 import '../../providers/api_providers.dart';
 import '../../theme/app_theme.dart';
 import '../../services/catalog_service.dart';
 import '../../services/preferences_service.dart';
 import '../../widgets/forge_ui.dart';
+import '../../widgets/series_rating_bar.dart';
 import '../../widgets/unlock_chapter_bottom_sheet.dart';
 import '../../widgets/wallet_chip.dart';
 
@@ -31,6 +33,9 @@ class _SeriesDetailPageState extends ConsumerState<SeriesDetailPage> {
   bool _isFavorite = false;
   bool _isFollowing = false;
 
+  /// Đánh giá sao của bộ truyện (điểm trung bình, số lượt, đánh giá của tôi).
+  ({double average, int count, int? mine}) _rating = (average: 0, count: 0, mine: null);
+
   @override
   void initState() {
     super.initState();
@@ -50,6 +55,7 @@ class _SeriesDetailPageState extends ConsumerState<SeriesDetailPage> {
         _isFollowing = PreferencesService.isFollowing(widget.seriesId);
         setState(() {
           _series = SeriesItem.fromPublicDetailDto(detail).copyWith(isBookmarked: bookmarked);
+          _rating = (average: detail.ratingAverage, count: detail.ratingCount, mine: detail.myRating);
           _isLoading = false;
         });
         ref.read(isServerConnectedProvider.notifier).state = true;
@@ -106,24 +112,27 @@ class _SeriesDetailPageState extends ConsumerState<SeriesDetailPage> {
     return ref.watch(unlockedChaptersProvider).contains(chapter.id);
   }
 
-  void _onChapterTap(SeriesItem series, ChapterItem chapter, {VoidCallback? onUnlocked}) {
-    final unlocked = _isChapterUnlocked(chapter);
-    if (unlocked) {
-      context.push('/reader/${series.id}?chapterId=${chapter.id}');
-    } else {
-      UnlockChapterBottomSheet.show(
-        context,
-        chapter: chapter,
-        series: series,
-        onUnlocked: () {
-          if (mounted) setState(() {});
-          onUnlocked?.call();
-        },
-      );
+  /// Mở một chương (thanh đáy "Đọc Ngay / Đọc Tiếp" hoặc chọn trong DS Chương).
+  /// Lazy Authentication: chưa đăng nhập → mở màn Đăng nhập; đăng nhập xong tiếp tục đúng chương này.
+  Future<void> _onChapterTap(SeriesItem series, ChapterItem chapter, {VoidCallback? onUnlocked}) async {
+    final wasLoggedIn = canReadChapters(ref.read(authStateProvider));
+    if (!await ensureLoggedInForReading(context, ref, series: series)) return;
+    if (!mounted) return;
+    if (!wasLoggedIn) {
+      // Vừa đăng nhập: tải lại quyền đọc (đã mua / VIP) trước khi quyết định có cần mở khóa không.
+      await Future.wait([_fetchDetailFromApi(), ref.read(walletNotifierProvider.notifier).refresh()]);
+      if (!mounted) return;
+      series = _series ?? series;
+      chapter = series.chapters.where((c) => c.id == chapter.id).firstOrNull ?? chapter;
     }
+    // Chương trả phí chưa mua cũng mở reader: đọc trang xem trước, trang khác có nút mở khóa cả chương.
+    context.push(readerPath(series.id, chapter.id));
   }
 
   Future<void> _downloadChapter(SeriesItem series, ChapterItem chapter) async {
+    // Tải offline cũng là đọc → cần tài khoản thật (Lazy Authentication).
+    if (!await ensureLoggedInForReading(context, ref, series: series)) return;
+    if (!mounted) return;
     // Chương trả phí chưa mở khóa (không VIP, chưa mua) → không cho tải CBZ, mời mở khóa trước.
     if (!_isChapterUnlocked(chapter)) {
       ScaffoldMessenger.of(context).showSnackBar(
@@ -237,6 +246,15 @@ class _SeriesDetailPageState extends ConsumerState<SeriesDetailPage> {
         slivers: [
           SliverToBoxAdapter(child: _buildHeader(series)),
           SliverToBoxAdapter(child: _buildGenres(series)),
+          SliverToBoxAdapter(
+            child: SeriesRatingBar(
+              key: ValueKey('rating-${series.id}-${_rating.count}'),
+              series: series,
+              average: _rating.average,
+              count: _rating.count,
+              myRating: _rating.mine,
+            ),
+          ),
           SliverToBoxAdapter(child: _buildChapterTrigger(series, ascending)),
           SliverToBoxAdapter(child: _buildSynopsis(series)),
           const SliverToBoxAdapter(child: SizedBox(height: 24)),
@@ -357,9 +375,7 @@ class _SeriesDetailPageState extends ConsumerState<SeriesDetailPage> {
                             children: [
                               _action(Icons.visibility_outlined, formatViews(series.views), null),
                               _action(
-                                _isFollowing
-                                    ? Icons.notifications_active_rounded
-                                    : Icons.notifications_none_rounded,
+                                _isFollowing ? Icons.notifications_active_rounded : Icons.notifications_none_rounded,
                                 _isFollowing ? 'Đang theo dõi' : 'Theo dõi',
                                 _toggleFollow,
                                 active: _isFollowing,
@@ -613,9 +629,7 @@ class _SeriesDetailPageState extends ConsumerState<SeriesDetailPage> {
                         IconButton(
                           tooltip: _isFollowing ? 'Bỏ theo dõi' : 'Theo dõi',
                           icon: Icon(
-                            _isFollowing
-                                ? Icons.notifications_active_rounded
-                                : Icons.notifications_none_rounded,
+                            _isFollowing ? Icons.notifications_active_rounded : Icons.notifications_none_rounded,
                             color: _isFollowing ? ForgeColors.accent : ForgeColors.text,
                           ),
                           onPressed: () async {

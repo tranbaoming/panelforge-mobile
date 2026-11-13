@@ -7,6 +7,7 @@ import '../models/comic_package_models.dart';
 import '../theme/app_theme.dart';
 import 'adaptive_webtoon_view.dart';
 import 'guided_panel_viewer.dart';
+import 'locked_page_tile.dart';
 import 'text_region_overlay.dart';
 
 class ReadingModeSwitcher extends StatefulWidget {
@@ -22,6 +23,9 @@ class ReadingModeSwitcher extends StatefulWidget {
   final double webtoonTileSpacing;
   final ValueChanged<TextRegion>? onRegionTap;
 
+  /// Bấm "Mở khóa trang" trên trang trả phí lẻ chưa mua.
+  final ValueChanged<ComicPageData>? onUnlockPage;
+
   const ReadingModeSwitcher({
     super.key,
     required this.chapter,
@@ -35,6 +39,7 @@ class ReadingModeSwitcher extends StatefulWidget {
     this.isGuidedPanelMode = false,
     this.webtoonTileSpacing = 0.0,
     this.onRegionTap,
+    this.onUnlockPage,
   });
 
   @override
@@ -165,6 +170,7 @@ class ReadingModeSwitcherState extends State<ReadingModeSwitcher> {
           },
           onTapScreen: widget.onTapScreen,
           onRegionTap: widget.onRegionTap,
+          onUnlockPage: widget.onUnlockPage,
         ),
       );
     }
@@ -198,7 +204,8 @@ class ReadingModeSwitcherState extends State<ReadingModeSwitcher> {
       itemBuilder: (context, index) {
         final actualIndex = isRtl ? (pages.length - 1 - index) : index;
         final page = pages[actualIndex];
-        final panels = widget.package?.getPanelsForPage(actualIndex) ?? [];
+        // Trang trả phí chưa mở: không phóng khung tranh (không có ảnh thật), chỉ hiện ô khóa.
+        final panels = page.isPaywalled ? const <PanelInfo>[] : (widget.package?.getPanelsForPage(actualIndex) ?? []);
 
         final pageWidget = _buildComicSinglePage(actualIndex, page, surfaceColor, textColor);
 
@@ -305,7 +312,12 @@ class ReadingModeSwitcherState extends State<ReadingModeSwitcher> {
           // Content: Either real Page Image (network/local) or simulated panels
           Padding(
             padding: const EdgeInsets.all(12),
-            child: page.imageUrl != null && page.imageUrl!.isNotEmpty
+            child: page.isPaywalled
+                ? LockedPageTile(
+                    page: page,
+                    onUnlock: widget.onUnlockPage == null ? null : () => widget.onUnlockPage!(page),
+                  )
+                : page.imageUrl != null && page.imageUrl!.isNotEmpty
                 ? ClipRRect(
                     borderRadius: BorderRadius.circular(8),
                     child: LayoutBuilder(
