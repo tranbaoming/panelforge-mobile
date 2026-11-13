@@ -57,12 +57,7 @@ class ComicPageData {
   final String? imageUrl;
   final List<ComicPanelData> panels;
 
-  const ComicPageData({
-    required this.pageNumber,
-    required this.title,
-    this.imageUrl,
-    this.panels = const [],
-  });
+  const ComicPageData({required this.pageNumber, required this.title, this.imageUrl, this.panels = const []});
 
   factory ComicPageData.fromPublicPage(PublicPageDto dto) {
     return ComicPageData(
@@ -83,6 +78,11 @@ class ChapterItem {
   final bool isFree;
   final bool isUnlocked;
   final int priceCoins;
+  final int priceVnd;
+  final int rentalPriceVnd;
+  final ChapterAccessPolicy accessPolicy;
+  final int? maxAllowedViews;
+  final bool isWeeklyHot;
   final String? cbzPackageUrl;
   final String? manifestUrl;
   final List<ComicPageData> pages;
@@ -96,10 +96,18 @@ class ChapterItem {
     this.isFree = true,
     this.isUnlocked = true,
     this.priceCoins = 0,
+    this.priceVnd = 0,
+    this.rentalPriceVnd = 0,
+    this.accessPolicy = ChapterAccessPolicy.free,
+    this.maxAllowedViews,
+    this.isWeeklyHot = false,
     this.cbzPackageUrl,
     this.manifestUrl,
     required this.pages,
   });
+
+  /// Chương trả phí do Producer khóa (Backend `isLocked`).
+  bool get isLocked => !isFree;
 
   factory ChapterItem.fromPublicDto(PublicChapterSummaryDto dto) {
     return ChapterItem(
@@ -113,6 +121,11 @@ class ChapterItem {
       isFree: dto.isFree,
       isUnlocked: dto.isUnlocked,
       priceCoins: dto.priceCoins,
+      priceVnd: dto.priceVnd,
+      rentalPriceVnd: dto.rentalPriceVnd,
+      accessPolicy: dto.accessPolicy,
+      maxAllowedViews: dto.maxAllowedViews,
+      isWeeklyHot: dto.isWeeklyHot,
       cbzPackageUrl: dto.cbzPackageUrl,
       manifestUrl: dto.manifestUrl,
       pages: const [],
@@ -131,6 +144,11 @@ class ChapterItem {
       isFree: dto.isFree,
       isUnlocked: dto.isUnlocked,
       priceCoins: dto.priceCoins,
+      priceVnd: dto.priceVnd,
+      rentalPriceVnd: dto.rentalPriceVnd,
+      accessPolicy: dto.accessPolicy,
+      maxAllowedViews: dto.maxAllowedViews,
+      isWeeklyHot: dto.isWeeklyHot,
       cbzPackageUrl: dto.cbzPackageUrl,
       manifestUrl: dto.manifestUrl,
       pages: dto.pages.map((p) => ComicPageData.fromPublicPage(p)).toList(),
@@ -146,6 +164,11 @@ class ChapterItem {
     bool? isFree,
     bool? isUnlocked,
     int? priceCoins,
+    int? priceVnd,
+    int? rentalPriceVnd,
+    ChapterAccessPolicy? accessPolicy,
+    int? maxAllowedViews,
+    bool? isWeeklyHot,
     String? cbzPackageUrl,
     String? manifestUrl,
     List<ComicPageData>? pages,
@@ -159,6 +182,11 @@ class ChapterItem {
       isFree: isFree ?? this.isFree,
       isUnlocked: isUnlocked ?? this.isUnlocked,
       priceCoins: priceCoins ?? this.priceCoins,
+      priceVnd: priceVnd ?? this.priceVnd,
+      rentalPriceVnd: rentalPriceVnd ?? this.rentalPriceVnd,
+      accessPolicy: accessPolicy ?? this.accessPolicy,
+      maxAllowedViews: maxAllowedViews ?? this.maxAllowedViews,
+      isWeeklyHot: isWeeklyHot ?? this.isWeeklyHot,
       cbzPackageUrl: cbzPackageUrl ?? this.cbzPackageUrl,
       manifestUrl: manifestUrl ?? this.manifestUrl,
       pages: pages ?? this.pages,
@@ -176,14 +204,27 @@ class SeriesItem {
   final String coverGradientEnd;
   final String synopsisQuote;
   final String fullSynopsis;
-  final double rating;
+  /// Lượt đọc thật từ Backend (tổng / 1 ngày / 7 ngày / 30 ngày).
   final int views;
+  final int viewsLast1Day;
+  final int viewsLast7Days;
+  final int viewsLast30Days;
   final int readProgressChapter;
   final int totalChapters;
   final List<String> genres;
   final List<ChapterItem> chapters;
   final bool isBookmarked;
   final String editorialNote;
+  final int baseChapterPriceVnd;
+  final int hotChapterPriceVnd;
+
+  /// Thời điểm chương mới nhất được phát hành (catalog list); null nếu chưa rõ.
+  final DateTime? latestPublishedAt;
+
+  /// URL đầy đủ của ảnh bìa bộ truyện; null = chưa có bìa (UI dùng khối màu).
+  final String? coverUrl;
+  final bool isCompleted;
+  final DateTime? createdAt;
 
   const SeriesItem({
     required this.id,
@@ -195,14 +236,22 @@ class SeriesItem {
     required this.coverGradientEnd,
     required this.synopsisQuote,
     required this.fullSynopsis,
-    required this.rating,
     required this.views,
+    this.viewsLast1Day = 0,
+    this.viewsLast7Days = 0,
+    this.viewsLast30Days = 0,
     required this.readProgressChapter,
     required this.totalChapters,
     required this.genres,
     required this.chapters,
     this.isBookmarked = false,
     required this.editorialNote,
+    this.baseChapterPriceVnd = 3000,
+    this.hotChapterPriceVnd = 5000,
+    this.latestPublishedAt,
+    this.coverUrl,
+    this.isCompleted = false,
+    this.createdAt,
   });
 
   factory SeriesItem.fromPublicDto(PublicSeriesDto dto) {
@@ -226,14 +275,22 @@ class SeriesItem {
           ? '“${dto.synopsis!.length > 80 ? dto.synopsis!.substring(0, 80) : dto.synopsis}...„'
           : '“Tác phẩm chính thức được phát hành bởi ${dto.studioName}.„',
       fullSynopsis: dto.synopsis ?? 'Nội dung bộ truyện đang được cập nhật.',
-      rating: 4.9,
-      views: dto.publishedChapterCount * 1250,
+      views: dto.viewCount,
+      viewsLast1Day: dto.viewsLast1Day,
+      viewsLast7Days: dto.viewsLast7Days,
+      viewsLast30Days: dto.viewsLast30Days,
       readProgressChapter: 0,
       totalChapters: dto.publishedChapterCount,
       genres: [dto.genre, dto.format],
       chapters: const [],
       isBookmarked: false,
       editorialNote: 'Phát hành chính thức bởi Studio ${dto.studioName}.',
+      baseChapterPriceVnd: dto.baseChapterPriceVnd,
+      hotChapterPriceVnd: dto.hotChapterPriceVnd,
+      latestPublishedAt: dto.latestPublishedAt,
+      coverUrl: dto.fullCoverUrl,
+      isCompleted: dto.isCompleted,
+      createdAt: dto.createdAt,
     );
   }
 
@@ -258,14 +315,18 @@ class SeriesItem {
           ? '“${dto.synopsis!.length > 80 ? dto.synopsis!.substring(0, 80) : dto.synopsis}...„'
           : '“Tác phẩm độc quyền bởi ${dto.studioName}.„',
       fullSynopsis: dto.synopsis ?? 'Nội dung bộ truyện đang được cập nhật.',
-      rating: 4.9,
-      views: dto.chapters.length * 1500,
+      views: dto.viewCount,
       readProgressChapter: 0,
       totalChapters: dto.chapters.length,
       genres: [dto.genre, dto.format],
       chapters: dto.chapters.map((c) => ChapterItem.fromPublicDto(c)).toList(),
       isBookmarked: false,
       editorialNote: 'Phát hành chính thức bởi Studio ${dto.studioName}.',
+      baseChapterPriceVnd: dto.baseChapterPriceVnd,
+      hotChapterPriceVnd: dto.hotChapterPriceVnd,
+      coverUrl: dto.fullCoverUrl,
+      isCompleted: dto.isCompleted,
+      createdAt: dto.createdAt,
     );
   }
 
@@ -273,6 +334,8 @@ class SeriesItem {
     bool? isBookmarked,
     int? readProgressChapter,
     List<ChapterItem>? chapters,
+    int? baseChapterPriceVnd,
+    int? hotChapterPriceVnd,
   }) {
     return SeriesItem(
       id: id,
@@ -284,14 +347,22 @@ class SeriesItem {
       coverGradientEnd: coverGradientEnd,
       synopsisQuote: synopsisQuote,
       fullSynopsis: fullSynopsis,
-      rating: rating,
       views: views,
+      viewsLast1Day: viewsLast1Day,
+      viewsLast7Days: viewsLast7Days,
+      viewsLast30Days: viewsLast30Days,
       readProgressChapter: readProgressChapter ?? this.readProgressChapter,
       totalChapters: totalChapters,
       genres: genres,
       chapters: chapters ?? this.chapters,
       isBookmarked: isBookmarked ?? this.isBookmarked,
       editorialNote: editorialNote,
+      baseChapterPriceVnd: baseChapterPriceVnd ?? this.baseChapterPriceVnd,
+      hotChapterPriceVnd: hotChapterPriceVnd ?? this.hotChapterPriceVnd,
+      latestPublishedAt: latestPublishedAt,
+      coverUrl: coverUrl,
+      isCompleted: isCompleted,
+      createdAt: createdAt,
     );
   }
 }

@@ -4,7 +4,6 @@ import 'package:go_router/go_router.dart';
 import 'package:google_fonts/google_fonts.dart';
 import '../../providers/api_providers.dart';
 import '../../theme/app_theme.dart';
-import '../../widgets/server_config_dialog.dart';
 
 enum _LoginViewMode {
   login,
@@ -141,6 +140,14 @@ class _LoginPageState extends ConsumerState<LoginPage> {
         return;
       }
 
+      // Gán vững chắc trạng thái Reader vào authStateProvider
+      if (resp.user != null) {
+        ref.read(authStateProvider.notifier).updateState(AuthState(
+          role: MobileAuthRole.reader,
+          user: resp.user,
+        ));
+      }
+
       // Đăng nhập thành công -> điều hướng vào trang chủ
       context.go('/');
     } catch (e) {
@@ -231,7 +238,13 @@ class _LoginPageState extends ConsumerState<LoginPage> {
         return;
       }
 
-      if (resp.user != null) {
+      if (resp.user != null || ref.read(authStateProvider).isAuthenticated) {
+        if (resp.user != null) {
+          ref.read(authStateProvider.notifier).updateState(AuthState(
+            role: MobileAuthRole.reader,
+            user: resp.user,
+          ));
+        }
         context.go('/');
       }
     } catch (e) {
@@ -259,7 +272,7 @@ class _LoginPageState extends ConsumerState<LoginPage> {
 
     try {
       final authService = ref.read(authServiceProvider);
-      await authService.verifyTwoFactor(
+      final resp = await authService.verifyTwoFactor(
         code: code,
         email: _emailController.text.trim().toLowerCase(),
         rememberDevice: _rememberDevice,
@@ -267,6 +280,13 @@ class _LoginPageState extends ConsumerState<LoginPage> {
 
       if (!mounted) return;
       setState(() => _isLoading = false);
+
+      if (resp.user != null) {
+        ref.read(authStateProvider.notifier).updateState(AuthState(
+          role: MobileAuthRole.reader,
+          user: resp.user,
+        ));
+      }
       context.go('/');
     } catch (e) {
       if (!mounted) return;
@@ -387,6 +407,12 @@ class _LoginPageState extends ConsumerState<LoginPage> {
 
   @override
   Widget build(BuildContext context) {
+    ref.listen<AuthState>(authStateProvider, (previous, next) {
+      if (next.isAuthenticated && mounted) {
+        context.go('/');
+      }
+    });
+
     final canPop = Navigator.of(context).canPop();
 
     return Scaffold(
@@ -412,13 +438,11 @@ class _LoginPageState extends ConsumerState<LoginPage> {
 
               const SizedBox(height: 8),
 
-              // Brand Logo & Tiêu đề (Nhấn giữ Logo để cấu hình máy chủ cho Developer)
+              // Brand Logo & Tiêu đề
               Center(
                 child: Column(
                   children: [
-                    GestureDetector(
-                      onLongPress: () => ServerConfigDialog.show(context),
-                      child: Container(
+                    Container(
                         width: 64,
                         height: 64,
                         decoration: BoxDecoration(
@@ -445,7 +469,6 @@ class _LoginPageState extends ConsumerState<LoginPage> {
                           size: 34,
                         ),
                       ),
-                    ),
                     const SizedBox(height: 14),
                     Text(
                       'PANELFORGE',

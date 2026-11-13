@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:dio/dio.dart';
 import 'package:flutter/foundation.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
@@ -5,183 +7,108 @@ import '../models/api_dtos.dart';
 import 'api_client.dart';
 import 'preferences_service.dart';
 
-/// Dịch vụ quản lý Thu phí, Ví ForgeCoins, Mở khóa chương truyện và Gói VIP
+/// Dịch vụ Ví độc giả, mở khóa chương, gói VIP và thanh toán VietQR — kết nối trực tiếp `WalletController`.
+///
+/// Mọi số dư, giá và quyền sở hữu đều do Backend quyết định. Cache trong [PreferencesService]
+/// chỉ dùng để hiển thị nhanh và luôn được ghi đè bằng dữ liệu `GET /api/wallet/me`.
 class MonetizationService {
   final ApiClient _client;
 
   MonetizationService({ApiClient? client, Dio? dio})
-      : _client = client ?? (dio != null ? ApiClient(customDio: dio) : ApiClient());
+    : _client = client ?? (dio != null ? ApiClient(customDio: dio) : ApiClient());
 
-  Dio get _dio => _client.dio;
-
-  /// Lấy thông tin ví và trạng thái VIP của người dùng hiện tại từ máy chủ
+  /// `GET /api/wallet/me` — số dư, VIP, chương đã mở khóa và lịch sử giao dịch.
   Future<UserWalletDto> getMyWallet() async {
-    try {
-      final response = await _dio.get('/api/wallet/me');
-      if (response.statusCode == 200 && response.data != null) {
-        final wallet = UserWalletDto.fromJson(response.data as Map<String, dynamic>);
-        // Đồng bộ cache cục bộ
-        await PreferencesService.setLocalBalanceCoins(wallet.balanceCoins);
-        await PreferencesService.setLocalVip(
-          isVip: wallet.isVip,
-          expiresAt: wallet.vipExpiresAt,
-        );
-        return wallet;
-      }
-      throw ApiException('Máy chủ phản hồi không hợp lệ (${response.statusCode})');
-    } catch (e) {
-      debugPrint('[MonetizationService] API /api/wallet/me thất bại: $e');
-      rethrow;
+    final response = await _client.get('/api/wallet/me');
+    final data = response.data;
+    if (data is! Map<String, dynamic>) {
+      throw ApiException('Máy chủ phản hồi không hợp lệ.', statusCode: response.statusCode);
     }
+    final wallet = UserWalletDto.fromJson(data);
+    await _cacheWallet(wallet);
+    return wallet;
   }
 
-  /// Mở khóa một chương truyện bằng ForgeCoins hoặc đặc quyền VIP
-  Future<UnlockChapterResponse> unlockChapter({
-    required String chapterId,
-    int priceCoins = 50,
-  }) async {
-    try {
-      final response = await _dio.post(
-        '/api/wallet/unlock-chapter',
-        data: UnlockChapterRequest(chapterId: chapterId).toJson(),
-      );
-      if (response.statusCode == 200 && response.data != null) {
-        final resp = UnlockChapterResponse.fromJson(response.data as Map<String, dynamic>);
-        await PreferencesService.addUnlockedChapterId(chapterId);
-        await PreferencesService.setLocalBalanceCoins(resp.remainingCoins);
-        return resp;
-      }
-    } catch (e) {
-      debugPrint('[MonetizationService] API /api/wallet/unlock-chapter fallback: $e');
+  /// `POST /api/wallet/unlock-chapter` — mở khóa vĩnh viễn bằng số dư Ví (hoặc miễn phí nếu VIP).
+  /// Giá trừ do server lấy từ cấu hình chương của Producer.
+  Future<UnlockChapterResponse> unlockChapterWithWallet({required String chapterId, String? seriesId}) async {
+    final response = await _client.post(
+      '/api/wallet/unlock-chapter',
+      data: UnlockChapterRequest(chapterId: chapterId, seriesId: seriesId).toJson(),
+    );
+    final resp = UnlockChapterResponse.fromJson(response.data as Map<String, dynamic>);
+    if (!resp.success) {
+      throw ApiException(resp.message ?? 'Không thể mở khóa chương.');
     }
+    await PreferencesService.setLocalBalanceVnd(resp.remainingBalanceVnd);
+    await PreferencesService.saveChapterEntitlement(
+      ChapterEntitlement(chapterId: chapterId, isPermanent: true, unlockedAt: DateTime.now()),
+    );
+    return resp;
+  }
 
-    // Fallback xử lý giao dịch cục bộ
-    final isVip = PreferencesService.getLocalIsVip();
-    if (isVip) {
-      await PreferencesService.addUnlockedChapterId(chapterId);
-      final currentCoins = PreferencesService.getLocalBalanceCoins();
-      return UnlockChapterResponse(
+  /// `POST /api/wallet/subscribe-vip` — kích hoạt VIP bằng số dư Ví.
+  Future<SubscribeVipResponse> subscribeVipWithWallet({required String plan}) async {
+    final response = await _client.post('/api/wallet/subscribe-vip', data: SubscribeVipRequest(plan: plan).toJson());
+    final resp = SubscribeVipResponse.fromJson(response.data as Map<String, dynamic>);
+    await PreferencesService.setLocalVip(isVip: resp.isVip, expiresAt: resp.vipExpiresAt);
+    await PreferencesService.setLocalBalanceVnd(resp.remainingCoins * 100);
+    return resp;
+  }
+
+  /// `POST /api/wallet/topup` — tạo đơn VietQR (Pending) kèm ngữ cảnh để Producer thấy đúng Studio.
+  ///
+  /// - [PaymentPurpose.topup]: nạp [amountVnd] vào Ví.
+  /// - [PaymentPurpose.chapterUnlock]: trả trực tiếp để mở [chapterId] (giá do server lấy từ chương).
+  /// - [PaymentPurpose.vipSubscription]: trả trực tiếp gói [vipPlan] (`monthly` | `yearly`).
+  Future<TopupResponse> createVietQrOrder({
+    PaymentPurpose purpose = PaymentPurpose.topup,
+    int? amountVnd,
+    String? workspaceId,
+    String? seriesId,
+    String? chapterId,
+    String? vipPlan,
+  }) async {
+    final response = await _client.post(
+      '/api/wallet/topup',
+      data: TopupRequest(
+        amountVnd: amountVnd,
+        purpose: purpose,
+        workspaceId: workspaceId,
+        seriesId: seriesId,
         chapterId: chapterId,
-        success: true,
-        remainingCoins: currentCoins,
-        message: 'Đặc quyền VIP: Mở khóa chương truyện miễn phí!',
-      );
-    }
-
-    final currentCoins = PreferencesService.getLocalBalanceCoins();
-    if (currentCoins < priceCoins) {
-      throw ApiException(
-        'Số dư ForgeCoins không đủ để mở khóa chương ($currentCoins/$priceCoins). Vui lòng nạp thêm.',
-      );
-    }
-
-    final newBalance = currentCoins - priceCoins;
-    await PreferencesService.setLocalBalanceCoins(newBalance);
-    await PreferencesService.addUnlockedChapterId(chapterId);
-
-    return UnlockChapterResponse(
-      chapterId: chapterId,
-      success: true,
-      remainingCoins: newBalance,
-      message: 'Mở khóa chương truyện thành công!',
+        vipPlan: vipPlan,
+      ).toJson(),
     );
-  }
-
-  /// Đăng ký gói VIP Pass (Monthly / Yearly)
-  Future<SubscribeVipResponse> subscribeVip({required String plan}) async {
-    final cost = plan.toLowerCase() == 'yearly' ? 1999 : 199;
-
-    try {
-      final response = await _dio.post(
-        '/api/wallet/subscribe-vip',
-        data: SubscribeVipRequest(plan: plan).toJson(),
-      );
-      if (response.statusCode == 200 && response.data != null) {
-        final resp = SubscribeVipResponse.fromJson(response.data as Map<String, dynamic>);
-        await PreferencesService.setLocalVip(
-          isVip: resp.isVip,
-          expiresAt: resp.vipExpiresAt,
-        );
-        await PreferencesService.setLocalBalanceCoins(resp.remainingCoins);
-        return resp;
-      }
-    } catch (e) {
-      debugPrint('[MonetizationService] API /api/wallet/subscribe-vip fallback: $e');
+    final order = TopupResponse.fromJson(response.data as Map<String, dynamic>);
+    if (order.orderId.isEmpty || order.qrCodeUrl == null) {
+      throw ApiException('Máy chủ chưa trả về mã VietQR hợp lệ. Vui lòng thử lại.');
     }
-
-    // Fallback đăng ký VIP cục bộ
-    final currentCoins = PreferencesService.getLocalBalanceCoins();
-    if (currentCoins < cost) {
-      throw ApiException(
-        'Số dư ForgeCoins không đủ để kích hoạt gói VIP ($currentCoins/$cost). Vui lòng nạp thêm.',
-      );
-    }
-
-    final newBalance = currentCoins - cost;
-    final expiresAt = plan.toLowerCase() == 'yearly'
-        ? DateTime.now().add(const Duration(days: 365))
-        : DateTime.now().add(const Duration(days: 30));
-
-    await PreferencesService.setLocalBalanceCoins(newBalance);
-    await PreferencesService.setLocalVip(isVip: true, expiresAt: expiresAt);
-
-    return SubscribeVipResponse(
-      success: true,
-      isVip: true,
-      vipExpiresAt: expiresAt,
-      remainingCoins: newBalance,
-      message: 'Nâng cấp VIP Pass thành công! Bạn có thể tải CBZ và đọc toàn bộ kho truyện.',
-    );
+    return order;
   }
 
-  /// Tạo yêu cầu nạp ForgeCoins (trả về thông tin chuyển khoản VietQR từ máy chủ)
-  Future<TopupResponse> requestTopup({
-    required int coinsAmount,
-    required int amountVnd,
-    String paymentMethod = 'vietqr',
-  }) async {
-    try {
-      final response = await _dio.post(
-        '/api/wallet/topup',
-        data: TopupRequest(
-          coinsAmount: coinsAmount,
-          amountVnd: amountVnd,
-          paymentMethod: paymentMethod,
-        ).toJson(),
-      );
-      if (response.statusCode == 200 && response.data != null) {
-        return TopupResponse.fromJson(response.data as Map<String, dynamic>);
-      }
-      throw ApiException('Máy chủ phản hồi không hợp lệ (${response.statusCode})');
-    } catch (e) {
-      debugPrint('[MonetizationService] API /api/wallet/topup thất bại: $e');
-      rethrow;
-    }
+  /// `GET /api/wallet/transactions/{orderCode}/status` — kiểm tra đơn đã được Producer duyệt chưa.
+  Future<TransactionStatusDto> getTransactionStatus(String orderCode) async {
+    final response = await _client.get('/api/wallet/transactions/${Uri.encodeComponent(orderCode)}/status');
+    return TransactionStatusDto.fromJson(response.data as Map<String, dynamic>);
   }
 
-  /// Xác nhận hoàn tất thanh toán nạp tiền và cộng Coins vào ví
-  Future<UserWalletDto> completeTopup({
-    required String orderId,
-    required int coinsAmount,
-  }) async {
-    final currentCoins = PreferencesService.getLocalBalanceCoins();
-    final newBalance = currentCoins + coinsAmount;
-    await PreferencesService.setLocalBalanceCoins(newBalance);
-
-    final isVip = PreferencesService.getLocalIsVip();
-    final vipExpiresAt = PreferencesService.getLocalVipExpiresAt();
-
-    return UserWalletDto(
-      balanceCoins: newBalance,
-      isVip: isVip,
-      vipExpiresAt: vipExpiresAt,
-    );
+  /// Backend chỉ hỗ trợ mở khóa vĩnh viễn: không còn trừ lượt xem phía client.
+  Future<ConsumeViewResult> consumeChapterView(String chapterId) async {
+    return const ConsumeViewResult(didConsume: false, isPermanent: true);
   }
 
-  /// Kiểm tra xem một chapter đã được mở khóa hoặc người dùng có quyền VIP hay không
-  bool isChapterUnlocked(String chapterId) {
-    if (PreferencesService.getLocalIsVip()) return true;
-    return PreferencesService.isChapterUnlocked(chapterId);
+  /// Xóa cache Ví khi phiên đăng nhập không còn hợp lệ (Guest / đăng xuất / 401).
+  Future<void> clearLocalCache() async {
+    await PreferencesService.setLocalBalanceVnd(0);
+    await PreferencesService.setLocalVip(isVip: false, expiresAt: null);
+    await PreferencesService.replaceUnlockedChapterIds(const {});
+  }
+
+  Future<void> _cacheWallet(UserWalletDto wallet) async {
+    await PreferencesService.setLocalBalanceVnd(wallet.balanceVnd);
+    await PreferencesService.setLocalVip(isVip: wallet.hasActiveVip, expiresAt: wallet.vipExpiresAt);
+    await PreferencesService.replaceUnlockedChapterIds(wallet.unlockedChapterIds);
   }
 }
 
@@ -193,94 +120,77 @@ final monetizationServiceProvider = Provider<MonetizationService>((ref) {
   return MonetizationService();
 });
 
-/// Notifier quản lý trạng thái Ví & VIP toàn ứng dụng
+/// Notifier trạng thái Ví & VIP toàn ứng dụng — luôn đồng bộ từ `GET /api/wallet/me`.
 class WalletNotifier extends Notifier<AsyncValue<UserWalletDto>> {
   @override
   AsyncValue<UserWalletDto> build() {
-    // Ban đầu tải ví từ server; khi chưa kết nối thành công thì giữ trạng thái Loading/Error
-    _loadInitialWallet();
+    Future.microtask(_load);
     return const AsyncLoading();
   }
 
-  Future<void> _loadInitialWallet() async {
-    final service = ref.read(monetizationServiceProvider);
+  MonetizationService get _service => ref.read(monetizationServiceProvider);
+
+  Future<void> _load() async {
     try {
-      final wallet = await service.getMyWallet();
+      final wallet = await _service.getMyWallet();
       state = AsyncData(wallet);
+      _syncEntitlementProviders();
     } catch (e, st) {
+      if (e is ApiException && e.statusCode == 401) {
+        await _service.clearLocalCache();
+        _syncEntitlementProviders();
+      } else {
+        debugPrint('[WalletNotifier] Không tải được Ví: $e');
+      }
       state = AsyncError(e, st);
     }
   }
 
-  /// Làm mới thông tin ví từ máy chủ
-  Future<void> refresh() async {
-    state = const AsyncLoading();
-    final service = ref.read(monetizationServiceProvider);
-    try {
-      final wallet = await service.getMyWallet();
-      state = AsyncData(wallet);
-    } catch (e, st) {
-      state = AsyncError(e, st);
-    }
+  /// Làm mới Ví (dùng sau khi Producer duyệt đơn, đăng nhập lại, kéo để làm mới...).
+  /// [silent] = true giữ nguyên dữ liệu đang hiển thị trong lúc tải.
+  Future<void> refresh({bool silent = false}) async {
+    if (!silent || state.asData == null) state = const AsyncLoading();
+    await _load();
   }
 
-  /// Mở khóa chương truyện
-  Future<UnlockChapterResponse> unlockChapter(String chapterId, int priceCoins) async {
-    final service = ref.read(monetizationServiceProvider);
-    final response = await service.unlockChapter(
-      chapterId: chapterId,
-      priceCoins: priceCoins,
-    );
-
-    // Cập nhật state ví
-    final currentWallet = state.asData?.value;
-    if (currentWallet != null) {
+  /// Mở khóa chương bằng số dư Ví (hoặc VIP).
+  Future<UnlockChapterResponse> unlockChapter(String chapterId, {String? seriesId}) async {
+    final response = await _service.unlockChapterWithWallet(chapterId: chapterId, seriesId: seriesId);
+    final current = state.asData?.value;
+    if (current != null) {
       state = AsyncData(
-        UserWalletDto(
-          balanceCoins: response.remainingCoins,
-          isVip: currentWallet.isVip,
-          vipExpiresAt: currentWallet.vipExpiresAt,
+        current.copyWith(
+          balanceVnd: response.remainingBalanceVnd,
+          unlockedChapterIds: {...current.unlockedChapterIds, chapterId},
         ),
       );
     }
-
-    // Cập nhật provider danh sách chương đã mở khóa
     ref.read(unlockedChaptersProvider.notifier).add(chapterId);
-
+    ref.read(chapterEntitlementsProvider.notifier).refresh();
+    // Lấy lại lịch sử giao dịch thật từ server mà không làm nháy UI.
+    unawaited(refresh(silent: true));
     return response;
   }
 
-  /// Đăng ký gói VIP
+  /// Tiêu hao lượt xem — giữ API cho Reader; Backend chỉ có quyền đọc vĩnh viễn.
+  Future<ConsumeViewResult> consumeChapterView(String chapterId) => _service.consumeChapterView(chapterId);
+
+  /// Kích hoạt VIP bằng số dư Ví.
   Future<SubscribeVipResponse> subscribeVip(String plan) async {
-    final service = ref.read(monetizationServiceProvider);
-    final response = await service.subscribeVip(plan: plan);
-
-    state = AsyncData(
-      UserWalletDto(
-        balanceCoins: response.remainingCoins,
-        isVip: response.isVip,
-        vipExpiresAt: response.vipExpiresAt,
-      ),
-    );
-
+    final response = await _service.subscribeVipWithWallet(plan: plan);
+    await refresh(silent: true);
     return response;
   }
 
-  /// Nạp ForgeCoins thành công
-  Future<void> completeTopup({required String orderId, required int coinsAmount}) async {
-    final service = ref.read(monetizationServiceProvider);
-    final updatedWallet = await service.completeTopup(
-      orderId: orderId,
-      coinsAmount: coinsAmount,
-    );
-    state = AsyncData(updatedWallet);
+  void _syncEntitlementProviders() {
+    ref.read(unlockedChaptersProvider.notifier).refresh();
+    ref.read(chapterEntitlementsProvider.notifier).refresh();
   }
 }
 
-final walletNotifierProvider =
-    NotifierProvider<WalletNotifier, AsyncValue<UserWalletDto>>(WalletNotifier.new);
+final walletNotifierProvider = NotifierProvider<WalletNotifier, AsyncValue<UserWalletDto>>(WalletNotifier.new);
 
-/// Notifier quản lý danh sách các chapterId đã mở khóa
+/// Notifier quản lý danh sách các chapterId đã mở khóa (cache của `UnlockedChapterIds` trên server).
 class UnlockedChaptersNotifier extends Notifier<Set<String>> {
   @override
   Set<String> build() {
@@ -296,14 +206,40 @@ class UnlockedChaptersNotifier extends Notifier<Set<String>> {
     state = {...state, chapterId};
   }
 
+  void remove(String chapterId) {
+    PreferencesService.removeUnlockedChapterId(chapterId);
+    state = state.where((id) => id != chapterId).toSet();
+  }
+
   bool isUnlocked(String chapterId) {
-    final isVip = PreferencesService.getLocalIsVip();
-    if (isVip) return true;
+    if (PreferencesService.getLocalIsVip()) return true;
     return state.contains(chapterId);
   }
 }
 
-final unlockedChaptersProvider =
-    NotifierProvider<UnlockedChaptersNotifier, Set<String>>(
-  UnlockedChaptersNotifier.new,
+final unlockedChaptersProvider = NotifierProvider<UnlockedChaptersNotifier, Set<String>>(UnlockedChaptersNotifier.new);
+
+/// Notifier quản lý quyền sở hữu từng chapter (cache cục bộ).
+class ChapterEntitlementsNotifier extends Notifier<Map<String, ChapterEntitlement>> {
+  @override
+  Map<String, ChapterEntitlement> build() {
+    return PreferencesService.getChapterEntitlements();
+  }
+
+  void refresh() {
+    state = PreferencesService.getChapterEntitlements();
+  }
+
+  void save(ChapterEntitlement ent) {
+    PreferencesService.saveChapterEntitlement(ent);
+    state = {...state, ent.chapterId: ent};
+  }
+
+  ChapterEntitlement? getEntitlement(String chapterId) {
+    return state[chapterId] ?? PreferencesService.getChapterEntitlement(chapterId);
+  }
+}
+
+final chapterEntitlementsProvider = NotifierProvider<ChapterEntitlementsNotifier, Map<String, ChapterEntitlement>>(
+  ChapterEntitlementsNotifier.new,
 );

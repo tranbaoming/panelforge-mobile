@@ -1,12 +1,16 @@
+import 'dart:ui' show ImageFilter;
+
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 import 'package:google_fonts/google_fonts.dart';
+import '../../models/api_dtos.dart';
 import '../../models/comic_model.dart';
 import '../../providers/api_providers.dart';
 import '../../theme/app_theme.dart';
 import '../../services/catalog_service.dart';
 import '../../services/preferences_service.dart';
+import '../../widgets/forge_ui.dart';
 import '../../widgets/unlock_chapter_bottom_sheet.dart';
 import '../../widgets/wallet_chip.dart';
 
@@ -22,9 +26,10 @@ class SeriesDetailPage extends ConsumerStatefulWidget {
 class _SeriesDetailPageState extends ConsumerState<SeriesDetailPage> {
   SeriesItem? _series;
   bool _isLoading = true;
-  bool _isLiveBackend = false;
   String? _errorMessage;
   bool _isNewestFirst = false;
+  bool _isFavorite = false;
+  bool _isFollowing = false;
 
   @override
   void initState() {
@@ -41,10 +46,11 @@ class _SeriesDetailPageState extends ConsumerState<SeriesDetailPage> {
       final detail = await CatalogService().getSeriesDetail(widget.seriesId);
       if (mounted) {
         final bookmarked = PreferencesService.isBookmarked(widget.seriesId);
+        _isFavorite = PreferencesService.isFavorite(widget.seriesId);
+        _isFollowing = PreferencesService.isFollowing(widget.seriesId);
         setState(() {
           _series = SeriesItem.fromPublicDetailDto(detail).copyWith(isBookmarked: bookmarked);
           _isLoading = false;
-          _isLiveBackend = true;
         });
         ref.read(isServerConnectedProvider.notifier).state = true;
       }
@@ -53,7 +59,6 @@ class _SeriesDetailPageState extends ConsumerState<SeriesDetailPage> {
       if (mounted) {
         setState(() {
           _isLoading = false;
-          _isLiveBackend = false;
           _errorMessage = 'Không thể tải thông tin tác phẩm. Vui lòng kiểm tra lại kết nối mạng.';
         });
         ref.read(isServerConnectedProvider.notifier).state = false;
@@ -70,25 +75,38 @@ class _SeriesDetailPageState extends ConsumerState<SeriesDetailPage> {
       });
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(
-          content: Text(
-            newState ? 'Đã thêm vào tủ sách cá nhân' : 'Đã xóa khỏi tủ sách',
-          ),
+          content: Text(newState ? 'Đã thêm vào danh sách Đọc sau' : 'Đã xóa khỏi danh sách Đọc sau'),
           duration: const Duration(seconds: 2),
         ),
       );
     }
   }
 
-  bool _isChapterUnlocked(ChapterItem chapter) {
-    if (chapter.isFree) return true;
-    final wallet = ref.watch(walletNotifierProvider).asData?.value;
-    if (wallet?.isVip ?? false) return true;
-    final unlockedIds = ref.watch(unlockedChaptersProvider);
-    if (unlockedIds.contains(chapter.id)) return true;
-    return chapter.isUnlocked;
+  /// 🔔 Theo dõi (danh sách THEO DÕI ở màn Cá nhân) — khác 🔖 Đọc sau (bookmark).
+  Future<void> _toggleFollow() async {
+    final following = await PreferencesService.toggleFollow(widget.seriesId);
+    if (mounted) setState(() => _isFollowing = following);
   }
 
-  void _onChapterTap(SeriesItem series, ChapterItem chapter) {
+  Future<void> _toggleFavorite() async {
+    final fav = await PreferencesService.toggleFavorite(widget.seriesId);
+    if (mounted) setState(() => _isFavorite = fav);
+  }
+
+  /// Chương đọc được khi: không bị Producer khóa, Backend báo `isUnlocked` (đã mua / VIP),
+  /// người dùng đang có VIP, hoặc vừa mở khóa trong phiên này (`/api/wallet/me` → unlockedChapterIds).
+  bool _isChapterUnlocked(ChapterItem chapter) => _isUnlockedFor(ref, chapter);
+
+  bool _isUnlockedFor(WidgetRef ref, ChapterItem chapter) {
+    if (!chapter.isLocked) return true;
+    if (chapter.isUnlocked) return true;
+    final wallet = ref.watch(walletNotifierProvider).asData?.value;
+    if (wallet?.hasActiveVip ?? false) return true;
+    if (wallet?.unlockedChapterIds.contains(chapter.id) ?? false) return true;
+    return ref.watch(unlockedChaptersProvider).contains(chapter.id);
+  }
+
+  void _onChapterTap(SeriesItem series, ChapterItem chapter, {VoidCallback? onUnlocked}) {
     final unlocked = _isChapterUnlocked(chapter);
     if (unlocked) {
       context.push('/reader/${series.id}?chapterId=${chapter.id}');
@@ -96,14 +114,54 @@ class _SeriesDetailPageState extends ConsumerState<SeriesDetailPage> {
       UnlockChapterBottomSheet.show(
         context,
         chapter: chapter,
+        series: series,
         onUnlocked: () {
-          setState(() {});
+          if (mounted) setState(() {});
+          onUnlocked?.call();
         },
       );
     }
   }
 
-  Future<void> _downloadChapter(ChapterItem chapter) async {
+  Future<void> _downloadChapter(SeriesItem series, ChapterItem chapter) async {
+    // Chương trả phí chưa mở khóa (không VIP, chưa mua) → không cho tải CBZ, mời mở khóa trước.
+    if (!_isChapterUnlocked(chapter)) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          behavior: SnackBarBehavior.floating,
+          content: Text('Vui lòng mở khóa chương trước khi tải offline.'),
+        ),
+      );
+      UnlockChapterBottomSheet.show(
+        context,
+        chapter: chapter,
+        series: series,
+        onUnlocked: () {
+          if (mounted) setState(() {});
+        },
+      );
+      return;
+    }
+    final isVip = ref.read(walletNotifierProvider).asData?.value.isVip ?? PreferencesService.getLocalIsVip();
+    final ent = PreferencesService.getChapterEntitlement(chapter.id);
+    if (!isVip && ent != null && !ent.isPermanent) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          backgroundColor: AppColors.darkSurface,
+          shape: RoundedRectangleBorder(
+            borderRadius: BorderRadius.circular(12),
+            side: const BorderSide(color: AppColors.primary),
+          ),
+          behavior: SnackBarBehavior.floating,
+          content: Text(
+            'Gói thuê xem theo lượt không hỗ trợ tải offline. Vui lòng mua vĩnh viễn để tải file .CBZ.',
+            style: GoogleFonts.plusJakartaSans(color: ForgeColors.text, fontSize: 13),
+          ),
+        ),
+      );
+      return;
+    }
+
     final cbzService = ref.read(cbzPackageServiceProvider);
     try {
       ref.read(downloadStatusProvider.notifier).setStatus(chapter.id, DownloadStatus.downloading);
@@ -127,10 +185,7 @@ class _SeriesDetailPageState extends ConsumerState<SeriesDetailPage> {
                 const Icon(Icons.check_circle_rounded, color: AppColors.mint, size: 20),
                 const SizedBox(width: 8),
                 Expanded(
-                  child: Text(
-                    'Đã tải gói truyện offline: ${chapter.title}',
-                    style: const TextStyle(color: Colors.white),
-                  ),
+                  child: Text('Đã tải gói truyện offline: ${chapter.title}', style: TextStyle(color: ForgeColors.text)),
                 ),
               ],
             ),
@@ -140,9 +195,7 @@ class _SeriesDetailPageState extends ConsumerState<SeriesDetailPage> {
     } catch (e) {
       ref.read(downloadStatusProvider.notifier).setStatus(chapter.id, DownloadStatus.failed);
       if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text('Lỗi khi tải gói offline: $e')),
-        );
+        ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('Lỗi khi tải gói offline: $e')));
       }
     }
   }
@@ -151,684 +204,578 @@ class _SeriesDetailPageState extends ConsumerState<SeriesDetailPage> {
   Widget build(BuildContext context) {
     if (_isLoading) {
       return Scaffold(
-        backgroundColor: AppColors.darkBg,
-        appBar: AppBar(
-          backgroundColor: Colors.transparent,
-          elevation: 0,
-          leading: IconButton(
-            icon: const Icon(Icons.arrow_back_ios_new_rounded, size: 20, color: Colors.white),
-            onPressed: () => context.pop(),
-          ),
-        ),
-        body: const Center(
-          child: CircularProgressIndicator(color: AppColors.primary),
-        ),
+        backgroundColor: ForgeColors.bg,
+        appBar: _plainAppBar(),
+        body: const Center(child: CircularProgressIndicator(color: ForgeColors.accent)),
       );
     }
 
     if (_series == null) {
       return Scaffold(
-        backgroundColor: AppColors.darkBg,
-        appBar: AppBar(
-          backgroundColor: Colors.transparent,
-          elevation: 0,
-          leading: IconButton(
-            icon: const Icon(Icons.arrow_back_ios_new_rounded, size: 20, color: Colors.white),
-            onPressed: () => context.pop(),
-          ),
-        ),
+        backgroundColor: ForgeColors.bg,
+        appBar: _plainAppBar(),
         body: Center(
-          child: Padding(
-            padding: const EdgeInsets.all(24),
-            child: Column(
-              mainAxisSize: MainAxisSize.min,
-              children: [
-                Icon(
-                  _errorMessage != null ? Icons.cloud_off_rounded : Icons.menu_book_outlined,
-                  size: 48,
-                  color: AppColors.darkTextSecondary,
-                ),
-                const SizedBox(height: 16),
-                Text(
-                  _errorMessage ?? 'Không tìm thấy tác phẩm này trên hệ thống.',
-                  textAlign: TextAlign.center,
-                  style: GoogleFonts.plusJakartaSans(
-                    fontSize: 14,
-                    color: AppColors.darkTextSecondary,
-                  ),
-                ),
-                const SizedBox(height: 16),
-                ElevatedButton.icon(
-                  onPressed: _fetchDetailFromApi,
-                  icon: const Icon(Icons.refresh_rounded, size: 18),
-                  label: const Text('Tải lại'),
-                  style: ElevatedButton.styleFrom(
-                    backgroundColor: AppColors.primary,
-                    foregroundColor: Colors.white,
-                  ),
-                ),
-              ],
-            ),
+          child: ForgeEmptyState(
+            icon: _errorMessage != null ? Icons.cloud_off_rounded : Icons.menu_book_outlined,
+            message: _errorMessage ?? 'Không tìm thấy tác phẩm này trên hệ thống.',
+            actionLabel: 'Tải lại',
+            onAction: _fetchDetailFromApi,
           ),
         ),
       );
     }
 
     final series = _series!;
-    final chaptersList = List<ChapterItem>.from(series.chapters);
-    if (_isNewestFirst) {
-      chaptersList.sort((a, b) => b.number.compareTo(a.number));
-    } else {
-      chaptersList.sort((a, b) => a.number.compareTo(b.number));
-    }
-
-    final readPercent = series.totalChapters > 0
-        ? ((series.readProgressChapter / series.totalChapters) * 100).round()
-        : 0;
+    final ascending = [...series.chapters]..sort((a, b) => a.number.compareTo(b.number));
+    final history = PreferencesService.getReadingHistoryFor(series.id);
+    final lastRead = history == null ? null : ascending.where((c) => c.id == history.chapterId).firstOrNull;
 
     return Scaffold(
-      backgroundColor: AppColors.darkBg,
+      backgroundColor: ForgeColors.bg,
       body: CustomScrollView(
         physics: const BouncingScrollPhysics(),
         slivers: [
-          // Collapsible Custom AppBar with Book Cover Visual
-          SliverAppBar(
-            expandedHeight: 340,
-            pinned: true,
-            backgroundColor: AppColors.darkBg,
-            elevation: 0,
-            leading: IconButton(
-              icon: const Icon(Icons.arrow_back_ios_new_rounded, size: 20, color: Colors.white),
-              style: IconButton.styleFrom(
-                backgroundColor: Colors.black45,
-              ),
-              onPressed: () => context.pop(),
-            ),
-            actions: [
-              if (_isLiveBackend) ...[
-                const Padding(
-                  padding: EdgeInsets.symmetric(vertical: 10),
-                  child: WalletChip(isServerConnected: true),
+          SliverToBoxAdapter(child: _buildHeader(series)),
+          SliverToBoxAdapter(child: _buildGenres(series)),
+          SliverToBoxAdapter(child: _buildChapterTrigger(series, ascending)),
+          SliverToBoxAdapter(child: _buildSynopsis(series)),
+          const SliverToBoxAdapter(child: SizedBox(height: 24)),
+        ],
+      ),
+      bottomNavigationBar: _buildStickyBar(series, ascending, lastRead),
+    );
+  }
+
+  PreferredSizeWidget _plainAppBar() => AppBar(
+    backgroundColor: Colors.transparent,
+    elevation: 0,
+    leading: IconButton(
+      icon: Icon(Icons.arrow_back_rounded, color: ForgeColors.text),
+      onPressed: () => context.pop(),
+    ),
+  );
+
+  Widget _buildHeader(SeriesItem series) {
+    final topPadding = MediaQuery.of(context).padding.top;
+    return Stack(
+      children: [
+        // Nền: ảnh bìa làm mờ + gradient tối dần xuống dưới.
+        Positioned.fill(
+          child: ClipRect(
+            child: Stack(
+              fit: StackFit.expand,
+              children: [
+                SeriesCover(series: series, radius: 0),
+                BackdropFilter(
+                  filter: ImageFilter.blur(sigmaX: 20, sigmaY: 20),
+                  child: Container(color: Colors.black.withValues(alpha: 0.25)),
                 ),
-                const SizedBox(width: 8),
+                DecoratedBox(
+                  decoration: BoxDecoration(
+                    gradient: LinearGradient(
+                      begin: Alignment.topCenter,
+                      end: Alignment.bottomCenter,
+                      colors: [Color(0x66141418), ForgeColors.bg],
+                    ),
+                  ),
+                ),
               ],
-              IconButton(
-                icon: Icon(
-                  series.isBookmarked ? Icons.bookmark_rounded : Icons.bookmark_border_rounded,
-                  color: series.isBookmarked ? AppColors.primary : Colors.white70,
-                ),
-                style: IconButton.styleFrom(
-                  backgroundColor: Colors.black45,
-                ),
-                onPressed: _toggleBookmark,
-              ),
-              const SizedBox(width: 12),
-            ],
-            flexibleSpace: FlexibleSpaceBar(
-              background: Container(
-                decoration: BoxDecoration(
-                  gradient: LinearGradient(
-                    begin: Alignment.topCenter,
-                    end: Alignment.bottomCenter,
-                    colors: [
-                      Color(int.parse(series.coverGradientStart)).withValues(alpha: 0.35),
-                      AppColors.darkBg,
-                    ],
-                  ),
-                ),
-                child: Center(
-                  child: Padding(
-                    padding: const EdgeInsets.only(top: 50),
-                    child: _buildPrintBookCover(series),
-                  ),
-                ),
-              ),
             ),
           ),
-
-          // Series Information Body
-          SliverToBoxAdapter(
-            child: Padding(
-              padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 10),
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  // Title & Format Badge
-                  Row(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      Expanded(
-                        child: Text(
-                          series.title,
-                          style: GoogleFonts.newsreader(
-                            fontSize: 28,
-                            fontWeight: FontWeight.w700,
-                            color: Colors.white,
-                            letterSpacing: -0.5,
-                          ),
-                        ),
-                      ),
-                      Container(
-                        padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
-                        decoration: BoxDecoration(
-                          color: AppColors.primary,
-                          borderRadius: BorderRadius.circular(6),
-                        ),
-                        child: Text(
-                          series.format.label.toUpperCase(),
-                          style: GoogleFonts.plusJakartaSans(
-                            fontSize: 10,
-                            fontWeight: FontWeight.w800,
-                            color: Colors.white,
-                            letterSpacing: 0.8,
-                          ),
-                        ),
-                      ),
-                    ],
-                  ),
-
-                  const SizedBox(height: 6),
-
-                  // Author & Artist
-                  Text(
-                    'Tác giả: ${series.author} • Họa sĩ: ${series.artist}',
-                    style: GoogleFonts.plusJakartaSans(
-                      fontSize: 13,
-                      fontWeight: FontWeight.w500,
-                      color: AppColors.darkTextSecondary,
-                    ),
-                  ),
-
-                  const SizedBox(height: 12),
-
-                  // Genre Badges
-                  Wrap(
-                    spacing: 6,
-                    runSpacing: 6,
-                    children: series.genres.map((g) {
-                      return Container(
-                        padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
-                        decoration: BoxDecoration(
-                          color: AppColors.darkSurface,
-                          borderRadius: BorderRadius.circular(20),
-                          border: Border.all(color: AppColors.darkBorder),
-                        ),
-                        child: Text(
-                          g,
-                          style: GoogleFonts.plusJakartaSans(
-                            fontSize: 11,
-                            fontWeight: FontWeight.w600,
-                            color: Colors.white,
-                          ),
-                        ),
-                      );
-                    }).toList(),
-                  ),
-
-                  const SizedBox(height: 20),
-
-                  // Reading Progress Box (Ước tính tiến độ đọc)
-                  Container(
-                    padding: const EdgeInsets.all(14),
-                    decoration: BoxDecoration(
-                      color: AppColors.darkSurface,
-                      borderRadius: BorderRadius.circular(14),
-                      border: Border.all(color: AppColors.darkBorder),
-                    ),
-                    child: Column(
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      children: [
-                        Row(
-                          mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                          children: [
-                            Row(
-                              children: [
-                                const Icon(Icons.timelapse_rounded, size: 16, color: AppColors.primary),
-                                const SizedBox(width: 6),
-                                Text(
-                                  'ƯỚC TÍNH TIẾN ĐỘ ĐỌC',
-                                  style: GoogleFonts.plusJakartaSans(
-                                    fontSize: 11,
-                                    fontWeight: FontWeight.w800,
-                                    color: AppColors.primary,
-                                    letterSpacing: 0.8,
-                                  ),
-                                ),
-                              ],
-                            ),
-                            Text(
-                              'Chương ${series.readProgressChapter} / ${series.totalChapters} • $readPercent%',
-                              style: GoogleFonts.plusJakartaSans(
-                                fontSize: 12,
-                                fontWeight: FontWeight.w700,
-                                color: Colors.white,
-                              ),
-                            ),
-                          ],
-                        ),
-                        const SizedBox(height: 8),
-                        ClipRRect(
-                          borderRadius: BorderRadius.circular(4),
-                          child: LinearProgressIndicator(
-                            value: series.totalChapters > 0
-                                ? (series.readProgressChapter / series.totalChapters).clamp(0.0, 1.0)
-                                : 0.0,
-                            backgroundColor: AppColors.darkBorder,
-                            valueColor: const AlwaysStoppedAnimation<Color>(AppColors.primary),
-                            minHeight: 6,
-                          ),
-                        ),
-                      ],
-                    ),
-                  ),
-
-                  const SizedBox(height: 18),
-
-                  // Tóm Tắt Trích Dẫn (Synopsis Quote & Full Synopsis)
-                  Container(
-                    padding: const EdgeInsets.all(16),
-                    decoration: BoxDecoration(
-                      color: AppColors.darkCard,
-                      borderRadius: BorderRadius.circular(12),
-                      border: Border.all(color: AppColors.darkBorder),
-                    ),
-                    child: Column(
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      children: [
-                        if (series.synopsisQuote.isNotEmpty)
-                          Text(
-                            series.synopsisQuote,
-                            style: GoogleFonts.newsreader(
-                              fontSize: 15,
-                              fontStyle: FontStyle.italic,
-                              fontWeight: FontWeight.w600,
-                              color: Colors.white,
-                              height: 1.4,
-                            ),
-                          ),
-                        if (series.synopsisQuote.isNotEmpty)
-                          const SizedBox(height: 10),
-                        Text(
-                          series.fullSynopsis,
-                          style: GoogleFonts.plusJakartaSans(
-                            fontSize: 13,
-                            color: AppColors.darkTextSecondary,
-                            height: 1.5,
-                          ),
-                        ),
-                      ],
-                    ),
-                  ),
-
-                  const SizedBox(height: 24),
-
-                  // Primary CTA Buttons: Đọc chương đầu / Đọc tiếp
-                  Row(
-                    children: [
-                      Expanded(
-                        child: ElevatedButton.icon(
-                          onPressed: () {
-                            if (series.chapters.isEmpty) {
-                              ScaffoldMessenger.of(context).showSnackBar(
-                                const SnackBar(content: Text('Tác phẩm chưa có chương truyện nào được phát hành')),
-                              );
-                              return;
-                            }
-                            final firstCh = series.chapters.first;
-                            context.push('/reader/${series.id}?chapterId=${firstCh.id}');
-                          },
-                          icon: const Icon(Icons.play_circle_filled_rounded, size: 20),
-                          label: Text(
-                            series.readProgressChapter > 0
-                                ? 'ĐỌC TIẾP CHƯƠNG ${series.readProgressChapter}'
-                                : 'ĐỌC CHƯƠNG ĐẦU',
-                          ),
-                          style: ElevatedButton.styleFrom(
-                            padding: const EdgeInsets.symmetric(vertical: 16),
-                          ),
-                        ),
-                      ),
-                      const SizedBox(width: 10),
-                      IconButton(
-                        onPressed: _toggleBookmark,
-                        icon: Icon(
-                          series.isBookmarked ? Icons.bookmark_added_rounded : Icons.bookmark_add_outlined,
-                          color: series.isBookmarked ? AppColors.primary : Colors.white70,
-                        ),
-                        style: IconButton.styleFrom(
-                          backgroundColor: AppColors.darkSurface,
-                          side: const BorderSide(color: AppColors.darkBorder),
-                          padding: const EdgeInsets.all(14),
-                        ),
-                      ),
-                    ],
-                  ),
-
-                  const SizedBox(height: 28),
-
-                  // Danh Sách Chương & Bộ Sắp Xếp (Mới nhất / Cũ nhất)
-                  Row(
-                    mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                    children: [
-                      Text(
-                        'Danh Sách Chương (${chaptersList.length})',
-                        style: GoogleFonts.newsreader(
-                          fontSize: 20,
-                          fontWeight: FontWeight.w700,
-                          color: Colors.white,
-                        ),
-                      ),
-                      if (chaptersList.isNotEmpty)
-                        InkWell(
-                          onTap: () {
-                            setState(() {
-                              _isNewestFirst = !_isNewestFirst;
-                            });
-                          },
-                          borderRadius: BorderRadius.circular(8),
-                          child: Container(
-                            padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 5),
-                            decoration: BoxDecoration(
-                              color: AppColors.darkSurface,
-                              borderRadius: BorderRadius.circular(8),
-                              border: Border.all(color: AppColors.darkBorder),
-                            ),
-                            child: Row(
-                              children: [
-                                Icon(
-                                  _isNewestFirst ? Icons.arrow_downward_rounded : Icons.arrow_upward_rounded,
-                                  size: 14,
-                                  color: AppColors.primary,
-                                ),
-                                const SizedBox(width: 4),
-                                Text(
-                                  _isNewestFirst ? 'Mới nhất' : 'Cũ nhất',
-                                  style: GoogleFonts.plusJakartaSans(
-                                    fontSize: 11,
-                                    fontWeight: FontWeight.w700,
-                                    color: Colors.white,
-                                  ),
-                                ),
-                              ],
-                            ),
-                          ),
-                        ),
-                    ],
-                  ),
-
-                  const SizedBox(height: 12),
-                ],
-              ),
-            ),
-          ),
-
-          // Chapter List Items or Empty
-          if (chaptersList.isEmpty)
-            SliverToBoxAdapter(
-              child: Center(
-                child: Padding(
-                  padding: const EdgeInsets.symmetric(vertical: 32),
-                  child: Column(
-                    children: [
-                      Icon(Icons.menu_book_rounded, size: 40, color: Colors.white30),
-                      const SizedBox(height: 8),
-                      Text(
-                        'Chưa có chương nào được phát hành',
-                        style: GoogleFonts.plusJakartaSans(
-                          fontSize: 13,
-                          color: AppColors.darkTextSecondary,
-                        ),
-                      ),
-                    ],
-                  ),
-                ),
-              ),
-            )
-          else
-            SliverPadding(
-              padding: const EdgeInsets.symmetric(horizontal: 20),
-              sliver: SliverList(
-                delegate: SliverChildBuilderDelegate(
-                  (context, index) {
-                    final ch = chaptersList[index];
-                    return _buildChapterListItem(context, series, ch);
-                  },
-                  childCount: chaptersList.length,
-                ),
-              ),
-            ),
-
-          const SliverToBoxAdapter(child: SizedBox(height: 40)),
-        ],
-      ),
-    );
-  }
-
-  Widget _buildPrintBookCover(SeriesItem series) {
-    return Container(
-      width: 140,
-      height: 200,
-      decoration: BoxDecoration(
-        borderRadius: BorderRadius.circular(10),
-        gradient: LinearGradient(
-          begin: Alignment.topLeft,
-          end: Alignment.bottomRight,
-          colors: [
-            Color(int.parse(series.coverGradientStart)),
-            Color(int.parse(series.coverGradientEnd)),
-          ],
         ),
-        boxShadow: [
-          BoxShadow(
-            color: Colors.black.withValues(alpha: 0.35),
-            blurRadius: 22,
-            offset: const Offset(4, 12),
-          ),
-        ],
-      ),
-      child: Stack(
-        children: [
-          // Realistic Print Book Spine Simulation
-          Positioned(
-            left: 0,
-            top: 0,
-            bottom: 0,
-            width: 10,
-            child: Container(
-              decoration: const BoxDecoration(
-                color: Colors.black26,
-                borderRadius: BorderRadius.only(
-                  topLeft: Radius.circular(10),
-                  bottomLeft: Radius.circular(10),
-                ),
-              ),
-            ),
-          ),
-          // Embossed metallic border
-          Positioned.fill(
-            child: Container(
-              margin: const EdgeInsets.all(8),
-              decoration: BoxDecoration(
-                border: Border.all(
-                  color: Colors.amber.withValues(alpha: 0.3),
-                  width: 1,
-                ),
-                borderRadius: BorderRadius.circular(6),
-              ),
-            ),
-          ),
-          // Cover typography
-          Center(
-            child: Padding(
-              padding: const EdgeInsets.symmetric(horizontal: 14),
-              child: Column(
-                mainAxisSize: MainAxisSize.min,
+        Padding(
+          padding: EdgeInsets.fromLTRB(8, topPadding + 4, 8, 16),
+          child: Column(
+            children: [
+              Row(
                 children: [
-                  Text(
-                    'BẢN IN GỐC',
-                    style: GoogleFonts.plusJakartaSans(
-                      fontSize: 8,
-                      fontWeight: FontWeight.w800,
-                      color: Colors.amber.withValues(alpha: 0.8),
-                      letterSpacing: 2,
-                    ),
+                  IconButton(
+                    tooltip: 'Quay lại',
+                    icon: Icon(Icons.arrow_back_rounded, color: ForgeColors.text),
+                    onPressed: () => context.pop(),
                   ),
-                  const SizedBox(height: 8),
-                  Text(
-                    series.title,
-                    textAlign: TextAlign.center,
-                    style: GoogleFonts.newsreader(
-                      fontSize: 18,
-                      fontWeight: FontWeight.w700,
-                      color: Colors.white,
-                    ),
-                  ),
-                  const SizedBox(height: 6),
-                  Text(
-                    series.author,
-                    style: GoogleFonts.plusJakartaSans(
-                      fontSize: 9,
-                      color: Colors.white70,
-                    ),
+                  const Spacer(),
+                  const WalletChip(),
+                  IconButton(
+                    tooltip: 'Danh sách chương',
+                    icon: Icon(Icons.menu_rounded, color: ForgeColors.text),
+                    onPressed: () => _openChapterSheet(series),
                   ),
                 ],
               ),
-            ),
-          ),
-        ],
-      ),
-    );
-  }
-
-  Widget _buildChapterListItem(BuildContext context, SeriesItem series, ChapterItem chapter) {
-    final unlocked = _isChapterUnlocked(chapter);
-    final downloaded = ref.watch(downloadedChaptersProvider).contains(chapter.id);
-    final downloadStatus = ref.watch(chapterDownloadStatusProvider(chapter.id));
-    final downloadProgress = ref.watch(chapterDownloadProgressProvider(chapter.id));
-    final isDownloading = downloadStatus == DownloadStatus.downloading ||
-        downloadStatus == DownloadStatus.extracting;
-
-    return Container(
-      margin: const EdgeInsets.only(bottom: 10),
-      decoration: BoxDecoration(
-        color: AppColors.darkSurface,
-        borderRadius: BorderRadius.circular(12),
-        border: Border.all(color: AppColors.darkBorder),
-      ),
-      child: ListTile(
-        contentPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 4),
-        title: Text(
-          chapter.title,
-          style: GoogleFonts.newsreader(
-            fontSize: 16,
-            fontWeight: FontWeight.w600,
-            color: Colors.white,
-          ),
-        ),
-        subtitle: Row(
-          children: [
-            Text(
-              '${chapter.releaseDate} • ${chapter.pageCount} trang',
-              style: GoogleFonts.plusJakartaSans(
-                fontSize: 11,
-                color: AppColors.darkTextSecondary,
-              ),
-            ),
-            const SizedBox(width: 8),
-            if (chapter.isFree)
-              Container(
-                padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
-                decoration: BoxDecoration(
-                  color: AppColors.mint.withValues(alpha: 0.15),
-                  borderRadius: BorderRadius.circular(4),
-                  border: Border.all(color: AppColors.mint.withValues(alpha: 0.3)),
-                ),
-                child: Text(
-                  'FREE',
-                  style: GoogleFonts.plusJakartaSans(
-                    fontSize: 9,
-                    fontWeight: FontWeight.w800,
-                    color: AppColors.mint,
-                    letterSpacing: 0.5,
-                  ),
-                ),
-              )
-            else if (!unlocked)
-              Container(
-                padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
-                decoration: BoxDecoration(
-                  color: AppColors.primary.withValues(alpha: 0.15),
-                  borderRadius: BorderRadius.circular(4),
-                  border: Border.all(color: AppColors.primary.withValues(alpha: 0.3)),
-                ),
+              const SizedBox(height: 8),
+              Padding(
+                padding: const EdgeInsets.symmetric(horizontal: 8),
                 child: Row(
-                  mainAxisSize: MainAxisSize.min,
+                  crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
-                    const Icon(Icons.lock_rounded, size: 10, color: AppColors.primary),
-                    const SizedBox(width: 3),
-                    Text(
-                      '${chapter.priceCoins > 0 ? chapter.priceCoins : 50} Coins',
-                      style: GoogleFonts.plusJakartaSans(
-                        fontSize: 9,
-                        fontWeight: FontWeight.w800,
-                        color: AppColors.primary,
+                    Container(
+                      width: 118,
+                      height: 160,
+                      decoration: BoxDecoration(
+                        borderRadius: BorderRadius.circular(10),
+                        boxShadow: [
+                          BoxShadow(
+                            color: Colors.black.withValues(alpha: 0.5),
+                            blurRadius: 14,
+                            offset: const Offset(0, 6),
+                          ),
+                        ],
+                      ),
+                      child: SeriesCover(series: series),
+                    ),
+                    const SizedBox(width: 14),
+                    Expanded(
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          Text(
+                            series.title,
+                            maxLines: 3,
+                            overflow: TextOverflow.ellipsis,
+                            style: GoogleFonts.plusJakartaSans(
+                              fontSize: 20,
+                              fontWeight: FontWeight.w800,
+                              color: ForgeColors.text,
+                              height: 1.2,
+                            ),
+                          ),
+                          const SizedBox(height: 8),
+                          _metaLine(
+                            Icons.alternate_email_rounded,
+                            series.author.isEmpty ? 'PanelForge Studio' : series.author,
+                          ),
+                          _metaLine(
+                            series.isCompleted ? Icons.cloud_done_outlined : Icons.cloud_outlined,
+                            series.isCompleted ? 'Hoàn thành' : 'Đang ra',
+                          ),
+                          _metaLine(Icons.format_list_bulleted_rounded, 'Chương ${series.totalChapters}'),
+                          const SizedBox(height: 8),
+                          Wrap(
+                            spacing: 12,
+                            runSpacing: 4,
+                            children: [
+                              _action(Icons.visibility_outlined, formatViews(series.views), null),
+                              _action(
+                                _isFollowing
+                                    ? Icons.notifications_active_rounded
+                                    : Icons.notifications_none_rounded,
+                                _isFollowing ? 'Đang theo dõi' : 'Theo dõi',
+                                _toggleFollow,
+                                active: _isFollowing,
+                              ),
+                              _action(
+                                _isFavorite ? Icons.favorite_rounded : Icons.favorite_border_rounded,
+                                'Yêu thích',
+                                _toggleFavorite,
+                                active: _isFavorite,
+                              ),
+                            ],
+                          ),
+                        ],
                       ),
                     ),
                   ],
                 ),
               ),
-          ],
-        ),
-        trailing: Row(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            if (unlocked) ...[
-              if (isDownloading)
-                Padding(
-                  padding: const EdgeInsets.all(8.0),
-                  child: SizedBox(
-                    width: 20,
-                    height: 20,
-                    child: CircularProgressIndicator(
-                      value: downloadProgress > 0 ? downloadProgress : null,
-                      strokeWidth: 2,
-                      color: AppColors.primary,
-                    ),
-                  ),
-                )
-              else if (downloaded)
-                const Tooltip(
-                  message: 'Đã lưu offline',
-                  child: Padding(
-                    padding: EdgeInsets.all(8.0),
-                    child: Icon(
-                      Icons.check_circle_rounded,
-                      size: 20,
-                      color: AppColors.mint,
-                    ),
-                  ),
-                )
-              else
-                IconButton(
-                  tooltip: 'Tải CBZ Offline',
-                  icon: const Icon(
-                    Icons.download_for_offline_outlined,
-                    size: 20,
-                    color: Colors.white70,
-                  ),
-                  onPressed: () => _downloadChapter(chapter),
-                ),
-              const SizedBox(width: 4),
             ],
-            Icon(
-              unlocked ? Icons.arrow_forward_ios_rounded : Icons.lock_outline_rounded,
-              size: 14,
-              color: unlocked ? AppColors.primary : AppColors.darkTextSecondary,
-            ),
-          ],
+          ),
         ),
-        onTap: () => _onChapterTap(series, chapter),
+      ],
+    );
+  }
+
+  Widget _metaLine(IconData icon, String text) => Padding(
+    padding: const EdgeInsets.only(bottom: 4),
+    child: Row(
+      children: [
+        Icon(icon, size: 15, color: ForgeColors.muted),
+        const SizedBox(width: 6),
+        Expanded(
+          child: Text(
+            text,
+            overflow: TextOverflow.ellipsis,
+            style: GoogleFonts.plusJakartaSans(fontSize: 12.5, color: ForgeColors.textSoft),
+          ),
+        ),
+      ],
+    ),
+  );
+
+  Widget _action(IconData icon, String label, VoidCallback? onTap, {bool active = false}) => InkWell(
+    onTap: onTap,
+    borderRadius: BorderRadius.circular(8),
+    child: Padding(
+      padding: const EdgeInsets.symmetric(vertical: 4),
+      child: Row(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          Icon(icon, size: 16, color: active ? ForgeColors.accent : ForgeColors.text),
+          const SizedBox(width: 4),
+          Text(
+            label,
+            style: GoogleFonts.plusJakartaSans(
+              fontSize: 12,
+              fontWeight: FontWeight.w700,
+              color: active ? ForgeColors.accent : ForgeColors.text,
+            ),
+          ),
+        ],
+      ),
+    ),
+  );
+
+  Widget _buildGenres(SeriesItem series) {
+    final genres = series.genres.where((g) => g.trim().isNotEmpty).toSet();
+    return Padding(
+      padding: const EdgeInsets.fromLTRB(16, 4, 16, 8),
+      child: Wrap(
+        spacing: 8,
+        runSpacing: 8,
+        children: [
+          for (final g in genres)
+            Container(
+              padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
+              decoration: BoxDecoration(color: ForgeColors.chip, borderRadius: BorderRadius.circular(20)),
+              child: Text(
+                genreLabel(g),
+                style: GoogleFonts.plusJakartaSans(fontSize: 12, fontWeight: FontWeight.w600, color: ForgeColors.text),
+              ),
+            ),
+        ],
       ),
     );
   }
+
+  Widget _buildChapterTrigger(SeriesItem series, List<ChapterItem> ascending) {
+    final latest = ascending.isEmpty ? null : ascending.last;
+    return Padding(
+      padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+      child: Material(
+        color: ForgeColors.surface,
+        borderRadius: BorderRadius.circular(12),
+        child: InkWell(
+          onTap: () => _openChapterSheet(series),
+          borderRadius: BorderRadius.circular(12),
+          child: Padding(
+            padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
+            child: Row(
+              children: [
+                Text(
+                  'DS Chương',
+                  style: GoogleFonts.plusJakartaSans(
+                    fontSize: 15,
+                    fontWeight: FontWeight.w800,
+                    color: ForgeColors.text,
+                  ),
+                ),
+                const Spacer(),
+                Text(
+                  latest == null ? 'Chưa có chương' : 'Chương ${latest.number}',
+                  style: GoogleFonts.plusJakartaSans(fontSize: 13, color: ForgeColors.muted),
+                ),
+                const Icon(Icons.chevron_right_rounded, color: ForgeColors.muted),
+              ],
+            ),
+          ),
+        ),
+      ),
+    );
+  }
+
+  Widget _buildSynopsis(SeriesItem series) => Padding(
+    padding: const EdgeInsets.fromLTRB(16, 12, 16, 0),
+    child: Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Text(
+          'Giới Thiệu',
+          style: GoogleFonts.plusJakartaSans(fontSize: 16, fontWeight: FontWeight.w800, color: ForgeColors.text),
+        ),
+        const SizedBox(height: 8),
+        Text(
+          series.fullSynopsis,
+          style: GoogleFonts.plusJakartaSans(fontSize: 14, color: ForgeColors.textSoft, height: 1.6),
+        ),
+      ],
+    ),
+  );
+
+  Widget _buildStickyBar(SeriesItem series, List<ChapterItem> ascending, ChapterItem? lastRead) {
+    final target = lastRead ?? (ascending.isEmpty ? null : ascending.first);
+    return Container(
+      decoration: BoxDecoration(
+        color: ForgeColors.bottomBar,
+        border: Border(top: BorderSide(color: ForgeColors.divider, width: 0.8)),
+      ),
+      child: SafeArea(
+        top: false,
+        child: Padding(
+          padding: const EdgeInsets.fromLTRB(16, 10, 16, 10),
+          child: Row(
+            children: [
+              Expanded(
+                child: Column(
+                  mainAxisSize: MainAxisSize.min,
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text('Đọc Đến', style: GoogleFonts.plusJakartaSans(fontSize: 11, color: ForgeColors.muted)),
+                    const SizedBox(height: 2),
+                    Text(
+                      lastRead != null ? 'Chương ${lastRead.number}' : 'Chương đầu tiên',
+                      overflow: TextOverflow.ellipsis,
+                      style: GoogleFonts.plusJakartaSans(
+                        fontSize: 14,
+                        fontWeight: FontWeight.w800,
+                        color: ForgeColors.text,
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+              ElevatedButton(
+                onPressed: target == null ? null : () => _onChapterTap(series, target),
+                style: ElevatedButton.styleFrom(
+                  backgroundColor: ForgeColors.accent,
+                  foregroundColor: Colors.white,
+                  padding: const EdgeInsets.symmetric(horizontal: 28, vertical: 13),
+                  shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
+                ),
+                child: Text(
+                  lastRead != null ? 'Đọc Tiếp' : 'Đọc Ngay',
+                  style: GoogleFonts.plusJakartaSans(fontWeight: FontWeight.w800, fontSize: 14),
+                ),
+              ),
+              const SizedBox(width: 10),
+              InkWell(
+                onTap: _toggleBookmark,
+                borderRadius: BorderRadius.circular(10),
+                child: Container(
+                  width: 46,
+                  height: 46,
+                  decoration: BoxDecoration(
+                    borderRadius: BorderRadius.circular(10),
+                    border: Border.all(color: ForgeColors.border),
+                  ),
+                  child: Icon(
+                    series.isBookmarked ? Icons.bookmark_rounded : Icons.bookmark_border_rounded,
+                    color: series.isBookmarked ? ForgeColors.accent : ForgeColors.text,
+                  ),
+                ),
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+
+  // ─── Bottom Sheet "DS Chương" ─────────────────────────────────────────────
+
+  void _openChapterSheet(SeriesItem series) {
+    showModalBottomSheet<void>(
+      context: context,
+      isScrollControlled: true,
+      backgroundColor: ForgeColors.navBar,
+      shape: const RoundedRectangleBorder(borderRadius: BorderRadius.vertical(top: Radius.circular(20))),
+      builder: (sheetContext) => SizedBox(
+        height: MediaQuery.of(sheetContext).size.height * 0.85,
+        child: StatefulBuilder(
+          builder: (sheetContext, setSheetState) => Consumer(
+            builder: (sheetContext, sheetRef, _) {
+              // Đọc lại từ state trang để danh sách cập nhật sau khi mở khóa / tải offline.
+              final current = _series ?? series;
+              final chapters = [...current.chapters]
+                ..sort((a, b) => _isNewestFirst ? b.number.compareTo(a.number) : a.number.compareTo(b.number));
+              final lastReadId = PreferencesService.getReadingHistoryFor(current.id)?.chapterId;
+              return Column(
+                children: [
+                  Padding(
+                    padding: const EdgeInsets.fromLTRB(4, 8, 4, 4),
+                    child: Row(
+                      children: [
+                        IconButton(
+                          tooltip: 'Đóng',
+                          icon: Icon(Icons.close_rounded, color: ForgeColors.text),
+                          onPressed: () => Navigator.of(sheetContext).pop(),
+                        ),
+                        Expanded(
+                          child: Text(
+                            'DS Chương',
+                            textAlign: TextAlign.center,
+                            style: GoogleFonts.plusJakartaSans(
+                              fontSize: 16,
+                              fontWeight: FontWeight.w800,
+                              color: ForgeColors.text,
+                            ),
+                          ),
+                        ),
+                        IconButton(
+                          tooltip: _isFollowing ? 'Bỏ theo dõi' : 'Theo dõi',
+                          icon: Icon(
+                            _isFollowing
+                                ? Icons.notifications_active_rounded
+                                : Icons.notifications_none_rounded,
+                            color: _isFollowing ? ForgeColors.accent : ForgeColors.text,
+                          ),
+                          onPressed: () async {
+                            await _toggleFollow();
+                            setSheetState(() {});
+                          },
+                        ),
+                        IconButton(
+                          tooltip: _isNewestFirst ? 'Cũ nhất trước' : 'Mới nhất trước',
+                          icon: Icon(Icons.swap_vert_rounded, color: ForgeColors.text),
+                          onPressed: () {
+                            setState(() => _isNewestFirst = !_isNewestFirst);
+                            setSheetState(() {});
+                          },
+                        ),
+                      ],
+                    ),
+                  ),
+                  Divider(height: 1, color: ForgeColors.divider),
+                  Expanded(
+                    child: chapters.isEmpty
+                        ? const Center(
+                            child: ForgeEmptyState(icon: Icons.menu_book_outlined, message: 'Chưa có chương nào.'),
+                          )
+                        : ListView.separated(
+                            itemCount: chapters.length,
+                            separatorBuilder: (_, _) => Divider(height: 1, color: ForgeColors.divider),
+                            itemBuilder: (_, i) => _buildChapterRow(
+                              sheetRef,
+                              current,
+                              chapters[i],
+                              isLastRead: chapters[i].id == lastReadId,
+                              refreshSheet: () => setSheetState(() {}),
+                            ),
+                          ),
+                  ),
+                ],
+              );
+            },
+          ),
+        ),
+      ),
+    );
+  }
+
+  Widget _buildChapterRow(
+    WidgetRef r,
+    SeriesItem series,
+    ChapterItem chapter, {
+    required bool isLastRead,
+    required VoidCallback refreshSheet,
+  }) {
+    final unlocked = _isUnlockedFor(r, chapter);
+    final downloaded = r.watch(downloadedChaptersProvider).contains(chapter.id);
+    final downloadStatus = r.watch(chapterDownloadStatusProvider(chapter.id));
+    final downloadProgress = r.watch(chapterDownloadProgressProvider(chapter.id));
+    final isDownloading = downloadStatus == DownloadStatus.downloading || downloadStatus == DownloadStatus.extracting;
+    final isVip = r.watch(walletNotifierProvider).asData?.value.isVip ?? PreferencesService.getLocalIsVip();
+    final ent =
+        r.watch(chapterEntitlementsProvider)[chapter.id] ?? PreferencesService.getChapterEntitlement(chapter.id);
+    final isPermanent = isVip || (ent != null ? ent.isPermanent : unlocked);
+    final color = isLastRead ? ForgeColors.accent : ForgeColors.text;
+    final hasTitle = chapter.title.isNotEmpty && !chapter.title.startsWith('Chương');
+
+    Widget statusBadge;
+    if (!chapter.isLocked) {
+      statusBadge = const SizedBox.shrink();
+    } else if (unlocked) {
+      statusBadge = _pill('Đã mở khóa', AppColors.mint);
+    } else {
+      statusBadge = _pill('🔒 ${formatVnd(chapter.priceVnd)}', AppColors.amber);
+    }
+
+    Widget downloadAction;
+    if (!unlocked || !isPermanent) {
+      downloadAction = const SizedBox(width: 40);
+    } else if (isDownloading) {
+      downloadAction = SizedBox(
+        width: 40,
+        child: Center(
+          child: SizedBox(
+            width: 18,
+            height: 18,
+            child: CircularProgressIndicator(
+              value: downloadProgress > 0 ? downloadProgress : null,
+              strokeWidth: 2,
+              color: ForgeColors.accent,
+            ),
+          ),
+        ),
+      );
+    } else if (downloaded) {
+      downloadAction = const SizedBox(
+        width: 40,
+        child: Tooltip(
+          message: 'Đã lưu offline',
+          child: Icon(Icons.check_circle_rounded, size: 20, color: AppColors.mint),
+        ),
+      );
+    } else {
+      downloadAction = IconButton(
+        tooltip: 'Tải CBZ Offline',
+        icon: Icon(Icons.download_for_offline_outlined, size: 20, color: ForgeColors.textSoft),
+        onPressed: () => _downloadChapter(series, chapter),
+      );
+    }
+
+    return InkWell(
+      onTap: () => _onChapterTap(series, chapter, onUnlocked: refreshSheet),
+      child: Padding(
+        padding: const EdgeInsets.fromLTRB(16, 10, 4, 10),
+        child: Row(
+          children: [
+            if (isLastRead) ...[
+              const Icon(Icons.menu_book_rounded, size: 16, color: ForgeColors.accent),
+              const SizedBox(width: 6),
+            ],
+            Expanded(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(
+                    'Chương ${chapter.number}',
+                    style: GoogleFonts.plusJakartaSans(fontSize: 14, fontWeight: FontWeight.w700, color: color),
+                  ),
+                  if (hasTitle)
+                    Text(
+                      chapter.title,
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                      style: GoogleFonts.plusJakartaSans(fontSize: 12, color: ForgeColors.muted),
+                    ),
+                ],
+              ),
+            ),
+            Column(
+              crossAxisAlignment: CrossAxisAlignment.end,
+              children: [
+                Text(chapter.releaseDate, style: GoogleFonts.plusJakartaSans(fontSize: 11.5, color: ForgeColors.muted)),
+                const SizedBox(height: 4),
+                statusBadge,
+              ],
+            ),
+            downloadAction,
+          ],
+        ),
+      ),
+    );
+  }
+
+  Widget _pill(String text, Color color) => Container(
+    padding: const EdgeInsets.symmetric(horizontal: 7, vertical: 2.5),
+    decoration: BoxDecoration(
+      color: color.withValues(alpha: 0.15),
+      borderRadius: BorderRadius.circular(6),
+      border: Border.all(color: color.withValues(alpha: 0.5)),
+    ),
+    child: Text(
+      text,
+      style: GoogleFonts.plusJakartaSans(fontSize: 10.5, fontWeight: FontWeight.w800, color: color),
+    ),
+  );
 }

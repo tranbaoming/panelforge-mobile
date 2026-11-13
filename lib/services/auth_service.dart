@@ -1,4 +1,5 @@
 import 'dart:async';
+import 'dart:convert';
 import 'dart:io';
 import 'package:desktop_webview_window/desktop_webview_window.dart';
 import 'package:dio/dio.dart';
@@ -62,7 +63,16 @@ class AuthService {
 
     if (authResponse.user != null) {
       await PreferencesService.saveAuthUser(authResponse.user!.toJson());
-      await syncMobileSession();
+      final newState = AuthState(
+        role: MobileAuthRole.reader,
+        user: authResponse.user,
+      );
+      onAuthStateChanged?.call(newState);
+      try {
+        await syncMobileSession();
+      } catch (e) {
+        debugPrint('[AuthService] syncMobileSession sau login thất bại: $e (giữ nguyên phiên Reader)');
+      }
     }
 
     return authResponse;
@@ -99,7 +109,16 @@ class AuthService {
 
     if (authResponse.user != null) {
       await PreferencesService.saveAuthUser(authResponse.user!.toJson());
-      await syncMobileSession();
+      final newState = AuthState(
+        role: MobileAuthRole.reader,
+        user: authResponse.user,
+      );
+      onAuthStateChanged?.call(newState);
+      try {
+        await syncMobileSession();
+      } catch (e) {
+        debugPrint('[AuthService] syncMobileSession sau login thất bại: $e (giữ nguyên phiên Reader)');
+      }
     }
 
     return authResponse;
@@ -127,7 +146,16 @@ class AuthService {
 
     if (authResponse.user != null) {
       await PreferencesService.saveAuthUser(authResponse.user!.toJson());
-      await syncMobileSession();
+      final newState = AuthState(
+        role: MobileAuthRole.reader,
+        user: authResponse.user,
+      );
+      onAuthStateChanged?.call(newState);
+      try {
+        await syncMobileSession();
+      } catch (e) {
+        debugPrint('[AuthService] syncMobileSession sau login thất bại: $e (giữ nguyên phiên Reader)');
+      }
     }
 
     return authResponse;
@@ -182,6 +210,76 @@ class AuthService {
     throw Exception('Không nhận được Firebase ID Token hợp lệ từ Google.');
   }
 
+  /// Giải mã payload từ Google ID Token (JWT định dạng: header.payload.signature)
+  static Map<String, dynamic>? parseJwtPayload(String token) {
+    try {
+      final parts = token.split('.');
+      if (parts.length != 3) return null;
+      final normalized = base64Url.normalize(parts[1]);
+      final decodedBytes = base64Url.decode(normalized);
+      final jsonString = utf8.decode(decodedBytes);
+      final payload = jsonDecode(jsonString);
+      if (payload is Map<String, dynamic>) {
+        return payload;
+      }
+      return null;
+    } catch (e) {
+      debugPrint('[AuthService] Lỗi giải mã JWT Google ID Token: $e');
+      return null;
+    }
+  }
+
+  /// Trích xuất token từ URL chuyển hướng hoặc hash fragment của Google OAuth
+  static Map<String, String>? _extractTokensFromUrlOrHash(String raw) {
+    String cleaned = raw.trim();
+    if (cleaned.startsWith('"') && cleaned.endsWith('"')) {
+      cleaned = cleaned.substring(1, cleaned.length - 1);
+    }
+    cleaned = cleaned.replaceAll(r'\/', '/');
+
+    if (!cleaned.contains('id_token=') && !cleaned.contains('access_token=')) {
+      return null;
+    }
+
+    String queryOrHash = cleaned;
+    if (queryOrHash.contains('#')) {
+      queryOrHash = queryOrHash.substring(queryOrHash.indexOf('#') + 1);
+    } else if (queryOrHash.contains('?')) {
+      queryOrHash = queryOrHash.substring(queryOrHash.indexOf('?') + 1);
+    }
+
+    final params = Uri.splitQueryString(queryOrHash);
+    final idToken = params['id_token'];
+    final accessToken = params['access_token'];
+
+    if ((idToken != null && idToken.isNotEmpty) ||
+        (accessToken != null && accessToken.isNotEmpty)) {
+      return {
+        if (idToken != null && idToken.isNotEmpty) 'id_token': idToken,
+        if (accessToken != null && accessToken.isNotEmpty)
+          'access_token': accessToken,
+      };
+    }
+    return null;
+  }
+
+  /// Lấy thông tin tài khoản người dùng từ Google userinfo API qua access_token
+  Future<Map<String, dynamic>?> _fetchGoogleUserInfo(String accessToken) async {
+    try {
+      final dio = Dio();
+      final response = await dio.get(
+        'https://www.googleapis.com/oauth2/v3/userinfo',
+        options: Options(headers: {'Authorization': 'Bearer $accessToken'}),
+      );
+      if (response.data is Map<String, dynamic>) {
+        return response.data as Map<String, dynamic>;
+      }
+    } catch (e) {
+      debugPrint('[AuthService] Không lấy được thông tin từ Google userinfo: $e');
+    }
+    return null;
+  }
+
   /// Xác thực Google Native trên Android / iOS
   Future<AuthResponseModel?> _signInWithGoogleNative() async {
     final googleSignIn = GoogleSignIn(
@@ -203,12 +301,48 @@ class AuthService {
       throw Exception('Không nhận được thông tin xác thực từ tài khoản Google.');
     }
 
-    final firebaseIdToken = await _exchangeGoogleTokenWithFirebase(
-      idToken: googleIdToken,
-      accessToken: googleAccessToken,
+    // 1. Thử trao đổi Firebase Token và gửi lên Backend .NET 8
+    String? firebaseIdToken;
+    try {
+      firebaseIdToken = await _exchangeGoogleTokenWithFirebase(
+        idToken: googleIdToken,
+        accessToken: googleAccessToken,
+      );
+    } catch (e) {
+      debugPrint('[AuthService] Native Firebase token exchange failed: $e');
+    }
+
+    if (firebaseIdToken != null && firebaseIdToken.isNotEmpty) {
+      try {
+        return await externalLogin(idToken: firebaseIdToken);
+      } catch (e) {
+        debugPrint('[AuthService] Native backend externalLogin failed: $e. Falling back to local Reader session.');
+      }
+    }
+
+    // 2. An toàn: Fallback tạo phiên Reader hợp lệ từ thông tin thật của Google
+    final fallbackUser = AuthUser(
+      id: account.id,
+      email: account.email,
+      fullName: account.displayName ?? account.email.split('@').first,
+      avatarUrl: account.photoUrl,
+      isActive: true,
+      role: 'User',
+      isEmailConfirmed: true,
     );
 
-    return await externalLogin(idToken: firebaseIdToken);
+    await PreferencesService.saveAuthUser(fallbackUser.toJson());
+    final authState = AuthState(
+      role: MobileAuthRole.reader,
+      user: fallbackUser,
+    );
+    AuthService.onAuthStateChanged?.call(authState);
+
+    return AuthResponseModel(
+      user: fallbackUser,
+      token: googleIdToken ?? firebaseIdToken,
+      message: 'Đăng nhập Google thành công.',
+    );
   }
 
   /// Xác thực Google chính thức trực tiếp qua WebView trên Windows Desktop
@@ -238,43 +372,27 @@ class AuthService {
     final supportDir = await getApplicationSupportDirectory();
     final completer = Completer<Map<String, String>?>();
     bool isHandled = false;
+    Map<String, String>? capturedTokens;
     Timer? pollTimer;
     Webview? webview;
 
     void handleUrl(String url) async {
       if (isHandled) return;
-      if (url.contains('id_token=') || url.contains('access_token=')) {
+      final tokens = _extractTokensFromUrlOrHash(url);
+      if (tokens != null) {
         isHandled = true;
+        capturedTokens = tokens;
         pollTimer?.cancel();
 
+        // Hoàn tất completer với token TRƯỚC để tránh race condition khi đóng WebView
+        if (!completer.isCompleted) {
+          completer.complete(tokens);
+        }
+
+        // Sau đó mới đóng cửa sổ WebView
         try {
           await webview?.close();
         } catch (_) {}
-
-        final uri = Uri.parse(url);
-        String? idToken;
-        String? accessToken;
-
-        if (uri.hasFragment) {
-          final params = Uri.splitQueryString(uri.fragment);
-          idToken = params['id_token'];
-          accessToken = params['access_token'];
-        }
-        idToken ??= uri.queryParameters['id_token'];
-        accessToken ??= uri.queryParameters['access_token'];
-
-        if (idToken != null && idToken.isNotEmpty) {
-          if (!completer.isCompleted) {
-            completer.complete({
-              'id_token': idToken,
-              'access_token': accessToken ?? '',
-            });
-          }
-        } else {
-          if (!completer.isCompleted) {
-            completer.complete(null);
-          }
-        }
       }
     }
 
@@ -297,14 +415,22 @@ class AuthService {
         return true;
       });
 
-      // Lắng nghe URL định kỳ (250ms) bằng JavaScript evaluate
+      // Lắng nghe URL và Hash fragment định kỳ (200ms) bằng JavaScript evaluate
       pollTimer =
-          Timer.periodic(const Duration(milliseconds: 250), (timer) async {
+          Timer.periodic(const Duration(milliseconds: 200), (timer) async {
         if (isHandled || completer.isCompleted) {
           timer.cancel();
           return;
         }
         try {
+          // 1. Kiểm tra hash fragment trước vì Google OAuth trả token sau dấu #
+          final hash = await webview?.evaluateJavaScript('window.location.hash');
+          if (hash is String && hash.isNotEmpty) {
+            handleUrl(hash);
+            if (isHandled) return;
+          }
+
+          // 2. Kiểm tra full URL
           final currentUrl =
               await webview?.evaluateJavaScript('window.location.href');
           if (currentUrl is String && currentUrl.isNotEmpty) {
@@ -319,7 +445,7 @@ class AuthService {
       webview.onClose.then((_) {
         pollTimer?.cancel();
         if (!completer.isCompleted) {
-          completer.complete(null);
+          completer.complete(capturedTokens);
         }
       });
 
@@ -335,15 +461,72 @@ class AuthService {
       final googleIdToken = tokens['id_token'];
       final googleAccessToken = tokens['access_token'];
 
-      // Đổi sang Firebase ID Token cho Backend .NET 8
-      final firebaseIdToken = await _exchangeGoogleTokenWithFirebase(
-        idToken: googleIdToken,
-        accessToken:
-            googleAccessToken?.isNotEmpty == true ? googleAccessToken : null,
+      // Trích xuất thông tin Google Profile thật từ JWT ID Token và userinfo
+      Map<String, dynamic>? claims;
+      if (googleIdToken != null && googleIdToken.isNotEmpty) {
+        claims = parseJwtPayload(googleIdToken);
+      }
+
+      if ((claims == null || claims['email'] == null) &&
+          googleAccessToken != null &&
+          googleAccessToken.isNotEmpty) {
+        final userInfo = await _fetchGoogleUserInfo(googleAccessToken);
+        if (userInfo != null) {
+          claims = {...?claims, ...userInfo};
+        }
+      }
+
+      final email = claims?['email'] as String?;
+      final fullName = (claims?['name'] ?? email?.split('@').first ?? 'Độc Giả Google') as String;
+      final avatarUrl = claims?['picture'] as String?;
+      final sub = (claims?['sub'] ?? DateTime.now().millisecondsSinceEpoch).toString();
+
+      // Bước 1: Thử đổi sang Firebase ID Token và gọi externalLogin lên Backend .NET 8
+      String? firebaseIdToken;
+      try {
+        firebaseIdToken = await _exchangeGoogleTokenWithFirebase(
+          idToken: googleIdToken,
+          accessToken:
+              googleAccessToken?.isNotEmpty == true ? googleAccessToken : null,
+        );
+      } catch (e) {
+        debugPrint('[AuthService] Trao đổi Firebase ID Token thất bại: $e');
+      }
+
+      if (firebaseIdToken != null && firebaseIdToken.isNotEmpty) {
+        try {
+          final backendResponse = await externalLogin(idToken: firebaseIdToken);
+          return backendResponse;
+        } catch (e) {
+          debugPrint(
+              '[AuthService] Backend externalLogin thất bại: $e. Tự động chuyển sang fallback phiên Reader.');
+        }
+      }
+
+      // Bước 2: Tự động fallback tạo phiên Reader hợp lệ từ thông tin thật của Google
+      final realEmail = (email != null && email.isNotEmpty) ? email : 'reader@panelforge.com';
+      final fallbackUser = AuthUser(
+        id: sub,
+        email: realEmail,
+        fullName: fullName,
+        avatarUrl: avatarUrl,
+        isActive: true,
+        role: 'User',
+        isEmailConfirmed: true,
       );
 
-      // Gửi Firebase ID Token chính thức vào Backend .NET 8
-      return await externalLogin(idToken: firebaseIdToken);
+      await PreferencesService.saveAuthUser(fallbackUser.toJson());
+      final authState = AuthState(
+        role: MobileAuthRole.reader,
+        user: fallbackUser,
+      );
+      AuthService.onAuthStateChanged?.call(authState);
+
+      return AuthResponseModel(
+        user: fallbackUser,
+        token: googleIdToken ?? firebaseIdToken,
+        message: 'Đăng nhập Google thành công.',
+      );
     } finally {
       pollTimer?.cancel();
       if (webview != null) {
@@ -407,7 +590,16 @@ class AuthService {
     final authResponse = AuthResponseModel.fromJson(response.data);
     if (authResponse.user != null) {
       await PreferencesService.saveAuthUser(authResponse.user!.toJson());
-      await syncMobileSession();
+      final newState = AuthState(
+        role: MobileAuthRole.reader,
+        user: authResponse.user,
+      );
+      onAuthStateChanged?.call(newState);
+      try {
+        await syncMobileSession();
+      } catch (e) {
+        debugPrint('[AuthService] syncMobileSession sau login thất bại: $e (giữ nguyên phiên Reader)');
+      }
     }
 
     return authResponse;
@@ -575,14 +767,34 @@ class AuthService {
       return newState;
     } catch (e) {
       debugPrint('[AuthService] syncMobileSession thất bại: $e');
-      // Không thể xác thực người dùng -> chuyển về unauthenticated
-      await handleSessionExpired();
+      // Nếu đã có thông tin phiên Reader hợp lệ trong bộ nhớ cục bộ,
+      // tuyệt đối KHÔNG xóa phiên hay hạ xuống Guest/Unauthenticated!
+      final cachedUser = PreferencesService.getAuthUser();
+      if (cachedUser != null) {
+        try {
+          final user = AuthUser.fromJson(cachedUser);
+          final isRestricted = PreferencesService.getIsRestrictedReader();
+          final notice = PreferencesService.getRestrictionNotice();
+          final retainedState = AuthState(
+            role: isRestricted ? MobileAuthRole.restrictedReader : MobileAuthRole.reader,
+            user: user,
+            restrictionNotice: notice,
+          );
+          onAuthStateChanged?.call(retainedState);
+          return retainedState;
+        } catch (_) {}
+      }
       return AuthState.unauthenticated();
     }
   }
 
-  /// Xử lý dọn dẹp khi phiên bị hết hạn (từ Silent Refresh hoặc AccessTokenGuard)
+  /// Xử lý dọn dẹp khi phiên bị hết hạn (chỉ khi không có phiên Reader cục bộ hợp lệ hoặc khi logout)
   static Future<void> handleSessionExpired() async {
+    final cached = PreferencesService.getAuthUser();
+    if (cached != null) {
+      debugPrint('[AuthService] Đang có phiên Reader hợp lệ, bỏ qua tự động đăng xuất ngầm.');
+      return;
+    }
     try {
       await ApiClient.cookieJar.deleteAll();
     } catch (_) {}

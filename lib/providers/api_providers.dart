@@ -1,3 +1,4 @@
+import 'package:flutter/material.dart' show ThemeMode;
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../models/api_dtos.dart';
 import '../models/auth_models.dart';
@@ -28,7 +29,8 @@ export '../services/monetization_service.dart'
         MonetizationService,
         monetizationServiceProvider,
         walletNotifierProvider,
-        unlockedChaptersProvider;
+        unlockedChaptersProvider,
+        chapterEntitlementsProvider;
 
 final apiClientProvider = Provider<ApiClient>((ref) {
   return ApiClient();
@@ -52,16 +54,32 @@ class ServerConnectedNotifier extends Notifier<bool> {
 }
 
 /// Provider kiểm tra trạng thái kết nối máy chủ thực tế (true khi kết nối thành công)
-final isServerConnectedProvider =
-    NotifierProvider<ServerConnectedNotifier, bool>(ServerConnectedNotifier.new);
+final isServerConnectedProvider = NotifierProvider<ServerConnectedNotifier, bool>(ServerConnectedNotifier.new);
+
+/// Chế độ Sáng / Tối của ứng dụng, lưu trong PreferencesService.
+class AppThemeModeNotifier extends Notifier<ThemeMode> {
+  @override
+  ThemeMode build() => switch (PreferencesService.getAppThemeMode()) {
+    'light' => ThemeMode.light,
+    'system' => ThemeMode.system,
+    _ => ThemeMode.dark,
+  };
+
+  Future<void> setMode(ThemeMode mode) async {
+    state = mode;
+    await PreferencesService.setAppThemeMode(mode.name);
+  }
+}
+
+final appThemeModeProvider = NotifierProvider<AppThemeModeNotifier, ThemeMode>(AppThemeModeNotifier.new);
 
 /// Provider tải danh sách Series phát hành từ backend
-final publicCatalogProvider = FutureProvider.family<PagedCatalogResult, ({String? search, String? genre})>((ref, filter) async {
+final publicCatalogProvider = FutureProvider.family<PagedCatalogResult, ({String? search, String? genre})>((
+  ref,
+  filter,
+) async {
   final catalogService = ref.watch(catalogServiceProvider);
-  return await catalogService.getSeries(
-    search: filter.search,
-    genre: filter.genre,
-  );
+  return await catalogService.getSeries(search: filter.search, genre: filter.genre);
 });
 
 /// Provider tải chi tiết Series và danh sách chương
@@ -77,14 +95,18 @@ final publicChapterReadProvider = FutureProvider.family<PublicChapterReadDto, St
 });
 
 /// Provider nạp gói Comic Package (CBZ / Online / Fallback) cho Reader
-final loadedComicPackageProvider = FutureProvider.family<LoadedComicPackage, ({String chapterId, String? manifestUrl, String? cbzUrl})>((ref, args) async {
-  final cbzService = ref.watch(cbzPackageServiceProvider);
-  return await cbzService.loadPackage(
-    chapterId: args.chapterId,
-    manifestUrl: args.manifestUrl,
-    cbzUrl: args.cbzUrl,
-  );
-});
+final loadedComicPackageProvider =
+    FutureProvider.family<LoadedComicPackage, ({String chapterId, String? manifestUrl, String? cbzUrl})>((
+      ref,
+      args,
+    ) async {
+      final cbzService = ref.watch(cbzPackageServiceProvider);
+      return await cbzService.loadPackage(
+        chapterId: args.chapterId,
+        manifestUrl: args.manifestUrl,
+        cbzUrl: args.cbzUrl,
+      );
+    });
 
 // ─── Authentication & Session Providers ─────────────────────────────────────
 final authServiceProvider = Provider<AuthService>((ref) {
@@ -133,5 +155,3 @@ class AuthNotifier extends Notifier<AuthState> {
 }
 
 final authStateProvider = NotifierProvider<AuthNotifier, AuthState>(AuthNotifier.new);
-
-

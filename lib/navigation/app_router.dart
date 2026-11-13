@@ -3,7 +3,10 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 import '../providers/api_providers.dart';
 import '../screens/auth/login_page.dart';
+import '../screens/explore/browse_page.dart';
 import '../screens/explore/explore_page.dart';
+import '../screens/profile/activity_page.dart';
+import '../screens/profile/profile_page.dart';
 import '../screens/explore/series_detail_page.dart';
 import '../screens/reader/comic_reader_page.dart';
 import '../screens/review/review_canvas_page.dart';
@@ -15,6 +18,9 @@ import 'scaffold_with_nav_bar.dart';
 final GlobalKey<NavigatorState> _rootNavigatorKey = GlobalKey<NavigatorState>();
 final GlobalKey<NavigatorState> _exploreNavigatorKey = GlobalKey<NavigatorState>();
 final GlobalKey<NavigatorState> _reviewNavigatorKey = GlobalKey<NavigatorState>();
+final GlobalKey<NavigatorState> _browseNavigatorKey = GlobalKey<NavigatorState>();
+final GlobalKey<NavigatorState> _searchNavigatorKey = GlobalKey<NavigatorState>();
+final GlobalKey<NavigatorState> _profileNavigatorKey = GlobalKey<NavigatorState>();
 
 /// Listenable hỗ trợ GoRouter tự động re-evaluate redirect khi AuthState thay đổi
 class AuthRouterListenable extends ChangeNotifier {
@@ -52,11 +58,7 @@ final appRouterProvider = Provider<GoRouter>((ref) {
     },
     routes: [
       // Màn hình Đăng nhập độc lập (Không có Bottom Navigation Bar)
-      GoRoute(
-        parentNavigatorKey: _rootNavigatorKey,
-        path: '/login',
-        builder: (context, state) => const LoginPage(),
-      ),
+      GoRoute(parentNavigatorKey: _rootNavigatorKey, path: '/login', builder: (context, state) => const LoginPage()),
 
       // Bottom Navigation Stateful Shell Route
       StatefulShellRoute.indexedStack(
@@ -67,26 +69,37 @@ final appRouterProvider = Provider<GoRouter>((ref) {
           // Tab 1: Khám Phá (Explore)
           StatefulShellBranch(
             navigatorKey: _exploreNavigatorKey,
-            routes: [
-              GoRoute(
-                path: '/',
-                builder: (context, state) => const ExplorePage(),
-              ),
-            ],
+            routes: [GoRoute(path: '/', builder: (context, state) => const ExplorePage())],
           ),
 
-          // Tab 2: Mở Review & Cộng Tác (Review Hub)
+          // Tab 2: Khám phá / Danh mục
+          StatefulShellBranch(
+            navigatorKey: _browseNavigatorKey,
+            routes: [GoRoute(path: '/explore', builder: (context, state) => const BrowsePage())],
+          ),
+
+          // Tab 3: Tìm kiếm
+          StatefulShellBranch(
+            navigatorKey: _searchNavigatorKey,
+            routes: [GoRoute(path: '/search', builder: (context, state) => const BrowsePage(searchMode: true))],
+          ),
+
+          // Tab 4: Tài khoản & Ví
+          StatefulShellBranch(
+            navigatorKey: _profileNavigatorKey,
+            routes: [GoRoute(path: '/profile', builder: (context, state) => const ProfilePage())],
+          ),
+
+          // Tab 5: Thông báo / Hoạt động
           StatefulShellBranch(
             navigatorKey: _reviewNavigatorKey,
-            routes: [
-              GoRoute(
-                path: '/review',
-                builder: (context, state) => const ReviewHubPage(),
-              ),
-            ],
+            routes: [GoRoute(path: '/activity', builder: (context, state) => const ActivityPage())],
           ),
         ],
       ),
+
+      // Trung tâm Review bản thảo (mã REV-...) — mở từ màn Cá nhân / Thông báo.
+      GoRoute(parentNavigatorKey: _rootNavigatorKey, path: '/review', builder: (context, state) => const ReviewHubPage()),
 
       // Pushable Sub-routes on Root Navigator:
       // 1. Series Detail Page: /series/:id
@@ -106,10 +119,7 @@ final appRouterProvider = Provider<GoRouter>((ref) {
         builder: (context, state) {
           final seriesId = state.pathParameters['id'] ?? '';
           final chapterId = state.uri.queryParameters['chapterId'];
-          return ComicReaderPage(
-            seriesId: seriesId,
-            chapterId: chapterId,
-          );
+          return ComicReaderPage(seriesId: seriesId, chapterId: chapterId);
         },
       ),
 
@@ -151,13 +161,7 @@ final GoRouter appRouter = GoRouter(
   navigatorKey: _rootNavigatorKey,
   initialLocation: '/login',
   routes: [
-    GoRoute(
-      path: '/login',
-      builder: (context, state) => const LoginPage(),
-    ),
-    GoRoute(
-      path: '/',
-      builder: (context, state) => const ExplorePage(),
-    ),
+    GoRoute(path: '/login', builder: (context, state) => const LoginPage()),
+    GoRoute(path: '/', builder: (context, state) => const ExplorePage()),
   ],
 );

@@ -9,6 +9,7 @@ import '../../services/preview_service.dart';
 import '../../theme/app_theme.dart';
 import '../../widgets/logout_dialog.dart';
 import '../../widgets/qr_scanner_dialog.dart';
+import '../../utils/review_token.dart';
 
 class ReviewHubPage extends ConsumerStatefulWidget {
   const ReviewHubPage({super.key});
@@ -37,19 +38,12 @@ class _ReviewHubPageState extends ConsumerState<ReviewHubPage> {
   void _openReviewWithToken(String token) async {
     final clean = token.trim();
     if (clean.isEmpty) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('Vui lòng nhập hoặc quét mã token')),
-      );
+      ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Vui lòng nhập hoặc quét mã token')));
       return;
     }
 
-    // Trích xuất token nếu người dùng dán link dạng http://.../preview/{token}
-    String actualToken = clean;
-    if (actualToken.contains('/preview/')) {
-      actualToken = actualToken.split('/preview/').last.split('?').first;
-    } else if (actualToken.contains('/review/')) {
-      actualToken = actualToken.split('/review/').last.split('?').first;
-    }
+    // Trích xuất token nếu người dùng dán link dạng http://.../review/invite/{token} hoặc .../preview/{token}
+    final actualToken = extractReviewToken(clean);
 
     setState(() => _isValidating = true);
 
@@ -74,9 +68,9 @@ class _ReviewHubPageState extends ConsumerState<ReviewHubPage> {
       if (e.statusCode == 403 || e.statusCode == 404) {
         context.push('/review/expired/$actualToken');
       } else {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text('Không thể xác thực bản thảo: ${e.message}')),
-        );
+        ScaffoldMessenger.of(
+          context,
+        ).showSnackBar(SnackBar(content: Text('Không thể xác thực bản thảo: ${e.message}')));
       }
     } catch (e) {
       if (!mounted) return;
@@ -92,13 +86,11 @@ class _ReviewHubPageState extends ConsumerState<ReviewHubPage> {
     if (!mounted) return;
     if (data?.text != null && data!.text!.trim().isNotEmpty) {
       _linkController.text = data.text!.trim();
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('Đã dán liên kết từ bộ nhớ tạm!')),
-      );
+      ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Đã dán liên kết từ bộ nhớ tạm!')));
     } else {
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('Bộ nhớ tạm trống hoặc không có văn bản')),
-      );
+      ScaffoldMessenger.of(
+        context,
+      ).showSnackBar(const SnackBar(content: Text('Bộ nhớ tạm trống hoặc không có văn bản')));
     }
   }
 
@@ -187,11 +179,7 @@ class _ReviewHubPageState extends ConsumerState<ReviewHubPage> {
                     const SizedBox(height: 4),
                     Text(
                       'Nhập link mời bí mật hoặc quét mã token để mở canvas bản thảo có watermark chìm.',
-                      style: GoogleFonts.plusJakartaSans(
-                        fontSize: 13,
-                        color: AppColors.darkTextSecondary,
-                        height: 1.4,
-                      ),
+                      style: GoogleFonts.plusJakartaSans(fontSize: 13, color: AppColors.darkTextSecondary, height: 1.4),
                     ),
                   ],
                 ),
@@ -209,11 +197,7 @@ class _ReviewHubPageState extends ConsumerState<ReviewHubPage> {
                     borderRadius: BorderRadius.circular(18),
                     border: Border.all(color: AppColors.darkBorder),
                     boxShadow: [
-                      BoxShadow(
-                        color: Colors.black.withValues(alpha: 0.3),
-                        blurRadius: 16,
-                        offset: const Offset(0, 6),
-                      ),
+                      BoxShadow(color: Colors.black.withValues(alpha: 0.3), blurRadius: 16, offset: const Offset(0, 6)),
                     ],
                   ),
                   child: Column(
@@ -236,10 +220,7 @@ class _ReviewHubPageState extends ConsumerState<ReviewHubPage> {
                           Expanded(
                             child: TextField(
                               controller: _linkController,
-                              style: GoogleFonts.plusJakartaSans(
-                                fontSize: 13,
-                                color: Colors.white,
-                              ),
+                              style: GoogleFonts.plusJakartaSans(fontSize: 13, color: Colors.white),
                               decoration: InputDecoration(
                                 hintText: 'Dán liên kết hoặc mã token (REV-...)',
                                 hintStyle: GoogleFonts.plusJakartaSans(
@@ -267,9 +248,7 @@ class _ReviewHubPageState extends ConsumerState<ReviewHubPage> {
                               backgroundColor: AppColors.primary,
                               foregroundColor: Colors.white,
                               padding: const EdgeInsets.all(14),
-                              shape: RoundedRectangleBorder(
-                                borderRadius: BorderRadius.circular(12),
-                              ),
+                              shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
                             ),
                           ),
                         ],
@@ -322,11 +301,7 @@ class _ReviewHubPageState extends ConsumerState<ReviewHubPage> {
                   children: [
                     Text(
                       'Bản Thảo Đã Mở Gần Đây',
-                      style: GoogleFonts.newsreader(
-                        fontSize: 20,
-                        fontWeight: FontWeight.w700,
-                        color: Colors.white,
-                      ),
+                      style: GoogleFonts.newsreader(fontSize: 20, fontWeight: FontWeight.w700, color: Colors.white),
                     ),
                     Text(
                       '${_recentTokens.length} mã token',
@@ -369,10 +344,7 @@ class _ReviewHubPageState extends ConsumerState<ReviewHubPage> {
                         Text(
                           'Hãy dán đường link hoặc quét mã QR do Producer gửi để bắt đầu thẩm định bản vẽ.',
                           textAlign: TextAlign.center,
-                          style: GoogleFonts.plusJakartaSans(
-                            fontSize: 12,
-                            color: AppColors.darkTextSecondary,
-                          ),
+                          style: GoogleFonts.plusJakartaSans(fontSize: 12, color: AppColors.darkTextSecondary),
                         ),
                       ],
                     ),
@@ -383,13 +355,10 @@ class _ReviewHubPageState extends ConsumerState<ReviewHubPage> {
               SliverPadding(
                 padding: const EdgeInsets.symmetric(horizontal: 20),
                 sliver: SliverList(
-                  delegate: SliverChildBuilderDelegate(
-                    (context, index) {
-                      final token = _recentTokens[index];
-                      return _buildRecentTokenCard(context, token);
-                    },
-                    childCount: _recentTokens.length,
-                  ),
+                  delegate: SliverChildBuilderDelegate((context, index) {
+                    final token = _recentTokens[index];
+                    return _buildRecentTokenCard(context, token);
+                  }, childCount: _recentTokens.length),
                 ),
               ),
 
@@ -429,10 +398,7 @@ class _ReviewHubPageState extends ConsumerState<ReviewHubPage> {
         ),
         subtitle: Text(
           'Nhấn để kết nối và mở lại bản thảo',
-          style: GoogleFonts.plusJakartaSans(
-            fontSize: 11,
-            color: AppColors.darkTextSecondary,
-          ),
+          style: GoogleFonts.plusJakartaSans(fontSize: 11, color: AppColors.darkTextSecondary),
         ),
         trailing: Row(
           mainAxisSize: MainAxisSize.min,
