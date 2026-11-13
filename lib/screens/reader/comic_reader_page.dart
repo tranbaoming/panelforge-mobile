@@ -12,11 +12,13 @@ import '../../services/catalog_service.dart';
 import '../../services/preferences_service.dart';
 import '../../services/screen_security_service.dart';
 import '../../theme/app_theme.dart';
+import '../../widgets/edition_language_menu.dart';
 import '../../widgets/interactive_scrubber.dart';
 import '../../widgets/reading_mode_switcher.dart';
 import '../../widgets/security_blur_shield.dart';
 import '../../widgets/text_region_detail_sheet.dart';
 import '../../widgets/unlock_chapter_bottom_sheet.dart';
+import '../../widgets/vertical_page_slider.dart';
 import '../../widgets/wallet_topup_dialog.dart';
 
 class ComicReaderPage extends ConsumerStatefulWidget {
@@ -37,6 +39,12 @@ class _ComicReaderPageState extends ConsumerState<ComicReaderPage> with WidgetsB
   ChapterItem? _currentChapter;
   LoadedComicPackage? _loadedPackage;
   String? _selectedLanguage;
+
+  /// Bản ngôn ngữ độc giả muốn đọc (lưu trong Preferences) và bản thực sự đang đọc của chương hiện tại
+  /// (rơi về bản gốc vi nếu chương chưa phát hành bản đó). Mua theo từng ngôn ngữ.
+  String _preferredLanguage = PreferencesService.getContentLanguage();
+  String _activeLanguage = 'vi';
+  List<ChapterLanguageOption> _chapterLanguages = const [];
   bool _isOfflinePackage = false;
   bool _isLoading = true;
   String? _errorMessage;
@@ -183,7 +191,7 @@ class _ComicReaderPageState extends ConsumerState<ComicReaderPage> with WidgetsB
     });
 
     try {
-      final seriesDetail = await CatalogService().getSeriesDetail(widget.seriesId);
+      final seriesDetail = await CatalogService().getSeriesDetail(widget.seriesId, lang: _preferredLanguage);
       final series = SeriesItem.fromPublicDetailDto(seriesDetail);
 
       final chId = widget.chapterId ?? (series.chapters.isNotEmpty ? series.chapters.first.id : null);
@@ -197,6 +205,10 @@ class _ComicReaderPageState extends ConsumerState<ComicReaderPage> with WidgetsB
         }
         return;
       }
+
+      _applyChapterLanguages(
+        seriesDetail.chapters.where((c) => c.id == chId).map((c) => c.languages).firstOrNull ?? const [],
+      );
 
       // Tìm chapter trong danh sách của series nếu có
       ChapterItem targetChapter = series.chapters.firstWhere(
@@ -225,6 +237,54 @@ class _ComicReaderPageState extends ConsumerState<ComicReaderPage> with WidgetsB
           _errorMessage = 'Không thể tải nội dung chương truyện. Vui lòng kiểm tra lại kết nối mạng.';
         });
       }
+    }
+  }
+
+  /// Trang ngoài phần xem trước: mở sheet mở khóa cả chương (Ví / VietQR / VIP);
+  /// mua xong tải lại chương để server trả ảnh mọi trang.
+  void _showUnlockChapterSheet(ComicPageData page) {
+    final chapter = _currentChapter;
+    if (chapter == null || _isScreenLocked) return;
+    UnlockChapterBottomSheet.show(
+      context,
+      chapter: chapter,
+      series: _series,
+      language: _activeLanguage,
+      onUnlocked: _reloadUnlockedPages,
+    );
+  }
+
+  /// Ghi nhận các bản ngôn ngữ của chương; bản ưu tiên chưa phát hành thì đọc bản gốc.
+  void _applyChapterLanguages(List<ChapterLanguageOption> options) {
+    _chapterLanguages = options;
+    _activeLanguage = options.any((o) => o.language == _preferredLanguage) ? _preferredLanguage : 'vi';
+  }
+
+  /// Độc giả đổi bản ngôn ngữ: lưu lựa chọn và tải lại (giá / trạng thái mở khóa theo bản mới).
+  Future<void> _changeEdition(String language) async {
+    if (language == _activeLanguage) return;
+    await PreferencesService.setContentLanguage(language);
+    if (!mounted) return;
+    setState(() => _preferredLanguage = language);
+    await _loadData();
+  }
+
+  Future<void> _reloadUnlockedPages() async {
+    final chapter = _currentChapter;
+    if (chapter == null) return;
+    final keepPage = _currentPage;
+    try {
+      final readDto = await CatalogService().readChapter(chapter.id, lang: _activeLanguage);
+      if (!mounted) return;
+      setState(() => _currentChapter = ChapterItem.fromPublicReadDto(readDto));
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        if (mounted) _readerSwitcherKey.currentState?.jumpToPage(keepPage);
+      });
+    } catch (e) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(
+        context,
+      ).showSnackBar(SnackBar(content: Text(e is ApiException ? e.message : 'Không tải lại được trang vừa mở khóa.')));
     }
   }
 
@@ -262,7 +322,16 @@ class _ComicReaderPageState extends ConsumerState<ComicReaderPage> with WidgetsB
         currentChapter = targetChapter.copyWith(pageCount: offlinePages.length, pages: offlinePages);
       } else {
         // Nạp qua Catalog API
-        final readDto = await CatalogService().readChapter(chId);
+        PublicChapterReadDto readDto;
+        try {
+          readDto = await CatalogService().readChapter(chId, lang: _activeLanguage);
+        } on ApiException catch (e) {
+          // Chương này chưa phát hành bản ngôn ngữ đang chọn → đọc bản gốc.
+          if (e.statusCode != 404 || _activeLanguage == 'vi') rethrow;
+          _activeLanguage = 'vi';
+          readDto = await CatalogService().readChapter(chId);
+        }
+        _applyChapterLanguages(readDto.languages);
         currentChapter = ChapterItem.fromPublicReadDto(readDto);
 
         if (readDto.readingDirection == ApiReadingDirection.rightToLeft || series.format == ComicFormat.manga) {
@@ -299,12 +368,12 @@ class _ComicReaderPageState extends ConsumerState<ComicReaderPage> with WidgetsB
           ),
         );
         // Lượt xem thật trên catalog; lỗi mạng không ảnh hưởng việc đọc.
-        CatalogService().recordChapterView(currentChapter.id).catchError((Object e) {
+        CatalogService().recordChapterView(currentChapter.id, lang: _activeLanguage).catchError((Object e) {
           debugPrint('[ChapterView] $e');
         });
 
         // Tiêu hao lượt xem nếu là tập thuê có giới hạn số lần xem
-        if (!currentChapter.isFree) {
+        if (!currentChapter.isFree && currentChapter.isUnlocked) {
           WidgetsBinding.instance.addPostFrameCallback((_) async {
             if (!mounted) return;
             final consumeResult = await ref.read(walletNotifierProvider.notifier).consumeChapterView(currentChapter.id);
@@ -379,18 +448,7 @@ class _ComicReaderPageState extends ConsumerState<ComicReaderPage> with WidgetsB
   Future<void> _onSelectChapter(ChapterItem chapter) async {
     Navigator.of(context).pop(); // Close drawer
 
-    if (!_isChapterUnlocked(chapter)) {
-      UnlockChapterBottomSheet.show(
-        context,
-        chapter: chapter,
-        series: _series,
-        onUnlocked: () {
-          _loadChapterContent(_series!, chapter);
-        },
-      );
-      return;
-    }
-
+    // Chương trả phí chưa mua vẫn mở được: đọc trang xem trước, trang khác mời mở khóa cả chương.
     setState(() {
       _isLoading = true;
     });
@@ -469,8 +527,10 @@ class _ComicReaderPageState extends ConsumerState<ComicReaderPage> with WidgetsB
     final series = _series!;
     final currentChapter = _currentChapter!;
 
-    // NẾU CHƯƠNG ĐANG BỊ KHÓA -> HIỂN THỊ PAYWALL GIAO DIỆN DARK OBSIDIAN
-    if (_lockedByServer || !_isChapterUnlocked(currentChapter)) {
+    // Chương trả phí chưa mua: đọc trang xem trước, trang khác hiện ô khóa (mở khóa cả chương).
+    // Chỉ hiện paywall toàn màn hình khi server từ chối hẳn hoặc chương không có trang nào xem được.
+    final hasViewablePage = currentChapter.pages.any((p) => !p.isPaywalled);
+    if (_lockedByServer || (!_isChapterUnlocked(currentChapter) && !hasViewablePage)) {
       return _buildPaywallView(series, currentChapter);
     }
 
@@ -485,30 +545,42 @@ class _ComicReaderPageState extends ConsumerState<ComicReaderPage> with WidgetsB
       body: Stack(
         children: [
           // FULL-BLEED IMMERSIVE READING AREA WITH 3 MODES (LTR, RTL, WEBTOON)
+          // Bấm đè ở mép phải → thanh trượt trang dọc hiện ra để tua; bình thường ẩn, lướt như cũ.
           Positioned.fill(
-            child: ReadingModeSwitcher(
-              key: _readerSwitcherKey,
-              chapter: currentChapter,
-              mode: _readingMode,
-              themeMode: _themeMode,
-              initialPage: _currentPage,
-              package: _loadedPackage,
-              selectedLanguage: _selectedLanguage,
-              isGuidedPanelMode: _isGuidedPanelMode,
-              webtoonTileSpacing: _webtoonTileSpacing,
-              onRegionTap: (region) {
-                if (_isScreenLocked) return;
-                TextRegionDetailSheet.show(
-                  context,
-                  region: region,
-                  activeLanguage: _selectedLanguage ?? 'vi',
-                  package: _loadedPackage,
-                );
-              },
-              onPageChanged: (newPage) {
-                setState(() => _currentPage = newPage);
-              },
-              onTapScreen: _toggleHud,
+            child: VerticalPageScrubber(
+              currentPage: _currentPage,
+              totalPages: currentChapter.pages.isEmpty ? 1 : currentChapter.pages.length,
+              enabled: !_isScreenLocked,
+              trackMargin: EdgeInsets.only(
+                top: MediaQuery.of(context).padding.top + 90,
+                bottom: MediaQuery.of(context).padding.bottom + 110,
+              ),
+              onPageSelected: (page) => _readerSwitcherKey.currentState?.jumpToPage(page),
+              child: ReadingModeSwitcher(
+                key: _readerSwitcherKey,
+                chapter: currentChapter,
+                mode: _readingMode,
+                themeMode: _themeMode,
+                initialPage: _currentPage,
+                package: _loadedPackage,
+                selectedLanguage: _selectedLanguage,
+                isGuidedPanelMode: _isGuidedPanelMode,
+                webtoonTileSpacing: _webtoonTileSpacing,
+                onRegionTap: (region) {
+                  if (_isScreenLocked) return;
+                  TextRegionDetailSheet.show(
+                    context,
+                    region: region,
+                    activeLanguage: _selectedLanguage ?? 'vi',
+                    package: _loadedPackage,
+                  );
+                },
+                onPageChanged: (newPage) {
+                  setState(() => _currentPage = newPage);
+                },
+                onTapScreen: _toggleHud,
+                onUnlockPage: _isOfflinePackage ? null : _showUnlockChapterSheet,
+              ),
             ),
           ),
 
@@ -584,6 +656,17 @@ class _ComicReaderPageState extends ConsumerState<ComicReaderPage> with WidgetsB
                       ],
                     ),
                   ),
+
+                  // Bản phát hành theo ngôn ngữ (ảnh trang riêng, mua theo từng ngôn ngữ)
+                  if (_chapterLanguages.length > 1 && !_isOfflinePackage)
+                    Padding(
+                      padding: const EdgeInsets.only(right: 6),
+                      child: EditionLanguageMenu(
+                        current: _activeLanguage,
+                        options: _chapterLanguages,
+                        onSelected: _changeEdition,
+                      ),
+                    ),
 
                   // Language Switcher (Dịch đa ngôn ngữ nếu có trong Comic Package)
                   if (_loadedPackage != null && _loadedPackage!.availableLanguages.isNotEmpty)
@@ -1106,6 +1189,7 @@ class _ComicReaderPageState extends ConsumerState<ComicReaderPage> with WidgetsB
                           context,
                           chapter: currentChapter,
                           series: series,
+                          language: _activeLanguage,
                           onUnlocked: () {
                             setState(() => _lockedByServer = false);
                             _loadChapterContent(series, currentChapter);

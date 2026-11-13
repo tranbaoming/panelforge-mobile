@@ -57,14 +57,42 @@ class ComicPageData {
   final String? imageUrl;
   final List<ComicPanelData> panels;
 
-  const ComicPageData({required this.pageNumber, required this.title, this.imageUrl, this.panels = const []});
+  /// Id trang trên server (null với trang offline / dữ liệu mẫu).
+  final String? pageId;
+
+  /// Trang nằm sau paywall của chương trả phí (không phải trang xem trước).
+  final bool isLocked;
+
+  /// Người đọc đã có quyền xem trang (xem trước / đã mua chương / VIP). Khi false [imageUrl] luôn null.
+  final bool isUnlocked;
+
+  /// Trang xem trước của chương trả phí.
+  final bool isPreview;
+
+  const ComicPageData({
+    required this.pageNumber,
+    required this.title,
+    this.imageUrl,
+    this.panels = const [],
+    this.pageId,
+    this.isLocked = false,
+    this.isUnlocked = true,
+    this.isPreview = false,
+  });
+
+  /// Trang đang bị khóa với người đọc hiện tại → hiển thị làm mờ + nút mở khóa chương.
+  bool get isPaywalled => isLocked && !isUnlocked;
 
   factory ComicPageData.fromPublicPage(PublicPageDto dto) {
     return ComicPageData(
       pageNumber: dto.pageNumber,
       title: 'Trang ${dto.pageNumber}',
-      imageUrl: dto.fullImageUrl,
+      imageUrl: dto.isPaywalled ? null : dto.fullImageUrl,
       panels: const [],
+      pageId: dto.id,
+      isLocked: dto.isLocked,
+      isUnlocked: dto.isUnlocked,
+      isPreview: dto.isPreview,
     );
   }
 }

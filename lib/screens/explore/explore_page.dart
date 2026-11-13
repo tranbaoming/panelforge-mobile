@@ -5,6 +5,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 import 'package:google_fonts/google_fonts.dart';
 import '../../models/comic_model.dart';
+import '../../navigation/read_guard.dart';
 import '../../providers/api_providers.dart';
 import '../../services/catalog_service.dart';
 import '../../services/preferences_service.dart';
@@ -104,7 +105,11 @@ class _ExplorePageState extends ConsumerState<ExplorePage> {
       case 'week':
         _openGrid('Top Tuần', _topBy((s) => s.viewsLast7Days), emptyMessage: 'Chưa có lượt đọc nào trong 7 ngày qua.');
       case 'month':
-        _openGrid('Top Tháng', _topBy((s) => s.viewsLast30Days), emptyMessage: 'Chưa có lượt đọc nào trong 30 ngày qua.');
+        _openGrid(
+          'Top Tháng',
+          _topBy((s) => s.viewsLast30Days),
+          emptyMessage: 'Chưa có lượt đọc nào trong 30 ngày qua.',
+        );
       case 'random':
         if (_allSeries.isEmpty) return;
         _openSeries(_allSeries[_random.nextInt(_allSeries.length)]);
@@ -182,21 +187,7 @@ class _ExplorePageState extends ConsumerState<ExplorePage> {
         children: [
           const ForgeBrandLogo(),
           const Spacer(),
-          if (authState.isGuest)
-            OutlinedButton.icon(
-              onPressed: () => context.push('/login'),
-              icon: const Icon(Icons.login_rounded, size: 16),
-              label: const Text('Đăng nhập'),
-              style: OutlinedButton.styleFrom(
-                foregroundColor: ForgeColors.accent,
-                side: const BorderSide(color: ForgeColors.accent),
-                padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
-                visualDensity: VisualDensity.compact,
-              ),
-            )
-          else
-            const WalletChip(isServerConnected: true),
-          const ThemeToggleButton(),
+          if (authState.isAuthenticated) const WalletChip(isServerConnected: true),
         ],
       ),
     );
@@ -262,7 +253,7 @@ class _ExplorePageState extends ConsumerState<ExplorePage> {
                         width: double.infinity,
                         child: OutlinedButton(
                           onPressed: () => entry != null
-                              ? context.push('/reader/${target.id}?chapterId=${entry.chapterId}')
+                              ? openReaderGuarded(context, ref, target.id, entry.chapterId, series: target)
                               : _openSeries(target),
                           style: OutlinedButton.styleFrom(
                             foregroundColor: ForgeColors.text,

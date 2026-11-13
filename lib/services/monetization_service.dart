@@ -30,11 +30,15 @@ class MonetizationService {
   }
 
   /// `POST /api/wallet/unlock-chapter` — mở khóa vĩnh viễn bằng số dư Ví (hoặc miễn phí nếu VIP).
-  /// Giá trừ do server lấy từ cấu hình chương của Producer.
-  Future<UnlockChapterResponse> unlockChapterWithWallet({required String chapterId, String? seriesId}) async {
+  /// Giá trừ do server lấy từ cấu hình chương trên web.
+  Future<UnlockChapterResponse> unlockChapterWithWallet({
+    required String chapterId,
+    String? seriesId,
+    String? language,
+  }) async {
     final response = await _client.post(
       '/api/wallet/unlock-chapter',
-      data: UnlockChapterRequest(chapterId: chapterId, seriesId: seriesId).toJson(),
+      data: UnlockChapterRequest(chapterId: chapterId, seriesId: seriesId, language: language).toJson(),
     );
     final resp = UnlockChapterResponse.fromJson(response.data as Map<String, dynamic>);
     if (!resp.success) {
@@ -56,7 +60,7 @@ class MonetizationService {
     return resp;
   }
 
-  /// `POST /api/wallet/topup` — tạo đơn VietQR (Pending) kèm ngữ cảnh để Producer thấy đúng Studio.
+  /// `POST /api/wallet/topup` — tạo đơn VietQR (Pending) kèm ngữ cảnh để bên duyệt trên web thấy đúng Studio.
   ///
   /// - [PaymentPurpose.topup]: nạp [amountVnd] vào Ví.
   /// - [PaymentPurpose.chapterUnlock]: trả trực tiếp để mở [chapterId] (giá do server lấy từ chương).
@@ -68,6 +72,7 @@ class MonetizationService {
     String? seriesId,
     String? chapterId,
     String? vipPlan,
+    String? language,
   }) async {
     final response = await _client.post(
       '/api/wallet/topup',
@@ -78,6 +83,7 @@ class MonetizationService {
         seriesId: seriesId,
         chapterId: chapterId,
         vipPlan: vipPlan,
+        language: language,
       ).toJson(),
     );
     final order = TopupResponse.fromJson(response.data as Map<String, dynamic>);
@@ -87,7 +93,7 @@ class MonetizationService {
     return order;
   }
 
-  /// `GET /api/wallet/transactions/{orderCode}/status` — kiểm tra đơn đã được Producer duyệt chưa.
+  /// `GET /api/wallet/transactions/{orderCode}/status` — kiểm tra đơn đã được duyệt trên web chưa.
   Future<TransactionStatusDto> getTransactionStatus(String orderCode) async {
     final response = await _client.get('/api/wallet/transactions/${Uri.encodeComponent(orderCode)}/status');
     return TransactionStatusDto.fromJson(response.data as Map<String, dynamic>);
@@ -146,7 +152,7 @@ class WalletNotifier extends Notifier<AsyncValue<UserWalletDto>> {
     }
   }
 
-  /// Làm mới Ví (dùng sau khi Producer duyệt đơn, đăng nhập lại, kéo để làm mới...).
+  /// Làm mới Ví (dùng sau khi đơn được duyệt trên web, đăng nhập lại, kéo để làm mới...).
   /// [silent] = true giữ nguyên dữ liệu đang hiển thị trong lúc tải.
   Future<void> refresh({bool silent = false}) async {
     if (!silent || state.asData == null) state = const AsyncLoading();
@@ -154,8 +160,12 @@ class WalletNotifier extends Notifier<AsyncValue<UserWalletDto>> {
   }
 
   /// Mở khóa chương bằng số dư Ví (hoặc VIP).
-  Future<UnlockChapterResponse> unlockChapter(String chapterId, {String? seriesId}) async {
-    final response = await _service.unlockChapterWithWallet(chapterId: chapterId, seriesId: seriesId);
+  Future<UnlockChapterResponse> unlockChapter(String chapterId, {String? seriesId, String? language}) async {
+    final response = await _service.unlockChapterWithWallet(
+      chapterId: chapterId,
+      seriesId: seriesId,
+      language: language,
+    );
     final current = state.asData?.value;
     if (current != null) {
       state = AsyncData(

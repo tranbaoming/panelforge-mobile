@@ -6,6 +6,7 @@ class PreferencesService {
   static const String _keyBaseUrl = 'panelforge_custom_base_url';
   static const String _keyReadingMode = 'panelforge_reading_mode';
   static const String _keyReaderTheme = 'panelforge_reader_theme';
+  static const String _keyContentLanguage = 'panelforge_content_language';
   static const String _keyBookmarks = 'panelforge_bookmarks';
   static const String _keyReadingHistory = 'panelforge_reading_history';
   static const String _keyFavorites = 'panelforge_favorites';
@@ -138,6 +139,14 @@ class PreferencesService {
   static Future<void> setReadingMode(String mode) async {
     await _prefs?.setString(_keyReadingMode, mode);
   }
+
+  /// Ngôn ngữ bản phát hành độc giả muốn đọc (vi/en/ja); mặc định bản gốc tiếng Việt.
+  static String getContentLanguage() {
+    final code = _prefs?.getString(_keyContentLanguage);
+    return code != null && kContentLanguages.contains(code) ? code : 'vi';
+  }
+
+  static Future<void> setContentLanguage(String code) async => _prefs?.setString(_keyContentLanguage, code);
 
   static String? getReaderTheme() {
     return _prefs?.getString(_keyReaderTheme);

@@ -93,6 +93,29 @@ class ForgeBrandLogo extends StatelessWidget {
   }
 }
 
+/// Top AppBar cố định nền đen: logo PANELFORGE bên trái, các nút tuỳ chọn bên phải.
+/// Dùng chung cho các tab Khám phá / Tìm kiếm / Cá nhân / Thông báo.
+class ForgeTopBar extends StatelessWidget implements PreferredSizeWidget {
+  final List<Widget> actions;
+  const ForgeTopBar({super.key, this.actions = const []});
+
+  @override
+  Size get preferredSize => const Size.fromHeight(58);
+
+  @override
+  Widget build(BuildContext context) {
+    return AppBar(
+      backgroundColor: ForgeColors.navBar,
+      surfaceTintColor: Colors.transparent,
+      automaticallyImplyLeading: false,
+      toolbarHeight: 58,
+      titleSpacing: 16,
+      title: const ForgeBrandLogo(),
+      actions: [...actions, const SizedBox(width: 4)],
+    );
+  }
+}
+
 /// Ảnh bìa: Backend chưa có ảnh bìa bộ truyện → dùng ảnh bìa chương nếu có, ngược lại khối màu kèm chữ cái đầu.
 class SeriesCover extends StatelessWidget {
   final SeriesItem series;

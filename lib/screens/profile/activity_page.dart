@@ -3,6 +3,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 import 'package:google_fonts/google_fonts.dart';
 import '../../models/api_dtos.dart';
+import '../../navigation/read_guard.dart';
 import '../../providers/api_providers.dart';
 import '../../services/preferences_service.dart';
 import '../../theme/app_theme.dart';
@@ -15,23 +16,24 @@ class ActivityPage extends ConsumerWidget {
   @override
   Widget build(BuildContext context, WidgetRef ref) {
     final auth = ref.watch(authStateProvider);
-    final transactions = auth.isGuest ? const <WalletTransactionDto>[] : PreferencesService.getWalletTransactions();
+    final transactions = !auth.isAuthenticated
+        ? const <WalletTransactionDto>[]
+        : PreferencesService.getWalletTransactions();
     final history = PreferencesService.getReadingHistory();
 
     return Scaffold(
       backgroundColor: ForgeColors.bg,
-      appBar: AppBar(
-        backgroundColor: ForgeColors.navBar,
-        surfaceTintColor: Colors.transparent,
-        automaticallyImplyLeading: false,
-        title: Text(
-          'Thông báo',
-          style: GoogleFonts.plusJakartaSans(fontWeight: FontWeight.w800, color: ForgeColors.text),
-        ),
-      ),
+      appBar: const ForgeTopBar(),
       body: ListView(
         padding: const EdgeInsets.fromLTRB(16, 12, 16, 24),
         children: [
+          Padding(
+            padding: const EdgeInsets.only(bottom: 10),
+            child: Text(
+              'Thông báo',
+              style: GoogleFonts.plusJakartaSans(fontSize: 20, fontWeight: FontWeight.w800, color: ForgeColors.text),
+            ),
+          ),
           _card(
             child: ListTile(
               onTap: () => context.push('/review'),
@@ -52,7 +54,7 @@ class ActivityPage extends ConsumerWidget {
           ),
           const ForgeSectionHeader(title: 'GIAO DỊCH VÍ'),
           if (transactions.isEmpty)
-            _empty(auth.isGuest ? 'Đăng nhập để xem giao dịch Ví.' : 'Chưa có giao dịch nào.')
+            _empty(!auth.isAuthenticated ? 'Đăng nhập để xem giao dịch Ví.' : 'Chưa có giao dịch nào.')
           else
             _card(
               child: Column(
@@ -93,7 +95,7 @@ class ActivityPage extends ConsumerWidget {
                     if (i > 0) Divider(height: 1, color: ForgeColors.divider),
                     ListTile(
                       dense: true,
-                      onTap: () => context.push('/reader/${h.seriesId}?chapterId=${h.chapterId}'),
+                      onTap: () => openReaderGuarded(context, ref, h.seriesId, h.chapterId),
                       leading: const Icon(Icons.menu_book_rounded, color: ForgeColors.accent),
                       title: Text(
                         h.seriesTitle,

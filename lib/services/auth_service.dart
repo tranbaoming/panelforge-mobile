@@ -1,14 +1,12 @@
 import 'dart:async';
 import 'dart:convert';
 import 'dart:io';
-import 'package:desktop_webview_window/desktop_webview_window.dart';
 import 'package:dio/dio.dart';
 import 'package:flutter/foundation.dart';
 import 'package:google_sign_in/google_sign_in.dart';
-import 'package:path/path.dart' as p;
-import 'package:path_provider/path_provider.dart';
 import '../models/auth_models.dart';
 import 'api_client.dart';
+import 'google_webview_auth_stub.dart' if (dart.library.ffi) 'google_webview_auth_io.dart';
 import 'preferences_service.dart';
 
 /// Service quản lý toàn bộ tính năng Xác thực và Phiên làm việc (Session & Auth)
@@ -348,12 +346,6 @@ class AuthService {
   /// Xác thực Google chính thức trực tiếp qua WebView trên Windows Desktop
   /// Mở thẳng URL Google OAuth 2.0 (accounts.google.com), không qua bất kỳ trang localhost nào.
   Future<AuthResponseModel?> _signInWithGoogleWindows() async {
-    final isAvailable = await WebviewWindow.isWebviewAvailable();
-    if (!isAvailable) {
-      throw Exception(
-          'WebView2 Runtime chưa được cài đặt trên hệ thống Windows.');
-    }
-
     final nonce = DateTime.now().millisecondsSinceEpoch.toString();
     final googleAuthUrl = Uri.https(
       'accounts.google.com',
@@ -369,172 +361,82 @@ class AuthService {
       },
     ).toString();
 
-    final supportDir = await getApplicationSupportDirectory();
-    final completer = Completer<Map<String, String>?>();
-    bool isHandled = false;
-    Map<String, String>? capturedTokens;
-    Timer? pollTimer;
-    Webview? webview;
+    // Windows Desktop: mở Google OAuth trong cửa sổ WebView2 (google_webview_auth_io.dart).
+    final tokens = await captureGoogleTokensViaWebview(googleAuthUrl, _extractTokensFromUrlOrHash);
 
-    void handleUrl(String url) async {
-      if (isHandled) return;
-      final tokens = _extractTokensFromUrlOrHash(url);
-      if (tokens != null) {
-        isHandled = true;
-        capturedTokens = tokens;
-        pollTimer?.cancel();
+    if (tokens == null) {
+      return null; // Người dùng hủy hoặc đóng cửa sổ
+    }
 
-        // Hoàn tất completer với token TRƯỚC để tránh race condition khi đóng WebView
-        if (!completer.isCompleted) {
-          completer.complete(tokens);
-        }
+    final googleIdToken = tokens['id_token'];
+    final googleAccessToken = tokens['access_token'];
 
-        // Sau đó mới đóng cửa sổ WebView
-        try {
-          await webview?.close();
-        } catch (_) {}
+    // Trích xuất thông tin Google Profile thật từ JWT ID Token và userinfo
+    Map<String, dynamic>? claims;
+    if (googleIdToken != null && googleIdToken.isNotEmpty) {
+      claims = parseJwtPayload(googleIdToken);
+    }
+
+    if ((claims == null || claims['email'] == null) &&
+        googleAccessToken != null &&
+        googleAccessToken.isNotEmpty) {
+      final userInfo = await _fetchGoogleUserInfo(googleAccessToken);
+      if (userInfo != null) {
+        claims = {...?claims, ...userInfo};
       }
     }
 
+    final email = claims?['email'] as String?;
+    final fullName = (claims?['name'] ?? email?.split('@').first ?? 'Độc Giả Google') as String;
+    final avatarUrl = claims?['picture'] as String?;
+    final sub = (claims?['sub'] ?? DateTime.now().millisecondsSinceEpoch).toString();
+
+    // Bước 1: Thử đổi sang Firebase ID Token và gọi externalLogin lên Backend .NET 8
+    String? firebaseIdToken;
     try {
-      webview = await WebviewWindow.create(
-        configuration: CreateConfiguration(
-          windowWidth: 520,
-          windowHeight: 720,
-          title: 'Đăng nhập với Google • PanelForge',
-          brightness: Brightness.dark,
-          windows: WindowsWebviewOptions(
-            userDataFolder: p.join(supportDir.path, 'WebView2'),
-          ),
-        ),
+      firebaseIdToken = await _exchangeGoogleTokenWithFirebase(
+        idToken: googleIdToken,
+        accessToken:
+            googleAccessToken?.isNotEmpty == true ? googleAccessToken : null,
       );
+    } catch (e) {
+      debugPrint('[AuthService] Trao đổi Firebase ID Token thất bại: $e');
+    }
 
-      // Bắt URL khi WebView chuyển hướng
-      await webview.setOnUrlRequestCallback((url) {
-        handleUrl(url);
-        return true;
-      });
-
-      // Lắng nghe URL và Hash fragment định kỳ (200ms) bằng JavaScript evaluate
-      pollTimer =
-          Timer.periodic(const Duration(milliseconds: 200), (timer) async {
-        if (isHandled || completer.isCompleted) {
-          timer.cancel();
-          return;
-        }
-        try {
-          // 1. Kiểm tra hash fragment trước vì Google OAuth trả token sau dấu #
-          final hash = await webview?.evaluateJavaScript('window.location.hash');
-          if (hash is String && hash.isNotEmpty) {
-            handleUrl(hash);
-            if (isHandled) return;
-          }
-
-          // 2. Kiểm tra full URL
-          final currentUrl =
-              await webview?.evaluateJavaScript('window.location.href');
-          if (currentUrl is String && currentUrl.isNotEmpty) {
-            handleUrl(currentUrl);
-          }
-        } catch (_) {
-          // Bỏ qua khi trang đang load hoặc cửa sổ đang đóng
-        }
-      });
-
-      // Bắt sự kiện người dùng chủ động đóng cửa sổ WebView bằng dấu X
-      webview.onClose.then((_) {
-        pollTimer?.cancel();
-        if (!completer.isCompleted) {
-          completer.complete(capturedTokens);
-        }
-      });
-
-      await webview.launch(googleAuthUrl);
-
-      final tokens = await completer.future;
-      pollTimer.cancel();
-
-      if (tokens == null) {
-        return null; // Người dùng hủy hoặc đóng cửa sổ
-      }
-
-      final googleIdToken = tokens['id_token'];
-      final googleAccessToken = tokens['access_token'];
-
-      // Trích xuất thông tin Google Profile thật từ JWT ID Token và userinfo
-      Map<String, dynamic>? claims;
-      if (googleIdToken != null && googleIdToken.isNotEmpty) {
-        claims = parseJwtPayload(googleIdToken);
-      }
-
-      if ((claims == null || claims['email'] == null) &&
-          googleAccessToken != null &&
-          googleAccessToken.isNotEmpty) {
-        final userInfo = await _fetchGoogleUserInfo(googleAccessToken);
-        if (userInfo != null) {
-          claims = {...?claims, ...userInfo};
-        }
-      }
-
-      final email = claims?['email'] as String?;
-      final fullName = (claims?['name'] ?? email?.split('@').first ?? 'Độc Giả Google') as String;
-      final avatarUrl = claims?['picture'] as String?;
-      final sub = (claims?['sub'] ?? DateTime.now().millisecondsSinceEpoch).toString();
-
-      // Bước 1: Thử đổi sang Firebase ID Token và gọi externalLogin lên Backend .NET 8
-      String? firebaseIdToken;
+    if (firebaseIdToken != null && firebaseIdToken.isNotEmpty) {
       try {
-        firebaseIdToken = await _exchangeGoogleTokenWithFirebase(
-          idToken: googleIdToken,
-          accessToken:
-              googleAccessToken?.isNotEmpty == true ? googleAccessToken : null,
-        );
+        final backendResponse = await externalLogin(idToken: firebaseIdToken);
+        return backendResponse;
       } catch (e) {
-        debugPrint('[AuthService] Trao đổi Firebase ID Token thất bại: $e');
-      }
-
-      if (firebaseIdToken != null && firebaseIdToken.isNotEmpty) {
-        try {
-          final backendResponse = await externalLogin(idToken: firebaseIdToken);
-          return backendResponse;
-        } catch (e) {
-          debugPrint(
-              '[AuthService] Backend externalLogin thất bại: $e. Tự động chuyển sang fallback phiên Reader.');
-        }
-      }
-
-      // Bước 2: Tự động fallback tạo phiên Reader hợp lệ từ thông tin thật của Google
-      final realEmail = (email != null && email.isNotEmpty) ? email : 'reader@panelforge.com';
-      final fallbackUser = AuthUser(
-        id: sub,
-        email: realEmail,
-        fullName: fullName,
-        avatarUrl: avatarUrl,
-        isActive: true,
-        role: 'User',
-        isEmailConfirmed: true,
-      );
-
-      await PreferencesService.saveAuthUser(fallbackUser.toJson());
-      final authState = AuthState(
-        role: MobileAuthRole.reader,
-        user: fallbackUser,
-      );
-      AuthService.onAuthStateChanged?.call(authState);
-
-      return AuthResponseModel(
-        user: fallbackUser,
-        token: googleIdToken ?? firebaseIdToken,
-        message: 'Đăng nhập Google thành công.',
-      );
-    } finally {
-      pollTimer?.cancel();
-      if (webview != null) {
-        try {
-          await webview.close();
-        } catch (_) {}
+        debugPrint(
+            '[AuthService] Backend externalLogin thất bại: $e. Tự động chuyển sang fallback phiên Reader.');
       }
     }
+
+    // Bước 2: Tự động fallback tạo phiên Reader hợp lệ từ thông tin thật của Google
+    final realEmail = (email != null && email.isNotEmpty) ? email : 'reader@panelforge.com';
+    final fallbackUser = AuthUser(
+      id: sub,
+      email: realEmail,
+      fullName: fullName,
+      avatarUrl: avatarUrl,
+      isActive: true,
+      role: 'User',
+      isEmailConfirmed: true,
+    );
+
+    await PreferencesService.saveAuthUser(fallbackUser.toJson());
+    final authState = AuthState(
+      role: MobileAuthRole.reader,
+      user: fallbackUser,
+    );
+    AuthService.onAuthStateChanged?.call(authState);
+
+    return AuthResponseModel(
+      user: fallbackUser,
+      token: googleIdToken ?? firebaseIdToken,
+      message: 'Đăng nhập Google thành công.',
+    );
   }
 
   /// 4. Lấy thông tin tài khoản hiện tại từ Cookie HttpOnly pf_access
@@ -549,6 +451,17 @@ class AuthService {
   Future<LandingContext> getLandingContext() async {
     final response = await _client.get('/api/auth/me/landing-context');
     return LandingContext.fromJson(response.data);
+  }
+
+  /// Luồng Email-First: email đã có tài khoản chưa.
+  /// POST /api/auth/check-email → { exists }
+  Future<bool> checkEmail(String email) async {
+    final response = await _client.post(
+      '/api/auth/check-email',
+      data: {'email': email.trim().toLowerCase()},
+    );
+    final data = response.data;
+    return data is Map && data['exists'] == true;
   }
 
   /// 6. Đăng ký tài khoản mới

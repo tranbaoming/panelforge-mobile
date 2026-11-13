@@ -107,4 +107,18 @@ void main() {
     );
     expect(SeriesItem.fromPublicDto(PublicSeriesDto.fromJson({'id': 's2'})).coverUrl, isNull);
   });
+  testWidgets('ForgeTopBar shows the PANELFORGE logo and given actions', (tester) async {
+    await tester.pumpWidget(
+      MaterialApp(
+        home: Scaffold(
+          appBar: ForgeTopBar(
+            actions: [IconButton(icon: const Icon(Icons.search), onPressed: () {})],
+          ),
+        ),
+      ),
+    );
+    expect(find.bySemanticsLabel('PANELFORGE'), findsOneWidget);
+    expect(find.byIcon(Icons.search), findsOneWidget);
+    expect(const ForgeTopBar().preferredSize.height, 58);
+  });
 }

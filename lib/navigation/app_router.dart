@@ -5,6 +5,7 @@ import '../providers/api_providers.dart';
 import '../screens/auth/login_page.dart';
 import '../screens/explore/browse_page.dart';
 import '../screens/explore/explore_page.dart';
+import '../screens/explore/search_page.dart';
 import '../screens/profile/activity_page.dart';
 import '../screens/profile/profile_page.dart';
 import '../screens/explore/series_detail_page.dart';
@@ -13,6 +14,7 @@ import '../screens/review/review_canvas_page.dart';
 import '../screens/review/review_expired_page.dart';
 import '../screens/review/review_hub_page.dart';
 import '../screens/review/review_invite_page.dart';
+import 'read_guard.dart';
 import 'scaffold_with_nav_bar.dart';
 
 final GlobalKey<NavigatorState> _rootNavigatorKey = GlobalKey<NavigatorState>();
@@ -39,26 +41,24 @@ final appRouterProvider = Provider<GoRouter>((ref) {
     navigatorKey: _rootNavigatorKey,
     initialLocation: '/',
     refreshListenable: authNotifier,
+    // Lazy Authentication: mọi màn hình lướt truyện mở tự do (kể cả chưa đăng nhập / Khách).
+    // Chỉ màn đọc chương `/reader/...` cần tài khoản thật; điều hướng thẳng tới đó khi chưa đăng nhập
+    // → /login?redirect=<chương>, đăng nhập xong LoginPage mở tiếp đúng chương đó.
+    // Các nút "Đọc" trong app dùng `ensureLoggedInForReading` (read_guard.dart) nên thường không chạm tới nhánh này.
     redirect: (context, state) {
       final authState = ref.read(authStateProvider);
-      final isLoggingIn = state.matchedLocation == '/login';
-
-      // 1. Khi chưa xác thực: Bắt buộc ở màn hình /login (chặn vào màn hình chính)
-      if (authState.isUnauthenticated) {
-        return isLoggingIn ? null : '/login';
+      if (state.matchedLocation.startsWith('/reader/') && !canReadChapters(authState)) {
+        return loginPathFor(state.uri.toString());
       }
-
-      // 2. Khi đã là Reader mà đang ở /login: Điều hướng về trang chủ Explore
-      if (authState.isAuthenticated && isLoggingIn) {
-        return '/';
-      }
-
-      // 3. Ở chế độ Guest hoặc Reader: Cho phép vào các trang thông thường
       return null;
     },
     routes: [
       // Màn hình Đăng nhập độc lập (Không có Bottom Navigation Bar)
-      GoRoute(parentNavigatorKey: _rootNavigatorKey, path: '/login', builder: (context, state) => const LoginPage()),
+      GoRoute(
+        parentNavigatorKey: _rootNavigatorKey,
+        path: '/login',
+        builder: (context, state) => LoginPage(redirect: safeLoginRedirect(state.uri.queryParameters['redirect'])),
+      ),
 
       // Bottom Navigation Stateful Shell Route
       StatefulShellRoute.indexedStack(
@@ -81,7 +81,7 @@ final appRouterProvider = Provider<GoRouter>((ref) {
           // Tab 3: Tìm kiếm
           StatefulShellBranch(
             navigatorKey: _searchNavigatorKey,
-            routes: [GoRoute(path: '/search', builder: (context, state) => const BrowsePage(searchMode: true))],
+            routes: [GoRoute(path: '/search', builder: (context, state) => const SearchPage())],
           ),
 
           // Tab 4: Tài khoản & Ví
@@ -99,7 +99,11 @@ final appRouterProvider = Provider<GoRouter>((ref) {
       ),
 
       // Trung tâm Review bản thảo (mã REV-...) — mở từ màn Cá nhân / Thông báo.
-      GoRoute(parentNavigatorKey: _rootNavigatorKey, path: '/review', builder: (context, state) => const ReviewHubPage()),
+      GoRoute(
+        parentNavigatorKey: _rootNavigatorKey,
+        path: '/review',
+        builder: (context, state) => const ReviewHubPage(),
+      ),
 
       // Pushable Sub-routes on Root Navigator:
       // 1. Series Detail Page: /series/:id

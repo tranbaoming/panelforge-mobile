@@ -8,7 +8,8 @@ void main() {
     await tester.pumpWidget(const ProviderScope(child: PanelForgeApp()));
     await tester.pumpAndSettle();
 
-    // Verify Explore tab loads with brand header
-    expect(find.textContaining('PANELFORGE'), findsWidgets);
+    // Lazy Authentication: mở app vào thẳng Trang chủ (logo PANELFORGE), không qua màn Đăng nhập.
+    expect(find.bySemanticsLabel('PANELFORGE'), findsWidgets);
+    expect(find.byTooltip('Trang chủ'), findsOneWidget);
   });
 }

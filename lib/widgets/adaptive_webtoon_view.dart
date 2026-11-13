@@ -5,6 +5,7 @@ import 'package:google_fonts/google_fonts.dart';
 import '../models/comic_model.dart';
 import '../models/comic_package_models.dart';
 import '../theme/app_theme.dart';
+import 'locked_page_tile.dart';
 import 'text_region_overlay.dart';
 
 class AdaptiveWebtoonView extends StatefulWidget {
@@ -18,6 +19,9 @@ class AdaptiveWebtoonView extends StatefulWidget {
   final VoidCallback onTapScreen;
   final ValueChanged<TextRegion>? onRegionTap;
 
+  /// Bấm "Mở khóa trang" trên trang trả phí lẻ chưa mua.
+  final ValueChanged<ComicPageData>? onUnlockPage;
+
   const AdaptiveWebtoonView({
     super.key,
     required this.chapter,
@@ -29,6 +33,7 @@ class AdaptiveWebtoonView extends StatefulWidget {
     required this.onPageChanged,
     required this.onTapScreen,
     this.onRegionTap,
+    this.onUnlockPage,
   });
 
   @override
@@ -192,7 +197,12 @@ class AdaptiveWebtoonViewState extends State<AdaptiveWebtoonView> {
                       child: Column(
                         mainAxisSize: MainAxisSize.min,
                         children: [
-                          if (page.imageUrl != null && page.imageUrl!.isNotEmpty)
+                          if (page.isPaywalled)
+                            LockedPageTile(
+                              page: page,
+                              onUnlock: widget.onUnlockPage == null ? null : () => widget.onUnlockPage!(page),
+                            )
+                          else if (page.imageUrl != null && page.imageUrl!.isNotEmpty)
                             LayoutBuilder(
                               builder: (context, constraints) {
                                 return Stack(

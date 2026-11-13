@@ -24,7 +24,16 @@ class UnlockChapterBottomSheet extends ConsumerStatefulWidget {
   final SeriesItem? series;
   final VoidCallback onUnlocked;
 
-  const UnlockChapterBottomSheet({super.key, required this.chapter, this.series, required this.onUnlocked});
+  /// Bản ngôn ngữ mua (vi/en/ja) — mua theo từng ngôn ngữ; giá của chương đã là giá bản này.
+  final String language;
+
+  const UnlockChapterBottomSheet({
+    super.key,
+    required this.chapter,
+    this.series,
+    required this.onUnlocked,
+    this.language = 'vi',
+  });
 
   /// Guest sẽ nhận SnackBar yêu cầu đăng nhập thay vì mở màn hình thanh toán.
   static Future<void> show(
@@ -32,6 +41,7 @@ class UnlockChapterBottomSheet extends ConsumerStatefulWidget {
     required ChapterItem chapter,
     SeriesItem? series,
     required VoidCallback onUnlocked,
+    String language = 'vi',
   }) {
     final container = ProviderScope.containerOf(context, listen: false);
     if (!container.read(authStateProvider).isAuthenticated) {
@@ -43,7 +53,8 @@ class UnlockChapterBottomSheet extends ConsumerStatefulWidget {
       context: context,
       isScrollControlled: true,
       backgroundColor: Colors.transparent,
-      builder: (context) => UnlockChapterBottomSheet(chapter: chapter, series: series, onUnlocked: onUnlocked),
+      builder: (context) =>
+          UnlockChapterBottomSheet(chapter: chapter, series: series, onUnlocked: onUnlocked, language: language),
     );
   }
 
@@ -87,7 +98,7 @@ class _UnlockChapterBottomSheetState extends ConsumerState<UnlockChapterBottomSh
     try {
       final response = await ref
           .read(walletNotifierProvider.notifier)
-          .unlockChapter(widget.chapter.id, seriesId: widget.series?.id);
+          .unlockChapter(widget.chapter.id, seriesId: widget.series?.id, language: widget.language);
       if (!mounted) return;
       _finishUnlocked(response.message ?? 'Mở khóa chương thành công!');
     } catch (e) {
@@ -111,6 +122,7 @@ class _UnlockChapterBottomSheetState extends ConsumerState<UnlockChapterBottomSh
             purpose: PaymentPurpose.chapterUnlock,
             chapterId: widget.chapter.id,
             seriesId: widget.series?.id,
+            language: widget.language,
           );
       if (!mounted) return;
       setState(() {
