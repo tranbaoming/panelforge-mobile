@@ -105,3 +105,21 @@ lib/
    - Network image loading uses `CachedNetworkImage` with fallback error placeholders.
 6. **Pre-commit Verification:**
    - Always run `flutter analyze` and pass with 0 errors before committing changes.
+
+## Git workflow (bắt buộc cho mọi agent — Claude Code & Antigravity)
+
+Bản cho Antigravity nằm ở `.agents/rules/git-workflow.md` (`trigger: always_on`); hai bản phải giống nhau.
+
+- **Nhánh làm việc: `baominh`.** Mọi thay đổi đi vào `baominh`; không commit thẳng lên `main`. `main` chỉ nhận merge từ `baominh`.
+- **Một agent:** làm trực tiếp trên `baominh` (`git checkout baominh && git pull --ff-only origin baominh`).
+- **Nhiều agent (multi-agent / subagent / session song song):** mỗi agent làm trong **git worktree riêng**, nhánh con từ `baominh`:
+  - `git worktree add ../.worktrees/panelforge-mobile-<task> -b baominh-<task> baominh`
+  - Mỗi agent chỉ sửa file của task mình; hai agent không sửa cùng file; không sửa working tree chính khi agent khác đang chạy.
+- **Xong mỗi task:**
+  1. `flutter analyze` (0 issue) + `flutter test` (pass hết).
+  2. Commit theo Conventional Commits (`feat(mobile): ...`).
+  3. Worktree: `git checkout baominh && git merge --no-ff baominh-<task>` → giải quyết conflict → chạy lại analyze + test.
+  4. `git push origin baominh`.
+  5. `git checkout main && git pull --ff-only origin main && git merge --no-ff baominh` → analyze + test → `git push origin main` → `git checkout baominh`.
+  6. Dọn worktree: `git worktree remove ../.worktrees/panelforge-mobile-<task>` và `git branch -d baominh-<task>`.
+- **Cấm:** force-push, rebase lịch sử đã push trên `baominh`/`main`, `--no-verify`, push khi analyze/test còn lỗi.
