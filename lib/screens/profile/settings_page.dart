@@ -1,7 +1,6 @@
 import 'dart:io';
 
 import 'package:flutter/material.dart';
-import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 import 'package:google_fonts/google_fonts.dart';
@@ -116,14 +115,6 @@ class _SettingsPageState extends ConsumerState<SettingsPage> {
       return;
     }
     await _openUrl('mailto:${AppInfo.supportEmail}?subject=${Uri.encodeComponent(subject)}', 'Email hỗ trợ');
-  }
-
-  Future<void> _shareApp() async {
-    final text = AppInfo.shareUrl.isEmpty
-        ? 'Đọc truyện tranh bản quyền trên ứng dụng PanelForge!'
-        : 'Đọc truyện tranh bản quyền trên ứng dụng PanelForge: ${AppInfo.shareUrl}';
-    await Clipboard.setData(ClipboardData(text: text));
-    _snack('Đã sao chép lời giới thiệu, hãy dán để chia sẻ.');
   }
 
   static String _themeLabel(ThemeMode mode) => switch (mode) {
@@ -358,8 +349,6 @@ class _SettingsPageState extends ConsumerState<SettingsPage> {
               applicationLegalese: 'Bản quyền thuộc về PanelForge Studio',
             ),
           ),
-          _Item('Đánh giá ứng dụng', onTap: () => _openUrl(AppInfo.storeUrl, 'Liên kết cửa hàng ứng dụng')),
-          _Item('Chia sẻ ứng dụng', onTap: _shareApp),
           const _Item('Phiên bản', subtitle: AppInfo.version),
         ],
       ),

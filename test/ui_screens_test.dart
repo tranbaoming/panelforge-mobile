@@ -241,7 +241,6 @@ void main() {
         'Chính sách bảo mật',
         'Bản quyền',
         'Giấy phép mã nguồn mở',
-        'Chia sẻ ứng dụng',
         'Phiên bản',
       ]) {
         final row = find.text(label);
@@ -351,6 +350,12 @@ void main() {
       expect(AppColors.darkSurface, const Color(0xFF1E2330));
       expect(AppColors.darkBorder, const Color(0xFF282E3E));
       expect(AppColors.primary, const Color(0xFFF97316));
+
+      // Quay lại màn hình Cài đặt
+      expect(find.byTooltip('Quay lại'), findsOneWidget);
+      await tester.tap(find.byTooltip('Quay lại'));
+      await tester.pumpAndSettle();
+      expect(find.byType(SettingsPage), findsOneWidget);
     });
   });
 }
