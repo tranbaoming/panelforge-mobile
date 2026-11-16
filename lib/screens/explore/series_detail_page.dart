@@ -1,6 +1,5 @@
-import 'dart:ui' show ImageFilter;
-
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 import 'package:google_fonts/google_fonts.dart';
@@ -8,13 +7,14 @@ import '../../models/api_dtos.dart';
 import '../../models/comic_model.dart';
 import '../../navigation/read_guard.dart';
 import '../../providers/api_providers.dart';
+import '../../providers/catalog_providers.dart';
+import '../../services/app_info.dart';
 import '../../theme/app_theme.dart';
 import '../../services/catalog_service.dart';
 import '../../services/preferences_service.dart';
 import '../../widgets/forge_ui.dart';
 import '../../widgets/series_rating_bar.dart';
 import '../../widgets/unlock_chapter_bottom_sheet.dart';
-import '../../widgets/wallet_chip.dart';
 
 class SeriesDetailPage extends ConsumerStatefulWidget {
   final String seriesId;
@@ -29,7 +29,8 @@ class _SeriesDetailPageState extends ConsumerState<SeriesDetailPage> {
   SeriesItem? _series;
   bool _isLoading = true;
   String? _errorMessage;
-  bool _isNewestFirst = false;
+  bool _isNewestFirst = true;
+  bool _synopsisExpanded = false;
   bool _isFavorite = false;
   bool _isFollowing = false;
 
@@ -101,7 +102,14 @@ class _SeriesDetailPageState extends ConsumerState<SeriesDetailPage> {
 
   /// Chương đọc được khi: không bị Producer khóa, Backend báo `isUnlocked` (đã mua / VIP),
   /// người dùng đang có VIP, hoặc vừa mở khóa trong phiên này (`/api/wallet/me` → unlockedChapterIds).
-  bool _isChapterUnlocked(ChapterItem chapter) => _isUnlockedFor(ref, chapter);
+  /// Dùng trong trình xử lý sự kiện (ref.read) — trong build dùng [_isUnlockedFor] (ref.watch).
+  bool _isChapterUnlocked(ChapterItem chapter) {
+    if (!chapter.isLocked || chapter.isUnlocked) return true;
+    final wallet = ref.read(walletNotifierProvider).asData?.value;
+    if (wallet?.hasActiveVip ?? false) return true;
+    if (wallet?.unlockedChapterIds.contains(chapter.id) ?? false) return true;
+    return ref.read(unlockedChaptersProvider).contains(chapter.id);
+  }
 
   bool _isUnlockedFor(WidgetRef ref, ChapterItem chapter) {
     if (!chapter.isLocked) return true;
@@ -125,7 +133,25 @@ class _SeriesDetailPageState extends ConsumerState<SeriesDetailPage> {
       series = _series ?? series;
       chapter = series.chapters.where((c) => c.id == chapter.id).firstOrNull ?? chapter;
     }
-    // Chương trả phí chưa mua cũng mở reader: đọc trang xem trước, trang khác có nút mở khóa cả chương.
+    // Chương trả phí chưa mua: hỏi dùng Ví để mở khóa cả chương hay đọc thử trang xem trước.
+    // (Đọc thử vẫn mở Reader: trang xem trước rõ, trang khác làm mờ kèm nút mở khóa cả chương.)
+    if (!_isChapterUnlocked(chapter)) {
+      final choice = await ChapterPurchaseOptionsSheet.show(context, chapter: chapter, series: series);
+      if (!mounted || choice == null) return;
+      if (choice == ChapterPurchaseChoice.useWallet) {
+        await UnlockChapterBottomSheet.show(
+          context,
+          chapter: chapter,
+          series: series,
+          onUnlocked: () {
+            if (mounted) setState(() {});
+            onUnlocked?.call();
+          },
+        );
+        return;
+      }
+    }
+    if (!mounted) return;
     context.push(readerPath(series.id, chapter.id));
   }
 
@@ -209,214 +235,200 @@ class _SeriesDetailPageState extends ConsumerState<SeriesDetailPage> {
     }
   }
 
+  Future<void> _share(SeriesItem series) async {
+    final text = AppInfo.shareUrl.isEmpty
+        ? 'Đọc "${series.title}" trên PanelForge'
+        : 'Đọc "${series.title}" trên PanelForge: ${AppInfo.shareUrl}';
+    await Clipboard.setData(ClipboardData(text: text));
+    if (!mounted) return;
+    ScaffoldMessenger.of(context).showSnackBar(
+      const SnackBar(behavior: SnackBarBehavior.floating, content: Text('Đã sao chép lời giới thiệu để chia sẻ.')),
+    );
+  }
+
   @override
   Widget build(BuildContext context) {
-    if (_isLoading) {
+    if (_isLoading || _series == null) {
       return Scaffold(
         backgroundColor: ForgeColors.bg,
-        appBar: _plainAppBar(),
-        body: const Center(child: CircularProgressIndicator(color: ForgeColors.accent)),
-      );
-    }
-
-    if (_series == null) {
-      return Scaffold(
-        backgroundColor: ForgeColors.bg,
-        appBar: _plainAppBar(),
-        body: Center(
-          child: ForgeEmptyState(
-            icon: _errorMessage != null ? Icons.cloud_off_rounded : Icons.menu_book_outlined,
-            message: _errorMessage ?? 'Không tìm thấy tác phẩm này trên hệ thống.',
-            actionLabel: 'Tải lại',
-            onAction: _fetchDetailFromApi,
-          ),
-        ),
+        appBar: _appBar(null),
+        body: _isLoading
+            ? const Center(child: CircularProgressIndicator(color: ForgeColors.accent))
+            : Center(
+                child: ForgeEmptyState(
+                  icon: _errorMessage != null ? Icons.cloud_off_rounded : Icons.menu_book_outlined,
+                  message: _errorMessage ?? 'Không tìm thấy tác phẩm này trên hệ thống.',
+                  actionLabel: 'Tải lại',
+                  onAction: _fetchDetailFromApi,
+                ),
+              ),
       );
     }
 
     final series = _series!;
     final ascending = [...series.chapters]..sort((a, b) => a.number.compareTo(b.number));
+    final ordered = _isNewestFirst ? ascending.reversed.toList() : ascending;
     final history = PreferencesService.getReadingHistoryFor(series.id);
     final lastRead = history == null ? null : ascending.where((c) => c.id == history.chapterId).firstOrNull;
+    final related = ref.watch(catalogSeriesProvider).asData?.value;
+    final sameGenre = related == null ? const <SeriesItem>[] : CatalogSections(related).sameGenre(series);
 
     return Scaffold(
       backgroundColor: ForgeColors.bg,
-      body: CustomScrollView(
-        physics: const BouncingScrollPhysics(),
-        slivers: [
-          SliverToBoxAdapter(child: _buildHeader(series)),
-          SliverToBoxAdapter(child: _buildGenres(series)),
-          SliverToBoxAdapter(
-            child: SeriesRatingBar(
-              key: ValueKey('rating-${series.id}-${_rating.count}'),
-              series: series,
-              average: _rating.average,
-              count: _rating.count,
-              myRating: _rating.mine,
+      appBar: _appBar(series),
+      body: RefreshIndicator(
+        color: ForgeColors.accent,
+        onRefresh: _fetchDetailFromApi,
+        child: CustomScrollView(
+          physics: const AlwaysScrollableScrollPhysics(parent: BouncingScrollPhysics()),
+          slivers: [
+            SliverToBoxAdapter(child: _buildHeader(series)),
+            SliverToBoxAdapter(
+              child: SeriesRatingBar(
+                key: ValueKey('rating-${series.id}-${_rating.count}'),
+                series: series,
+                average: _rating.average,
+                count: _rating.count,
+                myRating: _rating.mine,
+              ),
             ),
-          ),
-          SliverToBoxAdapter(child: _buildChapterTrigger(series, ascending)),
-          SliverToBoxAdapter(child: _buildSynopsis(series)),
-          const SliverToBoxAdapter(child: SizedBox(height: 24)),
-        ],
+            SliverToBoxAdapter(child: _buildSynopsis(series)),
+            if (sameGenre.isNotEmpty) SliverToBoxAdapter(child: _buildSameGenre(sameGenre)),
+            SliverToBoxAdapter(child: _buildChapterHeader(ascending)),
+            if (ordered.isEmpty)
+              const SliverToBoxAdapter(
+                child: ForgeEmptyState(icon: Icons.menu_book_outlined, message: 'Chưa có chương nào.'),
+              )
+            else
+              SliverList.separated(
+                itemCount: ordered.length,
+                separatorBuilder: (_, _) => Divider(height: 1, indent: 150, color: ForgeColors.divider),
+                itemBuilder: (_, i) => _buildChapterRow(series, ordered[i], isLastRead: ordered[i].id == lastRead?.id),
+              ),
+            const SliverToBoxAdapter(child: SizedBox(height: 16)),
+          ],
+        ),
       ),
       bottomNavigationBar: _buildStickyBar(series, ascending, lastRead),
     );
   }
 
-  PreferredSizeWidget _plainAppBar() => AppBar(
-    backgroundColor: Colors.transparent,
-    elevation: 0,
+  PreferredSizeWidget _appBar(SeriesItem? series) => AppBar(
+    backgroundColor: ForgeColors.bg,
+    surfaceTintColor: Colors.transparent,
+    titleSpacing: 0,
     leading: IconButton(
+      tooltip: 'Quay lại',
       icon: Icon(Icons.arrow_back_rounded, color: ForgeColors.text),
       onPressed: () => context.pop(),
     ),
+    title: Text(
+      series?.title ?? '',
+      maxLines: 1,
+      overflow: TextOverflow.ellipsis,
+      style: GoogleFonts.plusJakartaSans(fontSize: 20, fontWeight: FontWeight.w700, color: ForgeColors.text),
+    ),
+    actions: [
+      if (series != null) ...[
+        IconButton(
+          tooltip: 'Chia sẻ',
+          icon: Icon(Icons.ios_share_rounded, color: ForgeColors.text),
+          onPressed: () => _share(series),
+        ),
+        IconButton(
+          tooltip: _isFavorite ? 'Bỏ yêu thích' : 'Yêu thích',
+          icon: Icon(
+            _isFavorite ? Icons.star_rounded : Icons.star_border_rounded,
+            color: _isFavorite ? ForgeColors.accent : ForgeColors.text,
+            size: 28,
+          ),
+          onPressed: _toggleFavorite,
+        ),
+      ],
+      const SizedBox(width: 4),
+    ],
   );
 
   Widget _buildHeader(SeriesItem series) {
-    final topPadding = MediaQuery.of(context).padding.top;
-    return Stack(
-      children: [
-        // Nền: ảnh bìa làm mờ + gradient tối dần xuống dưới.
-        Positioned.fill(
-          child: ClipRect(
-            child: Stack(
-              fit: StackFit.expand,
+    final genres = series.genres.where((g) => g.trim().isNotEmpty).toSet();
+    final studio = series.author.isEmpty ? 'PanelForge Studio' : series.author;
+    final status = series.isCompleted ? 'Hoàn thành' : 'Đang ra';
+    return Padding(
+      padding: const EdgeInsets.fromLTRB(16, 8, 16, 4),
+      child: Row(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          SizedBox(width: 112, height: 150, child: SeriesCover(series: series, radius: 8)),
+          const SizedBox(width: 14),
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                SeriesCover(series: series, radius: 0),
-                BackdropFilter(
-                  filter: ImageFilter.blur(sigmaX: 20, sigmaY: 20),
-                  child: Container(color: Colors.black.withValues(alpha: 0.25)),
-                ),
-                DecoratedBox(
-                  decoration: BoxDecoration(
-                    gradient: LinearGradient(
-                      begin: Alignment.topCenter,
-                      end: Alignment.bottomCenter,
-                      colors: [Color(0x66141418), ForgeColors.bg],
-                    ),
+                Text(
+                  series.title,
+                  maxLines: 3,
+                  overflow: TextOverflow.ellipsis,
+                  style: GoogleFonts.plusJakartaSans(
+                    fontSize: 19,
+                    fontWeight: FontWeight.w800,
+                    color: ForgeColors.text,
+                    height: 1.2,
                   ),
+                ),
+                const SizedBox(height: 4),
+                Text(
+                  '$studio • $status',
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                  style: GoogleFonts.plusJakartaSans(fontSize: 13, color: ForgeColors.textSoft),
+                ),
+                const SizedBox(height: 8),
+                Wrap(
+                  spacing: 6,
+                  runSpacing: 6,
+                  children: [
+                    for (final g in genres)
+                      Container(
+                        padding: const EdgeInsets.symmetric(horizontal: 9, vertical: 4),
+                        decoration: BoxDecoration(color: ForgeColors.chip, borderRadius: BorderRadius.circular(14)),
+                        child: Text(
+                          g,
+                          style: GoogleFonts.plusJakartaSans(
+                            fontSize: 11.5,
+                            fontWeight: FontWeight.w700,
+                            color: ForgeColors.text,
+                          ),
+                        ),
+                      ),
+                  ],
+                ),
+                const SizedBox(height: 8),
+                Wrap(
+                  spacing: 14,
+                  runSpacing: 4,
+                  children: [
+                    _action(Icons.visibility_outlined, formatViews(series.views), null),
+                    _action(
+                      _isFollowing ? Icons.notifications_active_rounded : Icons.notifications_none_rounded,
+                      _isFollowing ? 'Đang theo dõi' : 'Theo dõi',
+                      _toggleFollow,
+                      active: _isFollowing,
+                    ),
+                    _action(
+                      series.isBookmarked ? Icons.bookmark_rounded : Icons.bookmark_border_rounded,
+                      'Đọc sau',
+                      _toggleBookmark,
+                      active: series.isBookmarked,
+                    ),
+                  ],
                 ),
               ],
             ),
           ),
-        ),
-        Padding(
-          padding: EdgeInsets.fromLTRB(8, topPadding + 4, 8, 16),
-          child: Column(
-            children: [
-              Row(
-                children: [
-                  IconButton(
-                    tooltip: 'Quay lại',
-                    icon: Icon(Icons.arrow_back_rounded, color: ForgeColors.text),
-                    onPressed: () => context.pop(),
-                  ),
-                  const Spacer(),
-                  const WalletChip(),
-                  IconButton(
-                    tooltip: 'Danh sách chương',
-                    icon: Icon(Icons.menu_rounded, color: ForgeColors.text),
-                    onPressed: () => _openChapterSheet(series),
-                  ),
-                ],
-              ),
-              const SizedBox(height: 8),
-              Padding(
-                padding: const EdgeInsets.symmetric(horizontal: 8),
-                child: Row(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    Container(
-                      width: 118,
-                      height: 160,
-                      decoration: BoxDecoration(
-                        borderRadius: BorderRadius.circular(10),
-                        boxShadow: [
-                          BoxShadow(
-                            color: Colors.black.withValues(alpha: 0.5),
-                            blurRadius: 14,
-                            offset: const Offset(0, 6),
-                          ),
-                        ],
-                      ),
-                      child: SeriesCover(series: series),
-                    ),
-                    const SizedBox(width: 14),
-                    Expanded(
-                      child: Column(
-                        crossAxisAlignment: CrossAxisAlignment.start,
-                        children: [
-                          Text(
-                            series.title,
-                            maxLines: 3,
-                            overflow: TextOverflow.ellipsis,
-                            style: GoogleFonts.plusJakartaSans(
-                              fontSize: 20,
-                              fontWeight: FontWeight.w800,
-                              color: ForgeColors.text,
-                              height: 1.2,
-                            ),
-                          ),
-                          const SizedBox(height: 8),
-                          _metaLine(
-                            Icons.alternate_email_rounded,
-                            series.author.isEmpty ? 'PanelForge Studio' : series.author,
-                          ),
-                          _metaLine(
-                            series.isCompleted ? Icons.cloud_done_outlined : Icons.cloud_outlined,
-                            series.isCompleted ? 'Hoàn thành' : 'Đang ra',
-                          ),
-                          _metaLine(Icons.format_list_bulleted_rounded, 'Chương ${series.totalChapters}'),
-                          const SizedBox(height: 8),
-                          Wrap(
-                            spacing: 12,
-                            runSpacing: 4,
-                            children: [
-                              _action(Icons.visibility_outlined, formatViews(series.views), null),
-                              _action(
-                                _isFollowing ? Icons.notifications_active_rounded : Icons.notifications_none_rounded,
-                                _isFollowing ? 'Đang theo dõi' : 'Theo dõi',
-                                _toggleFollow,
-                                active: _isFollowing,
-                              ),
-                              _action(
-                                _isFavorite ? Icons.favorite_rounded : Icons.favorite_border_rounded,
-                                'Yêu thích',
-                                _toggleFavorite,
-                                active: _isFavorite,
-                              ),
-                            ],
-                          ),
-                        ],
-                      ),
-                    ),
-                  ],
-                ),
-              ),
-            ],
-          ),
-        ),
-      ],
+        ],
+      ),
     );
   }
-
-  Widget _metaLine(IconData icon, String text) => Padding(
-    padding: const EdgeInsets.only(bottom: 4),
-    child: Row(
-      children: [
-        Icon(icon, size: 15, color: ForgeColors.muted),
-        const SizedBox(width: 6),
-        Expanded(
-          child: Text(
-            text,
-            overflow: TextOverflow.ellipsis,
-            style: GoogleFonts.plusJakartaSans(fontSize: 12.5, color: ForgeColors.textSoft),
-          ),
-        ),
-      ],
-    ),
-  );
 
   Widget _action(IconData icon, String label, VoidCallback? onTap, {bool active = false}) => InkWell(
     onTap: onTap,
@@ -426,12 +438,12 @@ class _SeriesDetailPageState extends ConsumerState<SeriesDetailPage> {
       child: Row(
         mainAxisSize: MainAxisSize.min,
         children: [
-          Icon(icon, size: 16, color: active ? ForgeColors.accent : ForgeColors.text),
+          Icon(icon, size: 17, color: active ? ForgeColors.accent : ForgeColors.text),
           const SizedBox(width: 4),
           Text(
             label,
             style: GoogleFonts.plusJakartaSans(
-              fontSize: 12,
+              fontSize: 12.5,
               fontWeight: FontWeight.w700,
               color: active ? ForgeColors.accent : ForgeColors.text,
             ),
@@ -441,355 +453,262 @@ class _SeriesDetailPageState extends ConsumerState<SeriesDetailPage> {
     ),
   );
 
-  Widget _buildGenres(SeriesItem series) {
-    final genres = series.genres.where((g) => g.trim().isNotEmpty).toSet();
-    return Padding(
-      padding: const EdgeInsets.fromLTRB(16, 4, 16, 8),
-      child: Wrap(
-        spacing: 8,
-        runSpacing: 8,
+  Widget _buildSynopsis(SeriesItem series) => Padding(
+    padding: const EdgeInsets.fromLTRB(16, 4, 16, 0),
+    child: InkWell(
+      onTap: () => setState(() => _synopsisExpanded = !_synopsisExpanded),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          for (final g in genres)
-            Container(
-              padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
-              decoration: BoxDecoration(color: ForgeColors.chip, borderRadius: BorderRadius.circular(20)),
-              child: Text(
-                genreLabel(g),
-                style: GoogleFonts.plusJakartaSans(fontSize: 12, fontWeight: FontWeight.w600, color: ForgeColors.text),
-              ),
+          Text(
+            series.fullSynopsis,
+            maxLines: _synopsisExpanded ? null : 3,
+            overflow: _synopsisExpanded ? TextOverflow.visible : TextOverflow.ellipsis,
+            style: GoogleFonts.plusJakartaSans(fontSize: 14, color: ForgeColors.textSoft, height: 1.55),
+          ),
+          Padding(
+            padding: const EdgeInsets.only(top: 2),
+            child: Text(
+              _synopsisExpanded ? 'Thu gọn' : 'Xem thêm',
+              style: GoogleFonts.plusJakartaSans(fontSize: 13, fontWeight: FontWeight.w700, color: ForgeColors.accent),
             ),
+          ),
+        ],
+      ),
+    ),
+  );
+
+  Widget _buildSameGenre(List<SeriesItem> list) => Column(
+    crossAxisAlignment: CrossAxisAlignment.start,
+    children: [
+      const ForgeBlockTitle(title: 'Cùng thể loại'),
+      SizedBox(
+        height: 198,
+        child: ListView.separated(
+          padding: const EdgeInsets.symmetric(horizontal: 16),
+          scrollDirection: Axis.horizontal,
+          itemCount: list.length.clamp(0, 10),
+          separatorBuilder: (_, _) => const SizedBox(width: 10),
+          itemBuilder: (_, i) => CoverTitleCard(
+            series: list[i],
+            width: 112,
+            onTap: () => context.pushReplacement('/series/${list[i].id}'),
+          ),
+        ),
+      ),
+    ],
+  );
+
+  Widget _buildChapterHeader(List<ChapterItem> ascending) {
+    final latest = ascending.isEmpty ? null : ascending.last;
+    return Padding(
+      padding: const EdgeInsets.fromLTRB(16, 22, 8, 10),
+      child: Row(
+        children: [
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(
+                  'Danh sách chương',
+                  style: GoogleFonts.plusJakartaSans(
+                    fontSize: 21,
+                    fontWeight: FontWeight.w800,
+                    color: ForgeColors.text,
+                  ),
+                ),
+                const SizedBox(height: 4),
+                Text(
+                  latest == null
+                      ? 'Chưa có chương nào'
+                      : '${ascending.length} chương • Mới nhất: Chương ${latest.number} (${latest.releaseDate})',
+                  style: GoogleFonts.plusJakartaSans(fontSize: 13, color: ForgeColors.textSoft),
+                ),
+              ],
+            ),
+          ),
+          IconButton(
+            tooltip: _isNewestFirst ? 'Cũ nhất trước' : 'Mới nhất trước',
+            icon: Icon(Icons.swap_vert_rounded, color: ForgeColors.text, size: 30),
+            onPressed: () => setState(() => _isNewestFirst = !_isNewestFirst),
+          ),
         ],
       ),
     );
   }
 
-  Widget _buildChapterTrigger(SeriesItem series, List<ChapterItem> ascending) {
-    final latest = ascending.isEmpty ? null : ascending.last;
-    return Padding(
-      padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
-      child: Material(
-        color: ForgeColors.surface,
-        borderRadius: BorderRadius.circular(12),
-        child: InkWell(
-          onTap: () => _openChapterSheet(series),
-          borderRadius: BorderRadius.circular(12),
-          child: Padding(
-            padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
-            child: Row(
-              children: [
-                Text(
-                  'DS Chương',
-                  style: GoogleFonts.plusJakartaSans(
-                    fontSize: 15,
-                    fontWeight: FontWeight.w800,
-                    color: ForgeColors.text,
-                  ),
-                ),
-                const Spacer(),
-                Text(
-                  latest == null ? 'Chưa có chương' : 'Chương ${latest.number}',
-                  style: GoogleFonts.plusJakartaSans(fontSize: 13, color: ForgeColors.muted),
-                ),
-                const Icon(Icons.chevron_right_rounded, color: ForgeColors.muted),
-              ],
-            ),
+  Widget _buildChapterRow(SeriesItem series, ChapterItem chapter, {required bool isLastRead}) {
+    final unlocked = _isUnlockedFor(ref, chapter);
+    final downloaded = ref.watch(downloadedChaptersProvider).contains(chapter.id);
+    final downloadStatus = ref.watch(chapterDownloadStatusProvider(chapter.id));
+    final downloadProgress = ref.watch(chapterDownloadProgressProvider(chapter.id));
+    final isDownloading = downloadStatus == DownloadStatus.downloading || downloadStatus == DownloadStatus.extracting;
+    final isVip = ref.watch(walletNotifierProvider).asData?.value.isVip ?? PreferencesService.getLocalIsVip();
+    final ent =
+        ref.watch(chapterEntitlementsProvider)[chapter.id] ?? PreferencesService.getChapterEntitlement(chapter.id);
+    final isPermanent = isVip || (ent != null ? ent.isPermanent : unlocked);
+    final subtitle = chapterSubtitle(chapter.title);
+    final hasTitle = subtitle.isNotEmpty;
+
+    // Nhãn bên phải: miễn phí / đã mở khóa (mua hoặc VIP) / giá (đang khóa).
+    Widget status;
+    if (!chapter.isLocked) {
+      status = _pill('Miễn phí', AppColors.mint);
+    } else if (unlocked) {
+      status = _pill(isVip && !chapter.isUnlocked ? 'VIP' : 'Đã mở', AppColors.mint, icon: Icons.lock_open_rounded);
+    } else {
+      status = _pill(formatVnd(chapter.priceVnd), ForgeColors.accent, icon: Icons.lock_rounded);
+    }
+
+    Widget? download;
+    if (unlocked && isPermanent) {
+      if (isDownloading) {
+        download = SizedBox(
+          width: 20,
+          height: 20,
+          child: CircularProgressIndicator(
+            value: downloadProgress > 0 ? downloadProgress : null,
+            strokeWidth: 2,
+            color: ForgeColors.accent,
           ),
-        ),
-      ),
-    );
-  }
+        );
+      } else if (downloaded) {
+        download = const Tooltip(
+          message: 'Đã lưu offline',
+          child: Icon(Icons.offline_pin_rounded, size: 22, color: AppColors.mint),
+        );
+      } else {
+        download = InkWell(
+          onTap: () => _downloadChapter(series, chapter),
+          child: Tooltip(
+            message: 'Tải CBZ Offline',
+            child: Icon(Icons.download_for_offline_outlined, size: 22, color: ForgeColors.textSoft),
+          ),
+        );
+      }
+    }
 
-  Widget _buildSynopsis(SeriesItem series) => Padding(
-    padding: const EdgeInsets.fromLTRB(16, 12, 16, 0),
-    child: Column(
-      crossAxisAlignment: CrossAxisAlignment.start,
-      children: [
-        Text(
-          'Giới Thiệu',
-          style: GoogleFonts.plusJakartaSans(fontSize: 16, fontWeight: FontWeight.w800, color: ForgeColors.text),
-        ),
-        const SizedBox(height: 8),
-        Text(
-          series.fullSynopsis,
-          style: GoogleFonts.plusJakartaSans(fontSize: 14, color: ForgeColors.textSoft, height: 1.6),
-        ),
-      ],
-    ),
-  );
-
-  Widget _buildStickyBar(SeriesItem series, List<ChapterItem> ascending, ChapterItem? lastRead) {
-    final target = lastRead ?? (ascending.isEmpty ? null : ascending.first);
-    return Container(
-      decoration: BoxDecoration(
-        color: ForgeColors.bottomBar,
-        border: Border(top: BorderSide(color: ForgeColors.divider, width: 0.8)),
-      ),
-      child: SafeArea(
-        top: false,
-        child: Padding(
-          padding: const EdgeInsets.fromLTRB(16, 10, 16, 10),
-          child: Row(
-            children: [
-              Expanded(
+    return InkWell(
+      onTap: () => _onChapterTap(series, chapter, onUnlocked: () => setState(() {})),
+      child: Container(
+        decoration: isLastRead
+            ? BoxDecoration(
+                color: ForgeColors.accent.withValues(alpha: 0.08),
+                border: const Border(left: BorderSide(color: ForgeColors.accent, width: 3)),
+              )
+            : null,
+        padding: const EdgeInsets.fromLTRB(10, 10, 12, 10),
+        child: Row(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            ChapterThumbnail(series: series, number: '${chapter.number}'),
+            const SizedBox(width: 14),
+            Expanded(
+              child: SizedBox(
+                height: 88,
                 child: Column(
-                  mainAxisSize: MainAxisSize.min,
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
-                    Text('Đọc Đến', style: GoogleFonts.plusJakartaSans(fontSize: 11, color: ForgeColors.muted)),
-                    const SizedBox(height: 2),
-                    Text(
-                      lastRead != null ? 'Chương ${lastRead.number}' : 'Chương đầu tiên',
-                      overflow: TextOverflow.ellipsis,
-                      style: GoogleFonts.plusJakartaSans(
-                        fontSize: 14,
-                        fontWeight: FontWeight.w800,
-                        color: ForgeColors.text,
+                    Row(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Expanded(
+                          child: Text(
+                            'Chương ${chapter.number}',
+                            style: GoogleFonts.plusJakartaSans(
+                              fontSize: 17,
+                              fontWeight: FontWeight.w600,
+                              color: isLastRead ? ForgeColors.accent : ForgeColors.text,
+                            ),
+                          ),
+                        ),
+                        status,
+                      ],
+                    ),
+                    if (hasTitle)
+                      Text(
+                        subtitle,
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
+                        style: GoogleFonts.plusJakartaSans(fontSize: 13.5, color: ForgeColors.textSoft),
                       ),
+                    const Spacer(),
+                    Row(
+                      children: [
+                        if (isLastRead) ...[
+                          const Icon(Icons.menu_book_rounded, size: 15, color: ForgeColors.accent),
+                          const SizedBox(width: 4),
+                          Text(
+                            'Đang đọc • ',
+                            style: GoogleFonts.plusJakartaSans(
+                              fontSize: 12.5,
+                              fontWeight: FontWeight.w700,
+                              color: ForgeColors.accent,
+                            ),
+                          ),
+                        ],
+                        Text(
+                          chapter.releaseDate,
+                          style: GoogleFonts.plusJakartaSans(fontSize: 12.5, color: ForgeColors.muted),
+                        ),
+                        const Spacer(),
+                        ?download,
+                      ],
                     ),
                   ],
                 ),
               ),
-              ElevatedButton(
-                onPressed: target == null ? null : () => _onChapterTap(series, target),
-                style: ElevatedButton.styleFrom(
-                  backgroundColor: ForgeColors.accent,
-                  foregroundColor: Colors.white,
-                  padding: const EdgeInsets.symmetric(horizontal: 28, vertical: 13),
-                  shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
-                ),
-                child: Text(
-                  lastRead != null ? 'Đọc Tiếp' : 'Đọc Ngay',
-                  style: GoogleFonts.plusJakartaSans(fontWeight: FontWeight.w800, fontSize: 14),
-                ),
-              ),
-              const SizedBox(width: 10),
-              InkWell(
-                onTap: _toggleBookmark,
-                borderRadius: BorderRadius.circular(10),
-                child: Container(
-                  width: 46,
-                  height: 46,
-                  decoration: BoxDecoration(
-                    borderRadius: BorderRadius.circular(10),
-                    border: Border.all(color: ForgeColors.border),
-                  ),
-                  child: Icon(
-                    series.isBookmarked ? Icons.bookmark_rounded : Icons.bookmark_border_rounded,
-                    color: series.isBookmarked ? ForgeColors.accent : ForgeColors.text,
-                  ),
-                ),
-              ),
-            ],
-          ),
-        ),
-      ),
-    );
-  }
-
-  // ─── Bottom Sheet "DS Chương" ─────────────────────────────────────────────
-
-  void _openChapterSheet(SeriesItem series) {
-    showModalBottomSheet<void>(
-      context: context,
-      isScrollControlled: true,
-      backgroundColor: ForgeColors.navBar,
-      shape: const RoundedRectangleBorder(borderRadius: BorderRadius.vertical(top: Radius.circular(20))),
-      builder: (sheetContext) => SizedBox(
-        height: MediaQuery.of(sheetContext).size.height * 0.85,
-        child: StatefulBuilder(
-          builder: (sheetContext, setSheetState) => Consumer(
-            builder: (sheetContext, sheetRef, _) {
-              // Đọc lại từ state trang để danh sách cập nhật sau khi mở khóa / tải offline.
-              final current = _series ?? series;
-              final chapters = [...current.chapters]
-                ..sort((a, b) => _isNewestFirst ? b.number.compareTo(a.number) : a.number.compareTo(b.number));
-              final lastReadId = PreferencesService.getReadingHistoryFor(current.id)?.chapterId;
-              return Column(
-                children: [
-                  Padding(
-                    padding: const EdgeInsets.fromLTRB(4, 8, 4, 4),
-                    child: Row(
-                      children: [
-                        IconButton(
-                          tooltip: 'Đóng',
-                          icon: Icon(Icons.close_rounded, color: ForgeColors.text),
-                          onPressed: () => Navigator.of(sheetContext).pop(),
-                        ),
-                        Expanded(
-                          child: Text(
-                            'DS Chương',
-                            textAlign: TextAlign.center,
-                            style: GoogleFonts.plusJakartaSans(
-                              fontSize: 16,
-                              fontWeight: FontWeight.w800,
-                              color: ForgeColors.text,
-                            ),
-                          ),
-                        ),
-                        IconButton(
-                          tooltip: _isFollowing ? 'Bỏ theo dõi' : 'Theo dõi',
-                          icon: Icon(
-                            _isFollowing ? Icons.notifications_active_rounded : Icons.notifications_none_rounded,
-                            color: _isFollowing ? ForgeColors.accent : ForgeColors.text,
-                          ),
-                          onPressed: () async {
-                            await _toggleFollow();
-                            setSheetState(() {});
-                          },
-                        ),
-                        IconButton(
-                          tooltip: _isNewestFirst ? 'Cũ nhất trước' : 'Mới nhất trước',
-                          icon: Icon(Icons.swap_vert_rounded, color: ForgeColors.text),
-                          onPressed: () {
-                            setState(() => _isNewestFirst = !_isNewestFirst);
-                            setSheetState(() {});
-                          },
-                        ),
-                      ],
-                    ),
-                  ),
-                  Divider(height: 1, color: ForgeColors.divider),
-                  Expanded(
-                    child: chapters.isEmpty
-                        ? const Center(
-                            child: ForgeEmptyState(icon: Icons.menu_book_outlined, message: 'Chưa có chương nào.'),
-                          )
-                        : ListView.separated(
-                            itemCount: chapters.length,
-                            separatorBuilder: (_, _) => Divider(height: 1, color: ForgeColors.divider),
-                            itemBuilder: (_, i) => _buildChapterRow(
-                              sheetRef,
-                              current,
-                              chapters[i],
-                              isLastRead: chapters[i].id == lastReadId,
-                              refreshSheet: () => setSheetState(() {}),
-                            ),
-                          ),
-                  ),
-                ],
-              );
-            },
-          ),
-        ),
-      ),
-    );
-  }
-
-  Widget _buildChapterRow(
-    WidgetRef r,
-    SeriesItem series,
-    ChapterItem chapter, {
-    required bool isLastRead,
-    required VoidCallback refreshSheet,
-  }) {
-    final unlocked = _isUnlockedFor(r, chapter);
-    final downloaded = r.watch(downloadedChaptersProvider).contains(chapter.id);
-    final downloadStatus = r.watch(chapterDownloadStatusProvider(chapter.id));
-    final downloadProgress = r.watch(chapterDownloadProgressProvider(chapter.id));
-    final isDownloading = downloadStatus == DownloadStatus.downloading || downloadStatus == DownloadStatus.extracting;
-    final isVip = r.watch(walletNotifierProvider).asData?.value.isVip ?? PreferencesService.getLocalIsVip();
-    final ent =
-        r.watch(chapterEntitlementsProvider)[chapter.id] ?? PreferencesService.getChapterEntitlement(chapter.id);
-    final isPermanent = isVip || (ent != null ? ent.isPermanent : unlocked);
-    final color = isLastRead ? ForgeColors.accent : ForgeColors.text;
-    final hasTitle = chapter.title.isNotEmpty && !chapter.title.startsWith('Chương');
-
-    Widget statusBadge;
-    if (!chapter.isLocked) {
-      statusBadge = const SizedBox.shrink();
-    } else if (unlocked) {
-      statusBadge = _pill('Đã mở khóa', AppColors.mint);
-    } else {
-      statusBadge = _pill('🔒 ${formatVnd(chapter.priceVnd)}', AppColors.amber);
-    }
-
-    Widget downloadAction;
-    if (!unlocked || !isPermanent) {
-      downloadAction = const SizedBox(width: 40);
-    } else if (isDownloading) {
-      downloadAction = SizedBox(
-        width: 40,
-        child: Center(
-          child: SizedBox(
-            width: 18,
-            height: 18,
-            child: CircularProgressIndicator(
-              value: downloadProgress > 0 ? downloadProgress : null,
-              strokeWidth: 2,
-              color: ForgeColors.accent,
             ),
-          ),
-        ),
-      );
-    } else if (downloaded) {
-      downloadAction = const SizedBox(
-        width: 40,
-        child: Tooltip(
-          message: 'Đã lưu offline',
-          child: Icon(Icons.check_circle_rounded, size: 20, color: AppColors.mint),
-        ),
-      );
-    } else {
-      downloadAction = IconButton(
-        tooltip: 'Tải CBZ Offline',
-        icon: Icon(Icons.download_for_offline_outlined, size: 20, color: ForgeColors.textSoft),
-        onPressed: () => _downloadChapter(series, chapter),
-      );
-    }
-
-    return InkWell(
-      onTap: () => _onChapterTap(series, chapter, onUnlocked: refreshSheet),
-      child: Padding(
-        padding: const EdgeInsets.fromLTRB(16, 10, 4, 10),
-        child: Row(
-          children: [
-            if (isLastRead) ...[
-              const Icon(Icons.menu_book_rounded, size: 16, color: ForgeColors.accent),
-              const SizedBox(width: 6),
-            ],
-            Expanded(
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  Text(
-                    'Chương ${chapter.number}',
-                    style: GoogleFonts.plusJakartaSans(fontSize: 14, fontWeight: FontWeight.w700, color: color),
-                  ),
-                  if (hasTitle)
-                    Text(
-                      chapter.title,
-                      maxLines: 1,
-                      overflow: TextOverflow.ellipsis,
-                      style: GoogleFonts.plusJakartaSans(fontSize: 12, color: ForgeColors.muted),
-                    ),
-                ],
-              ),
-            ),
-            Column(
-              crossAxisAlignment: CrossAxisAlignment.end,
-              children: [
-                Text(chapter.releaseDate, style: GoogleFonts.plusJakartaSans(fontSize: 11.5, color: ForgeColors.muted)),
-                const SizedBox(height: 4),
-                statusBadge,
-              ],
-            ),
-            downloadAction,
           ],
         ),
       ),
     );
   }
 
-  Widget _pill(String text, Color color) => Container(
-    padding: const EdgeInsets.symmetric(horizontal: 7, vertical: 2.5),
+  Widget _pill(String text, Color color, {IconData? icon}) => Container(
+    padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
     decoration: BoxDecoration(
-      color: color.withValues(alpha: 0.15),
-      borderRadius: BorderRadius.circular(6),
-      border: Border.all(color: color.withValues(alpha: 0.5)),
+      color: color.withValues(alpha: 0.14),
+      borderRadius: BorderRadius.circular(12),
+      border: Border.all(color: color.withValues(alpha: 0.6)),
     ),
-    child: Text(
-      text,
-      style: GoogleFonts.plusJakartaSans(fontSize: 10.5, fontWeight: FontWeight.w800, color: color),
+    child: Row(
+      mainAxisSize: MainAxisSize.min,
+      children: [
+        if (icon != null) ...[Icon(icon, size: 12, color: color), const SizedBox(width: 3)],
+        Text(
+          text,
+          style: GoogleFonts.plusJakartaSans(fontSize: 11, fontWeight: FontWeight.w800, color: color),
+        ),
+      ],
     ),
   );
+
+  /// Nút đọc dính đáy, full-width: "Bắt đầu đọc" hoặc "Đọc tiếp • Chương N".
+  Widget _buildStickyBar(SeriesItem series, List<ChapterItem> ascending, ChapterItem? lastRead) {
+    final target = lastRead ?? (ascending.isEmpty ? null : ascending.first);
+    return Container(
+      color: ForgeColors.bg,
+      child: SafeArea(
+        top: false,
+        child: Padding(
+          padding: const EdgeInsets.fromLTRB(16, 8, 16, 10),
+          child: SizedBox(
+            height: 54,
+            child: ElevatedButton(
+              onPressed: target == null ? null : () => _onChapterTap(series, target),
+              style: ElevatedButton.styleFrom(
+                backgroundColor: ForgeColors.accent,
+                foregroundColor: Colors.white,
+                disabledBackgroundColor: ForgeColors.chip,
+                shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(4)),
+                textStyle: GoogleFonts.plusJakartaSans(fontSize: 18, fontWeight: FontWeight.w800),
+              ),
+              child: Text(lastRead != null ? 'Đọc tiếp • Chương ${lastRead.number}' : 'Bắt đầu đọc'),
+            ),
+          ),
+        ),
+      ),
+    );
+  }
 }

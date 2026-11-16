@@ -6,8 +6,12 @@ import '../screens/auth/login_page.dart';
 import '../screens/explore/browse_page.dart';
 import '../screens/explore/explore_page.dart';
 import '../screens/explore/search_page.dart';
+import '../screens/foryou/for_you_page.dart';
+import '../screens/shop/shop_page.dart';
 import '../screens/profile/activity_page.dart';
 import '../screens/profile/profile_page.dart';
+import '../screens/profile/legal_page.dart';
+import '../screens/profile/settings_page.dart';
 import '../screens/explore/series_detail_page.dart';
 import '../screens/reader/comic_reader_page.dart';
 import '../screens/review/review_canvas_page.dart';
@@ -19,8 +23,8 @@ import 'scaffold_with_nav_bar.dart';
 
 final GlobalKey<NavigatorState> _rootNavigatorKey = GlobalKey<NavigatorState>();
 final GlobalKey<NavigatorState> _exploreNavigatorKey = GlobalKey<NavigatorState>();
-final GlobalKey<NavigatorState> _reviewNavigatorKey = GlobalKey<NavigatorState>();
-final GlobalKey<NavigatorState> _browseNavigatorKey = GlobalKey<NavigatorState>();
+final GlobalKey<NavigatorState> _shopNavigatorKey = GlobalKey<NavigatorState>();
+final GlobalKey<NavigatorState> _forYouNavigatorKey = GlobalKey<NavigatorState>();
 final GlobalKey<NavigatorState> _searchNavigatorKey = GlobalKey<NavigatorState>();
 final GlobalKey<NavigatorState> _profileNavigatorKey = GlobalKey<NavigatorState>();
 
@@ -66,16 +70,16 @@ final appRouterProvider = Provider<GoRouter>((ref) {
           return ScaffoldWithNavBar(navigationShell: navigationShell);
         },
         branches: [
-          // Tab 1: Khám Phá (Explore)
+          // Tab 1: Trang chủ
           StatefulShellBranch(
             navigatorKey: _exploreNavigatorKey,
             routes: [GoRoute(path: '/', builder: (context, state) => const ExplorePage())],
           ),
 
-          // Tab 2: Khám phá / Danh mục
+          // Tab 2: Dành cho bạn
           StatefulShellBranch(
-            navigatorKey: _browseNavigatorKey,
-            routes: [GoRoute(path: '/explore', builder: (context, state) => const BrowsePage())],
+            navigatorKey: _forYouNavigatorKey,
+            routes: [GoRoute(path: '/for-you', builder: (context, state) => const ForYouPage())],
           ),
 
           // Tab 3: Tìm kiếm
@@ -84,19 +88,48 @@ final appRouterProvider = Provider<GoRouter>((ref) {
             routes: [GoRoute(path: '/search', builder: (context, state) => const SearchPage())],
           ),
 
-          // Tab 4: Tài khoản & Ví
+          // Tab 4: Cửa hàng (Ví & VIP). `?tab=vip` mở thẳng thẻ Gói VIP.
+          StatefulShellBranch(
+            navigatorKey: _shopNavigatorKey,
+            routes: [
+              GoRoute(
+                path: '/shop',
+                builder: (context, state) => ShopPage(initialTab: state.uri.queryParameters['tab'] == 'vip' ? 1 : 0),
+              ),
+            ],
+          ),
+
+          // Tab 5: Cá nhân
           StatefulShellBranch(
             navigatorKey: _profileNavigatorKey,
             routes: [GoRoute(path: '/profile', builder: (context, state) => const ProfilePage())],
           ),
-
-          // Tab 5: Thông báo / Hoạt động
-          StatefulShellBranch(
-            navigatorKey: _reviewNavigatorKey,
-            routes: [GoRoute(path: '/activity', builder: (context, state) => const ActivityPage())],
-          ),
         ],
       ),
+
+      // Thông báo / Hoạt động — mở từ màn Cá nhân.
+      GoRoute(
+        parentNavigatorKey: _rootNavigatorKey,
+        path: '/activity',
+        builder: (context, state) => const ActivityPage(),
+      ),
+
+      // Cài đặt — mở từ bánh răng ở tab Cá nhân.
+      GoRoute(
+        parentNavigatorKey: _rootNavigatorKey,
+        path: '/settings',
+        builder: (context, state) => const SettingsPage(),
+      ),
+
+      // Văn bản: terms | privacy | copyright | faq.
+      GoRoute(
+        parentNavigatorKey: _rootNavigatorKey,
+        path: '/legal/:id',
+        builder: (context, state) => LegalPage(docId: state.pathParameters['id'] ?? ''),
+      ),
+
+      // Tất cả thể loại (lưới 2 cột) — mở từ khối Thể loại ở Trang chủ.
+      GoRoute(parentNavigatorKey: _rootNavigatorKey, path: '/genres', builder: (context, state) => const BrowsePage()),
 
       // Trung tâm Review bản thảo (mã REV-...) — mở từ màn Cá nhân / Thông báo.
       GoRoute(

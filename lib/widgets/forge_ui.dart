@@ -104,12 +104,21 @@ class ForgeTopBar extends StatelessWidget implements PreferredSizeWidget {
 
   @override
   Widget build(BuildContext context) {
+    // Màn được push (Thông báo, Thể loại) có nút ←; màn gốc của tab thì không.
+    final canPop = ModalRoute.of(context)?.canPop ?? false;
     return AppBar(
       backgroundColor: ForgeColors.navBar,
       surfaceTintColor: Colors.transparent,
       automaticallyImplyLeading: false,
+      leading: canPop
+          ? IconButton(
+              tooltip: 'Quay lại',
+              icon: Icon(Icons.arrow_back_rounded, color: ForgeColors.text),
+              onPressed: () => Navigator.of(context).maybePop(),
+            )
+          : null,
       toolbarHeight: 58,
-      titleSpacing: 16,
+      titleSpacing: canPop ? 0 : 16,
       title: const ForgeBrandLogo(),
       actions: [...actions, const SizedBox(width: 4)],
     );
@@ -141,14 +150,13 @@ class _GradientCover extends StatelessWidget {
   final SeriesItem series;
   const _GradientCover({required this.series});
 
+  // Ảnh bìa dự phòng: gradient slate trầm (#1E2330 → #13161F) với sắc độ rất nhẹ để các bìa vẫn phân biệt được.
   static const _palettes = [
-    [Color(0xFF3A1C71), Color(0xFFD76D77)],
-    [Color(0xFF0F2027), Color(0xFF2C5364)],
-    [Color(0xFF42275A), Color(0xFF734B6D)],
-    [Color(0xFF1F1C2C), Color(0xFF928DAB)],
-    [Color(0xFF8E2DE2), Color(0xFF4A00E0)],
-    [Color(0xFFCB356B), Color(0xFFBD3F32)],
-    [Color(0xFF134E5E), Color(0xFF71B280)],
+    [Color(0xFF1E2330), Color(0xFF13161F)],
+    [Color(0xFF222A36), Color(0xFF13171F)],
+    [Color(0xFF262435), Color(0xFF14141D)],
+    [Color(0xFF1D2A2E), Color(0xFF12181C)],
+    [Color(0xFF2A2530), Color(0xFF16141B)],
   ];
 
   @override
@@ -160,7 +168,10 @@ class _GradientCover extends StatelessWidget {
         gradient: LinearGradient(begin: Alignment.topLeft, end: Alignment.bottomRight, colors: colors),
       ),
       alignment: Alignment.center,
-      child: Text(initials, style: GoogleFonts.bebasNeue(fontSize: 48, color: Colors.white.withValues(alpha: 0.85))),
+      child: Text(
+        initials,
+        style: GoogleFonts.bebasNeue(fontSize: 48, color: ForgeColors.muted.withValues(alpha: 0.55)),
+      ),
     );
   }
 }
@@ -445,4 +456,305 @@ class _SwooshPainter extends CustomPainter {
 
   @override
   bool shouldRepaint(covariant CustomPainter oldDelegate) => false;
+}
+
+// ─── Bố cục mobile mới (Trang chủ / Dành cho bạn / Tìm kiếm) ────────────────
+
+/// Huy hiệu tròn nhỏ cạnh tên truyện — tính từ ngày tạo / ngày phát hành thật:
+/// MỚI (nền cam) và UP (nền xanh da trời).
+class SeriesBadge extends StatelessWidget {
+  final String text;
+  final Color color;
+  const SeriesBadge({super.key, required this.text, required this.color});
+
+  const SeriesBadge.newSeries({super.key}) : text = 'MỚI', color = ForgeColors.accent;
+  const SeriesBadge.updated({super.key}) : text = 'UP', color = ForgeColors.up;
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+      decoration: BoxDecoration(color: color, borderRadius: BorderRadius.circular(20)),
+      child: Text(
+        text,
+        style: GoogleFonts.plusJakartaSans(
+          fontSize: 9.5,
+          fontWeight: FontWeight.w900,
+          color: Colors.white,
+          letterSpacing: 0.3,
+        ),
+      ),
+    );
+  }
+}
+
+/// Dải nhãn Studio mảnh màu #282E3E ngay dưới bìa (tên Studio phát hành, in hoa).
+class StudioStrip extends StatelessWidget {
+  final String studio;
+  final double fontSize;
+  const StudioStrip({super.key, required this.studio, this.fontSize = 10});
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      color: ForgeColors.chip,
+      padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 3),
+      alignment: Alignment.center,
+      child: Text(
+        (studio.isEmpty ? 'PanelForge Studio' : studio).toUpperCase(),
+        maxLines: 1,
+        overflow: TextOverflow.ellipsis,
+        style: GoogleFonts.plusJakartaSans(
+          fontSize: fontSize,
+          fontWeight: FontWeight.w800,
+          letterSpacing: 0.8,
+          color: ForgeColors.textSoft,
+        ),
+      ),
+    );
+  }
+}
+
+/// Thanh vàng full-width dưới thẻ: số chương ("13 chương") hoặc "Tất cả chương" (VIP).
+class ChapterCountBar extends StatelessWidget {
+  final String label;
+  final IconData icon;
+  const ChapterCountBar({super.key, required this.label, this.icon = Icons.menu_book_rounded});
+
+  @override
+  Widget build(BuildContext context) {
+    const ink = Color(0xFF13161F);
+    return Container(
+      height: 26,
+      decoration: BoxDecoration(color: ForgeColors.gold, borderRadius: BorderRadius.circular(4)),
+      alignment: Alignment.center,
+      padding: const EdgeInsets.symmetric(horizontal: 6),
+      child: Row(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          Icon(icon, size: 14, color: ink),
+          const SizedBox(width: 5),
+          Flexible(
+            child: Text(
+              label,
+              maxLines: 1,
+              overflow: TextOverflow.ellipsis,
+              style: ForgeText.tabular(fontSize: 12.5, color: ink),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+/// Thẻ bìa cho hàng cuộn ngang: bìa 3:4 → dải Studio → tên 1 dòng kèm huy hiệu MỚI/UP
+/// → (tuỳ chọn) thanh vàng số chương.
+class CoverTitleCard extends StatelessWidget {
+  final SeriesItem series;
+  final double width;
+  final bool isNew;
+  final bool isUpdated;
+  final String? pillLabel;
+  final IconData pillIcon;
+  final bool showStudio;
+  final VoidCallback onTap;
+
+  const CoverTitleCard({
+    super.key,
+    required this.series,
+    required this.onTap,
+    this.width = 138,
+    this.isNew = false,
+    this.isUpdated = false,
+    this.pillLabel,
+    this.pillIcon = Icons.menu_book_rounded,
+    this.showStudio = true,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    return SizedBox(
+      width: width,
+      child: InkWell(
+        onTap: onTap,
+        borderRadius: BorderRadius.circular(6),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.stretch,
+          children: [
+            ClipRRect(
+              borderRadius: BorderRadius.circular(6),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.stretch,
+                children: [
+                  AspectRatio(
+                    aspectRatio: 3 / 4,
+                    child: SeriesCover(series: series, radius: 0),
+                  ),
+                  if (showStudio) StudioStrip(studio: series.author, fontSize: 9),
+                ],
+              ),
+            ),
+            const SizedBox(height: 6),
+            Row(
+              children: [
+                if (isNew) ...[const SeriesBadge.newSeries(), const SizedBox(width: 4)],
+                if (isUpdated) ...[const SeriesBadge.updated(), const SizedBox(width: 4)],
+                Expanded(
+                  child: Text(
+                    series.title,
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                    style: GoogleFonts.plusJakartaSans(
+                      fontSize: 13.5,
+                      fontWeight: FontWeight.w700,
+                      color: ForgeColors.text,
+                    ),
+                  ),
+                ),
+              ],
+            ),
+            if (pillLabel != null) ...[const SizedBox(height: 6), ChapterCountBar(label: pillLabel!, icon: pillIcon)],
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+/// Tiêu đề khối lớn kiểu mobile ("Phổ biến hôm nay") + liên kết "Xem thêm ›" tuỳ chọn.
+class ForgeBlockTitle extends StatelessWidget {
+  final String title;
+  final VoidCallback? onMore;
+  final Color? color;
+  const ForgeBlockTitle({super.key, required this.title, this.onMore, this.color});
+
+  @override
+  Widget build(BuildContext context) {
+    final c = color ?? ForgeColors.text;
+    return Padding(
+      padding: const EdgeInsets.fromLTRB(16, 22, 8, 12),
+      child: Row(
+        children: [
+          Expanded(
+            child: Text(
+              title,
+              style: GoogleFonts.plusJakartaSans(fontSize: 21, fontWeight: FontWeight.w800, color: c),
+            ),
+          ),
+          if (onMore != null)
+            TextButton(
+              onPressed: onMore,
+              style: TextButton.styleFrom(foregroundColor: c),
+              child: Row(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  Text('Xem thêm', style: GoogleFonts.plusJakartaSans(fontSize: 14, fontWeight: FontWeight.w700)),
+                  const Icon(Icons.chevron_right_rounded, size: 22),
+                ],
+              ),
+            ),
+        ],
+      ),
+    );
+  }
+}
+
+/// Ảnh đại diện tròn của một thể loại (bìa bộ tiêu biểu) + tên thể loại.
+class GenreAvatar extends StatelessWidget {
+  final String genre;
+  final SeriesItem? cover;
+  final VoidCallback onTap;
+  const GenreAvatar({super.key, required this.genre, required this.cover, required this.onTap});
+
+  @override
+  Widget build(BuildContext context) {
+    return InkWell(
+      onTap: onTap,
+      borderRadius: BorderRadius.circular(48),
+      child: SizedBox(
+        width: 96,
+        child: Column(
+          children: [
+            Container(
+              width: 84,
+              height: 84,
+              decoration: BoxDecoration(
+                shape: BoxShape.circle,
+                border: Border.all(color: ForgeColors.border, width: 2),
+              ),
+              padding: const EdgeInsets.all(2),
+              child: ClipOval(
+                child: cover == null
+                    ? Container(
+                        color: ForgeColors.chip,
+                        child: Icon(Icons.local_offer_rounded, color: ForgeColors.muted),
+                      )
+                    : SeriesCover(series: cover!, radius: 0),
+              ),
+            ),
+            const SizedBox(height: 8),
+            Text(
+              genre,
+              maxLines: 2,
+              textAlign: TextAlign.center,
+              overflow: TextOverflow.ellipsis,
+              style: GoogleFonts.plusJakartaSans(fontSize: 13.5, fontWeight: FontWeight.w700, color: ForgeColors.text),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+/// Ảnh nhỏ đại diện cho một chương. Backend chưa có ảnh riêng từng chương → dùng bìa bộ truyện
+/// phủ tối + số chương lớn để các dòng vẫn phân biệt được.
+class ChapterThumbnail extends StatelessWidget {
+  final SeriesItem series;
+  final String number;
+  final double width;
+  final double height;
+  const ChapterThumbnail({super.key, required this.series, required this.number, this.width = 124, this.height = 88});
+
+  @override
+  Widget build(BuildContext context) {
+    return SizedBox(
+      width: width,
+      height: height,
+      child: ClipRRect(
+        borderRadius: BorderRadius.circular(4),
+        child: Stack(
+          fit: StackFit.expand,
+          children: [
+            SeriesCover(series: series, radius: 0),
+            DecoratedBox(
+              decoration: BoxDecoration(
+                gradient: LinearGradient(
+                  begin: Alignment.topCenter,
+                  end: Alignment.bottomCenter,
+                  colors: [Colors.black.withValues(alpha: 0.15), Colors.black.withValues(alpha: 0.7)],
+                ),
+              ),
+            ),
+            Positioned(
+              right: 8,
+              bottom: 2,
+              child: Text(
+                number,
+                style: GoogleFonts.bebasNeue(fontSize: height * 0.5, color: Colors.white, height: 1),
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+/// Tên riêng của chương để làm phụ đề: bỏ tiền tố "Chương N:" mà Backend ghép sẵn ("Chương 2: Huyết Chiến" → "Huyết Chiến").
+/// Trả chuỗi rỗng khi chương không có tên riêng.
+String chapterSubtitle(String title) {
+  final stripped = title.replaceFirst(RegExp(r'^\s*Chương\s*[\d.]+\s*[:\-–.]?\s*', caseSensitive: false), '');
+  return stripped.trim();
 }

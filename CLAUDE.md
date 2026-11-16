@@ -23,7 +23,7 @@ lib/
 ├── main.dart                          # Application entry point
 ├── navigation/
 │   ├── app_router.dart                # GoRouter route declarations & redirect logic
-│   └── scaffold_with_nav_bar.dart     # Bottom nav 5 tab chỉ biểu tượng (tên ở tooltip): Trang chủ / Khám phá / Tìm kiếm / Cá nhân / Thông báo
+│   └── scaffold_with_nav_bar.dart     # Bottom nav 5 tab biểu tượng + nhãn (tab đang mở có nền viên thuốc cam): Trang chủ / Dành cho bạn / Tìm kiếm / Cửa hàng / Cá nhân
 ├── models/
 │   ├── api_dtos.dart                  # Shared request/response DTOs & ApiResponse<T>
 │   ├── auth_models.dart               # AuthState, UserToken, Session models
@@ -31,7 +31,8 @@ lib/
 │   ├── comic_package_models.dart      # CBZ package models & reading positions
 │   └── review_model.dart              # Review token, feedback, pinpoint annotations
 ├── providers/
-│   └── api_providers.dart             # Riverpod providers (ApiClient, Auth, Catalog, Review)
+│   ├── api_providers.dart             # Riverpod providers (ApiClient, Auth, Catalog, Review)
+│   └── catalog_providers.dart         # catalogSeriesProvider (toàn bộ catalog) + CatalogSections (Phổ biến, Mới, Thể loại, Đề xuất, badge MỚI/UP)
 ├── services/
 │   ├── api_client.dart                # Dio HTTP client wrapper with JWT interceptor
 │   ├── api_config.dart                # Base URL detection and runtime config
@@ -45,14 +46,18 @@ lib/
 ├── screens/
 │   ├── auth/login_page.dart           # User login modal/page
 │   ├── explore/
-│   │   ├── explore_page.dart          # Trang chủ: Tiếp tục đọc, danh mục nhanh, hàng truyện ngang
-│   │   ├── browse_page.dart           # Tab Khám phá: lưới thể loại 2 cột → chạm mở lưới truyện của thể loại
-│   │   ├── search_page.dart           # Tab Tìm kiếm: không AppBar, lọc realtime theo tên truyện / Studio
+│   │   ├── explore_page.dart          # Trang chủ: banner nổi bật full-bleed, popup truyện mới, hàng bìa lớn, Thể loại tròn, khối Đề xuất, Truyện mới
+│   │   ├── browse_page.dart           # /genres (push): lưới thể loại 2 cột → chạm mở lưới truyện của thể loại
+│   │   ├── search_page.dart           # Tab Tìm kiếm: ô tìm + danh sách A–Z; lọc realtime theo tên / Studio / thể loại
 │   │   ├── series_grid_page.dart      # Xem tất cả dạng lưới 2 cột
-│   │   └── series_detail_page.dart    # Header ảnh mờ, thể loại, Giới thiệu, sheet DS Chương (mở khóa / CBZ)
+│   │   └── series_detail_page.dart    # AppBar (← tên, Chia sẻ, Yêu thích), DS chương ngay trên trang (ảnh, giá/đã mở, sắp xếp), nút "Bắt đầu đọc" dính đáy
+│   ├── foryou/for_you_page.dart       # Tab Dành cho bạn: banner VIP, Phổ biến hôm nay, Đề xuất cho bạn, Đọc tất cả với VIP, Truyện mới
+│   ├── shop/shop_page.dart            # Tab Cửa hàng: thẻ Tài sản (Ví/VIP thật), NẠP VÍ (VietQR) / GÓI VIP, Lịch sử giao dịch, Điều khoản
 │   ├── profile/
-│   │   ├── profile_page.dart          # Tab Cá nhân: hồ sơ, Ví & VIP, danh sách, cài đặt, liên hệ, đăng xuất
-│   │   └── activity_page.dart         # Tab Thông báo: giao dịch Ví, đọc gần đây, lối vào Review (/review)
+│   │   ├── profile_page.dart          # Tab Cá nhân: thẻ Tạo tài khoản / hồ sơ + Ví, lối tắt Đọc sau / Theo dõi / Đã mở khóa, thẻ Lịch sử / Yêu thích
+│   │   ├── settings_page.dart         # /settings (bánh răng): Tài khoản (hồ sơ, đổi MK, thiết bị tin cậy, giao dịch, mã Review, đăng xuất, xoá TK), Cài đặt ứng dụng (ngôn ngữ giao diện, giao diện, ...), Trợ giúp, Khác
+│   │   ├── legal_page.dart            # /legal/:id — terms | privacy | copyright | faq (nội dung ở lib/content/legal_content.dart)
+│   │   └── activity_page.dart         # /activity (chuông ở tab Cá nhân): giao dịch Ví, đọc gần đây, lối vào Review (/review)
 │   ├── reader/
 │   │   └── comic_reader_page.dart     # Multi-mode manga/comic/webtoon reader
 │   └── review/
@@ -70,12 +75,12 @@ lib/
 │   ├── forge_ui.dart                  # Thẻ truyện, logo, header section, lưới 2 cột (bảng màu ForgeColors)
 │   ├── wallet_chip.dart               # Header wallet balance indicator
 │   ├── wallet_topup_dialog.dart       # Wallet top-up (VietQR order) & server transaction history
-│   ├── unlock_chapter_bottom_sheet.dart # Mở khóa cả chương trả phí: Ví / VietQR / VIP (người chưa mua chỉ đọc trang xem trước)
+│   ├── unlock_chapter_bottom_sheet.dart # Mở khóa cả chương trả phí: Ví / VietQR / VIP (người chưa mua chỉ đọc trang xem trước); ChapterPurchaseOptionsSheet (Số dư hiện tại + Dùng Ví để đọc / Đọc thử / Hủy)
 │   ├── locked_page_tile.dart          # Ô trang ngoài phần xem trước: làm mờ + nút "Mở khóa chương"
 │   ├── vietqr_payment_panel.dart      # Shared VietQR order view + 3s polling until Producer approves
 │   └── qr_scanner_dialog.dart         # Camera QR code reader (`mobile_scanner`)
-└── theme/
-    └── app_theme.dart                 # Dark/Vintage/Light reader themes
+├── core/theme/app_theme.dart         # Theme tập trung: AppColors (slate #13161F/#1E2330/#282E3E, cam #F97316, vàng #FBBF24), ForgeColors, NavigationBarTheme, ForgeText.tabular
+└── theme/app_theme.dart              # Re-export đường dẫn cũ → core/theme
 ```
 
 ## Architectural & Coding Rules

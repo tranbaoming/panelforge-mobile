@@ -56,33 +56,27 @@ class WalletChip extends ConsumerWidget {
       child: Container(
         padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 5),
         decoration: BoxDecoration(
-          color: AppColors.darkSurface,
+          color: ForgeColors.surface,
           borderRadius: BorderRadius.circular(20),
-          border: Border.all(color: isVip ? AppColors.mint.withValues(alpha: 0.6) : AppColors.darkBorder, width: 1),
-          boxShadow: [
-            BoxShadow(color: Colors.black.withValues(alpha: 0.25), blurRadius: 4, offset: const Offset(0, 2)),
-          ],
+          border: Border.all(color: ForgeColors.border, width: 1),
         ),
         child: Row(
           mainAxisSize: MainAxisSize.min,
           children: [
-            const Icon(Icons.account_balance_wallet_rounded, color: AppColors.primary, size: 15),
+            const Icon(Icons.account_balance_wallet_rounded, color: ForgeColors.gold, size: 15),
             const SizedBox(width: 5),
-            Text(
-              formatVnd(balanceVnd),
-              style: GoogleFonts.plusJakartaSans(fontSize: 12, fontWeight: FontWeight.w800, color: Colors.white),
-            ),
+            Text(formatVnd(balanceVnd), style: ForgeText.tabular(fontSize: 12.5)),
             if (isVip) ...[
               const SizedBox(width: 6),
               Container(
                 padding: const EdgeInsets.symmetric(horizontal: 5, vertical: 1.5),
-                decoration: BoxDecoration(color: AppColors.mint, borderRadius: BorderRadius.circular(4)),
+                decoration: BoxDecoration(color: ForgeColors.gold, borderRadius: BorderRadius.circular(4)),
                 child: Text(
                   'VIP',
                   style: GoogleFonts.plusJakartaSans(
                     fontSize: 9,
                     fontWeight: FontWeight.w900,
-                    color: Colors.black,
+                    color: const Color(0xFF13161F),
                     letterSpacing: 0.5,
                   ),
                 ),

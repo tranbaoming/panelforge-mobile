@@ -9,6 +9,7 @@ import '../services/api_client.dart';
 import '../services/preferences_service.dart';
 import '../theme/app_theme.dart';
 import 'auth_modal_sheet.dart';
+import 'forge_ui.dart';
 import 'vietqr_payment_panel.dart';
 import 'wallet_topup_dialog.dart';
 
@@ -490,6 +491,189 @@ class _UnlockChapterBottomSheetState extends ConsumerState<UnlockChapterBottomSh
               isVip ? 'Mở khóa ngay (Đặc quyền VIP)' : 'Thanh toán ${formatVnd(_priceVnd)} & Đọc ngay',
               style: labelStyle,
             ),
+    );
+  }
+}
+
+/// Lựa chọn khi chạm một chương trả phí chưa mua trong danh sách chương.
+enum ChapterPurchaseChoice { useWallet, preview }
+
+/// Sheet chọn cách đọc chương trả phí chưa mua: thẻ "Số dư hiện tại" ở trên cùng,
+/// sheet dưới có ảnh chương, tên, giá và các lựa chọn "Dùng Ví để đọc" / "Đọc thử trang xem trước" / "Hủy".
+///
+/// "Dùng Ví để đọc" mở [UnlockChapterBottomSheet] (Ví / VietQR); "Đọc thử" mở Reader với trang xem trước
+/// (các trang còn lại làm mờ, có nút mở khóa cả chương).
+class ChapterPurchaseOptionsSheet extends ConsumerWidget {
+  final ChapterItem chapter;
+  final SeriesItem series;
+
+  const ChapterPurchaseOptionsSheet({super.key, required this.chapter, required this.series});
+
+  static Future<ChapterPurchaseChoice?> show(
+    BuildContext context, {
+    required ChapterItem chapter,
+    required SeriesItem series,
+  }) {
+    return showModalBottomSheet<ChapterPurchaseChoice>(
+      context: context,
+      isScrollControlled: true,
+      useSafeArea: true,
+      backgroundColor: Colors.transparent,
+      barrierColor: Colors.black.withValues(alpha: 0.6),
+      builder: (_) => ChapterPurchaseOptionsSheet(chapter: chapter, series: series),
+    );
+  }
+
+  @override
+  Widget build(BuildContext context, WidgetRef ref) {
+    final wallet = ref.watch(walletNotifierProvider).asData?.value;
+    final balance = wallet?.balanceVnd ?? PreferencesService.getLocalBalanceVnd();
+    final isVip = wallet?.hasActiveVip ?? PreferencesService.getLocalIsVip();
+    final subtitle = chapterSubtitle(chapter.title);
+    final hasTitle = subtitle.isNotEmpty;
+
+    Widget action(String label, VoidCallback onTap, {Color? color}) => InkWell(
+      onTap: onTap,
+      child: Padding(
+        padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 18),
+        child: Align(
+          alignment: Alignment.centerRight,
+          child: Text(
+            label,
+            style: GoogleFonts.plusJakartaSans(
+              fontSize: 18,
+              fontWeight: FontWeight.w700,
+              color: color ?? ForgeColors.text,
+            ),
+          ),
+        ),
+      ),
+    );
+
+    return Column(
+      children: [
+        // Thẻ số dư nổi phía trên.
+        Container(
+          margin: const EdgeInsets.fromLTRB(16, 12, 16, 0),
+          padding: const EdgeInsets.symmetric(vertical: 14, horizontal: 16),
+          decoration: BoxDecoration(color: ForgeColors.surface, borderRadius: BorderRadius.circular(14)),
+          child: Column(
+            children: [
+              Text(
+                'Số dư hiện tại',
+                style: GoogleFonts.plusJakartaSans(fontSize: 16, fontWeight: FontWeight.w600, color: ForgeColors.text),
+              ),
+              const SizedBox(height: 8),
+              Row(
+                mainAxisAlignment: MainAxisAlignment.center,
+                children: [
+                  const CircleAvatar(
+                    radius: 14,
+                    backgroundColor: ForgeColors.accent,
+                    child: Icon(Icons.account_balance_wallet_rounded, size: 15, color: Colors.white),
+                  ),
+                  const SizedBox(width: 8),
+                  Text(
+                    formatVnd(balance),
+                    style: GoogleFonts.plusJakartaSans(
+                      fontSize: 20,
+                      fontWeight: FontWeight.w800,
+                      color: ForgeColors.text,
+                    ),
+                  ),
+                  const SizedBox(width: 18),
+                  CircleAvatar(
+                    radius: 14,
+                    backgroundColor: isVip ? ForgeColors.accent : ForgeColors.chip,
+                    child: Icon(
+                      Icons.workspace_premium_rounded,
+                      size: 15,
+                      color: isVip ? Colors.white : ForgeColors.muted,
+                    ),
+                  ),
+                  const SizedBox(width: 8),
+                  Text(
+                    isVip ? 'VIP' : 'Chưa VIP',
+                    style: GoogleFonts.plusJakartaSans(
+                      fontSize: 16,
+                      fontWeight: FontWeight.w800,
+                      color: ForgeColors.text,
+                    ),
+                  ),
+                ],
+              ),
+            ],
+          ),
+        ),
+        Expanded(
+          child: GestureDetector(behavior: HitTestBehavior.opaque, onTap: () => Navigator.of(context).pop()),
+        ),
+        Container(
+          margin: const EdgeInsets.fromLTRB(12, 0, 12, 12),
+          decoration: BoxDecoration(color: ForgeColors.surface, borderRadius: BorderRadius.circular(18)),
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.stretch,
+            children: [
+              Padding(
+                padding: const EdgeInsets.fromLTRB(20, 20, 20, 8),
+                child: Row(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    ChapterThumbnail(series: series, number: '${chapter.number}', width: 136, height: 96),
+                    const SizedBox(width: 14),
+                    Expanded(
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          Text(
+                            'Chương ${chapter.number}',
+                            style: GoogleFonts.plusJakartaSans(
+                              fontSize: 20,
+                              fontWeight: FontWeight.w700,
+                              color: ForgeColors.text,
+                            ),
+                          ),
+                          if (hasTitle)
+                            Text(
+                              subtitle,
+                              maxLines: 2,
+                              overflow: TextOverflow.ellipsis,
+                              style: GoogleFonts.plusJakartaSans(fontSize: 14.5, color: ForgeColors.textSoft),
+                            ),
+                          const SizedBox(height: 8),
+                          Row(
+                            children: [
+                              const Icon(Icons.lock_rounded, size: 18, color: ForgeColors.accent),
+                              const SizedBox(width: 6),
+                              Text(
+                                formatVnd(chapter.priceVnd),
+                                style: GoogleFonts.plusJakartaSans(
+                                  fontSize: 17,
+                                  fontWeight: FontWeight.w800,
+                                  color: ForgeColors.text,
+                                ),
+                              ),
+                            ],
+                          ),
+                        ],
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+              action(
+                'Dùng Ví để đọc',
+                () => Navigator.of(context).pop(ChapterPurchaseChoice.useWallet),
+                color: ForgeColors.accent,
+              ),
+              action('Đọc thử trang xem trước', () => Navigator.of(context).pop(ChapterPurchaseChoice.preview)),
+              action('Hủy', () => Navigator.of(context).pop()),
+              const SizedBox(height: 6),
+            ],
+          ),
+        ),
+      ],
     );
   }
 }

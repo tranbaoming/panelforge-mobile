@@ -42,13 +42,17 @@ Widget _app() {
 }
 
 void main() {
-  testWidgets('shows only the search box (no app bar, no results) while the query is empty', (tester) async {
+  testWidgets('shows the search box and the full A–Z list while the query is empty', (tester) async {
     await tester.pumpWidget(_app());
     await tester.pumpAndSettle();
 
     expect(find.byType(AppBar), findsNothing);
-    expect(find.text('Nhập tên truyện hoặc tác giả'), findsOneWidget);
-    expect(find.text('Moon Blade'), findsNothing);
+    expect(find.text('Tìm theo tên truyện, tác giả...'), findsOneWidget);
+    expect(find.text('Truyện (A–Z)'), findsOneWidget);
+    final iron = tester.getTopLeft(find.text('Iron Lotus')).dy;
+    final moon = tester.getTopLeft(find.text('Moon Blade')).dy;
+    final sky = tester.getTopLeft(find.text('Sky Harbor')).dy;
+    expect(iron < moon && moon < sky, isTrue, reason: 'A–Z order');
     expect(find.text('Không tìm thấy bộ truyện nào phù hợp'), findsNothing);
   });
 
@@ -89,7 +93,7 @@ void main() {
     expect(find.text('Không tìm thấy bộ truyện nào phù hợp'), findsOneWidget);
   });
 
-  testWidgets('clear button empties the query and hides the results', (tester) async {
+  testWidgets('clear button empties the query and brings back the full list', (tester) async {
     await tester.pumpWidget(_app());
     await tester.pumpAndSettle();
 
@@ -97,8 +101,11 @@ void main() {
     await tester.pump();
     expect(find.text('Iron Lotus'), findsOneWidget);
 
+    expect(find.text('Moon Blade'), findsNothing);
+
     await tester.tap(find.byTooltip('Xóa'));
     await tester.pump();
-    expect(find.text('Iron Lotus'), findsNothing);
+    expect(find.text('Truyện (A–Z)'), findsOneWidget);
+    expect(find.text('Moon Blade'), findsOneWidget);
   });
 }
