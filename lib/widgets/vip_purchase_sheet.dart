@@ -11,17 +11,20 @@ import 'vietqr_payment_panel.dart';
 /// hoặc chuyển khoản VietQR trực tiếp (đơn `VipSubscription`, chờ Studio duyệt).
 /// Giá khớp `VipPricing` ở Backend; server luôn tự tính lại giá.
 class VipPurchaseSheet extends ConsumerStatefulWidget {
-  const VipPurchaseSheet({super.key});
+  /// Gói chọn sẵn khi mở: `monthly` | `yearly`.
+  final String initialPlan;
+
+  const VipPurchaseSheet({super.key, this.initialPlan = 'monthly'});
 
   static const monthlyVnd = 19900;
   static const yearlyVnd = 199900;
 
-  static Future<void> show(BuildContext context) => showModalBottomSheet<void>(
+  static Future<void> show(BuildContext context, {String initialPlan = 'monthly'}) => showModalBottomSheet<void>(
     context: context,
     isScrollControlled: true,
     backgroundColor: ForgeColors.card,
     shape: const RoundedRectangleBorder(borderRadius: BorderRadius.vertical(top: Radius.circular(20))),
-    builder: (_) => const VipPurchaseSheet(),
+    builder: (_) => VipPurchaseSheet(initialPlan: initialPlan),
   );
 
   @override
@@ -29,7 +32,7 @@ class VipPurchaseSheet extends ConsumerStatefulWidget {
 }
 
 class _VipPurchaseSheetState extends ConsumerState<VipPurchaseSheet> {
-  String _plan = 'monthly';
+  late String _plan = widget.initialPlan;
   bool _busy = false;
   String? _error;
   TopupResponse? _order;
@@ -138,9 +141,7 @@ class _VipPurchaseSheetState extends ConsumerState<VipPurchaseSheet> {
                   padding: const EdgeInsets.symmetric(vertical: 13),
                 ),
                 child: Text(
-                  balance < _price
-                      ? 'Ví không đủ (${formatVnd(balance)})'
-                      : 'Trả bằng Ví • ${formatVnd(_price)}',
+                  balance < _price ? 'Ví không đủ (${formatVnd(balance)})' : 'Trả bằng Ví • ${formatVnd(_price)}',
                   style: const TextStyle(fontWeight: FontWeight.w800),
                 ),
               ),

@@ -131,29 +131,46 @@ class _ReviewHubPageState extends ConsumerState<ReviewHubPage> {
                     Row(
                       mainAxisAlignment: MainAxisAlignment.spaceBetween,
                       children: [
-                        Container(
-                          padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
-                          decoration: BoxDecoration(
-                            color: AppColors.primary.withValues(alpha: 0.15),
-                            borderRadius: BorderRadius.circular(6),
-                            border: Border.all(color: AppColors.primary.withValues(alpha: 0.4)),
-                          ),
-                          child: Row(
-                            mainAxisSize: MainAxisSize.min,
-                            children: [
-                              const Icon(Icons.shield_outlined, size: 12, color: AppColors.primary),
-                              const SizedBox(width: 4),
-                              Text(
-                                'BẢO MẬT & ĐỘC QUYỀN',
-                                style: GoogleFonts.plusJakartaSans(
-                                  fontSize: 10,
-                                  fontWeight: FontWeight.w800,
-                                  color: AppColors.primary,
-                                  letterSpacing: 1.0,
+                        Row(
+                          mainAxisSize: MainAxisSize.min,
+                          children: [
+                            if (context.canPop()) ...[
+                              IconButton(
+                                icon: const Icon(Icons.arrow_back_rounded, color: Colors.white, size: 20),
+                                tooltip: 'Quay lại',
+                                onPressed: () => context.pop(),
+                                style: IconButton.styleFrom(
+                                  backgroundColor: AppColors.darkSurface,
+                                  side: const BorderSide(color: AppColors.darkBorder),
                                 ),
                               ),
+                              const SizedBox(width: 8),
                             ],
-                          ),
+                            Container(
+                              padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+                              decoration: BoxDecoration(
+                                color: AppColors.primary.withValues(alpha: 0.15),
+                                borderRadius: BorderRadius.circular(6),
+                                border: Border.all(color: AppColors.primary.withValues(alpha: 0.4)),
+                              ),
+                              child: Row(
+                                mainAxisSize: MainAxisSize.min,
+                                children: [
+                                  const Icon(Icons.shield_outlined, size: 12, color: AppColors.primary),
+                                  const SizedBox(width: 4),
+                                  Text(
+                                    'BẢO MẬT & ĐỘC QUYỀN',
+                                    style: GoogleFonts.plusJakartaSans(
+                                      fontSize: 10,
+                                      fontWeight: FontWeight.w800,
+                                      color: AppColors.primary,
+                                      letterSpacing: 1.0,
+                                    ),
+                                  ),
+                                ],
+                              ),
+                            ),
+                          ],
                         ),
                         IconButton(
                           icon: const Icon(Icons.logout_rounded, color: AppColors.primary, size: 20),

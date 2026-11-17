@@ -9,6 +9,15 @@ import '../theme/app_theme.dart';
 import 'auth_modal_sheet.dart';
 import 'vietqr_payment_panel.dart';
 
+/// Mệnh giá nạp Ví VietQR (dùng chung cho hộp thoại Ví và tab Cửa hàng). Không có thưởng thêm — Backend không hỗ trợ.
+const List<({int amount, String tag})> kTopupPackages = [
+  (amount: 10000, tag: 'Cơ bản'),
+  (amount: 20000, tag: '7 chương'),
+  (amount: 50000, tag: 'Phổ biến'),
+  (amount: 100000, tag: 'Tiết kiệm'),
+  (amount: 200000, tag: 'VIP Độc giả'),
+];
+
 class WalletTopupDialog extends ConsumerStatefulWidget {
   final int initialTab;
 
@@ -44,13 +53,7 @@ class _WalletTopupDialogState extends ConsumerState<WalletTopupDialog> with Sing
   bool _isLoadingQr = false;
   TopupResponse? _topupData;
 
-  final _vndPackages = const [
-    (amount: 10000, tag: 'Cơ bản'),
-    (amount: 20000, tag: '7 chương'),
-    (amount: 50000, tag: 'Phổ biến'),
-    (amount: 100000, tag: 'Tiết kiệm'),
-    (amount: 200000, tag: 'VIP Độc giả'),
-  ];
+  List<({int amount, String tag})> get _vndPackages => kTopupPackages;
 
   @override
   void initState() {

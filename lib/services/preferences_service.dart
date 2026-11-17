@@ -14,6 +14,7 @@ class PreferencesService {
   static const String _keyFollows = 'panelforge_follows';
   static const String _keyKeepScreenOn = 'panelforge_keep_screen_on';
   static const String _keyLastSyncAt = 'panelforge_last_sync_at';
+  static const String _keyPromoSeenSeries = 'panelforge_promo_seen_series';
   static const String _keyRecentTokens = 'panelforge_recent_tokens';
   static const String _keyOfflineChapters = 'panelforge_offline_chapters';
   static const String _keyUnlockedChapters = 'panelforge_unlocked_chapters';
@@ -85,6 +86,11 @@ class PreferencesService {
   static bool getKeepScreenOn() => _prefs?.getBool(_keyKeepScreenOn) ?? false;
 
   static Future<void> setKeepScreenOn(bool value) async => _prefs?.setBool(_keyKeepScreenOn, value);
+
+  /// Bộ truyện mới cuối cùng đã hiện popup giới thiệu ở Trang chủ (mỗi bộ chỉ hiện một lần).
+  static String? getPromoSeenSeriesId() => _prefs?.getString(_keyPromoSeenSeries);
+
+  static Future<void> setPromoSeenSeriesId(String id) async => _prefs?.setString(_keyPromoSeenSeries, id);
 
   static DateTime? getLastSyncAt() => DateTime.tryParse(_prefs?.getString(_keyLastSyncAt) ?? '');
 

@@ -580,6 +580,13 @@ class AuthService {
     return 'Thiết bị này đã được xóa khỏi danh sách thiết bị tin cậy.';
   }
 
+  /// 11a. Xoá (vô hiệu hóa) tài khoản của chính mình rồi đăng xuất cục bộ.
+  /// DELETE /api/users/{id} — Backend chỉ Soft Delete (IsActive = false), giao dịch & nhật ký được giữ lại.
+  Future<void> deleteMyAccount(String userId) async {
+    await _client.delete('/api/users/$userId');
+    await logout();
+  }
+
   /// 11b. Gửi mã OTP xác thực đổi mật khẩu qua email
   /// POST /api/auth/send-change-password-otp
   Future<String> sendChangePasswordOtp() async {

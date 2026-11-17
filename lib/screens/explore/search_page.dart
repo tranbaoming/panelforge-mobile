@@ -2,15 +2,16 @@ import 'package:flutter/material.dart';
 import 'package:go_router/go_router.dart';
 import 'package:google_fonts/google_fonts.dart';
 import '../../models/comic_model.dart';
+import '../../providers/catalog_providers.dart';
 import '../../services/catalog_service.dart';
 import '../../theme/app_theme.dart';
 import '../../widgets/forge_ui.dart';
 
-/// Tab Tìm kiếm: không có Top AppBar, chỉ một ô tìm kiếm.
-/// Ô trống → bên dưới để trống; có từ khóa → lọc realtime theo tên truyện hoặc tác giả / Studio.
+/// Tab Tìm kiếm: ô tìm ở trên cùng, bên dưới là danh sách truyện A–Z.
+/// Có từ khóa → lọc realtime theo tên truyện, tác giả / Studio hoặc thể loại.
 ///
 /// Backend chỉ tìm theo tên (`search` của /api/catalog/series), nên màn này tải toàn bộ catalog
-/// một lần rồi lọc tại máy để tìm được cả theo Studio.
+/// một lần rồi lọc tại máy để tìm được cả theo Studio / thể loại.
 class SearchPage extends StatefulWidget {
   /// Nguồn dữ liệu (thay được trong test). Mặc định: tải mọi trang catalog công khai.
   final Future<List<SeriesItem>> Function()? loadCatalog;
@@ -22,8 +23,6 @@ class SearchPage extends StatefulWidget {
 }
 
 class _SearchPageState extends State<SearchPage> {
-  static const _maxPages = 20; // 20 × 50 = 1000 bộ truyện
-
   final _controller = TextEditingController();
   final _focusNode = FocusNode();
   List<SeriesItem>? _catalog;
@@ -44,24 +43,13 @@ class _SearchPageState extends State<SearchPage> {
     super.dispose();
   }
 
-  static Future<List<SeriesItem>> _loadAllPages() async {
-    final service = CatalogService();
-    final all = <SeriesItem>[];
-    for (var page = 1; page <= _maxPages; page++) {
-      final res = await service.getSeries(pageIndex: page, pageSize: 50);
-      all.addAll(res.items.map(SeriesItem.fromPublicDto));
-      if (page >= res.totalPages || res.items.isEmpty) break;
-    }
-    return all;
-  }
-
   Future<void> _load() async {
     setState(() {
       _isLoading = true;
       _hasError = false;
     });
     try {
-      final items = await (widget.loadCatalog ?? _loadAllPages)();
+      final items = await (widget.loadCatalog ?? () => loadWholeCatalog(CatalogService()))();
       if (!mounted) return;
       setState(() {
         _catalog = items;
@@ -77,11 +65,20 @@ class _SearchPageState extends State<SearchPage> {
     }
   }
 
+  CatalogSections get _sections => CatalogSections(_catalog ?? const <SeriesItem>[]);
+
+  /// Ô trống → toàn bộ A–Z; có từ khóa → lọc theo tên / Studio / thể loại (vẫn giữ thứ tự A–Z).
   List<SeriesItem> get _results {
     final q = _query.trim().toLowerCase();
-    if (q.isEmpty) return const [];
-    return (_catalog ?? const <SeriesItem>[])
-        .where((s) => s.title.toLowerCase().contains(q) || s.author.toLowerCase().contains(q))
+    final az = _sections.alphabetical;
+    if (q.isEmpty) return az;
+    return az
+        .where(
+          (s) =>
+              s.title.toLowerCase().contains(q) ||
+              s.author.toLowerCase().contains(q) ||
+              s.genres.any((g) => g.toLowerCase().contains(q)),
+        )
         .toList();
   }
 
@@ -104,7 +101,7 @@ class _SearchPageState extends State<SearchPage> {
       body: SafeArea(
         child: Column(
           children: [
-            Padding(padding: const EdgeInsets.fromLTRB(16, 12, 16, 8), child: _buildSearchField()),
+            Padding(padding: const EdgeInsets.fromLTRB(16, 12, 16, 4), child: _buildSearchField()),
             Expanded(child: _buildBody()),
           ],
         ),
@@ -115,7 +112,7 @@ class _SearchPageState extends State<SearchPage> {
   Widget _buildSearchField() {
     final hasText = _query.isNotEmpty;
     return SizedBox(
-      height: 52,
+      height: 54,
       child: TextField(
         key: const ValueKey('search-field'),
         controller: _controller,
@@ -126,43 +123,36 @@ class _SearchPageState extends State<SearchPage> {
         onChanged: (v) => setState(() => _query = v),
         onSubmitted: (_) => _submit(),
         decoration: InputDecoration(
-          hintText: 'Nhập tên truyện hoặc tác giả',
+          hintText: 'Tìm theo tên truyện, tác giả...',
           hintStyle: GoogleFonts.plusJakartaSans(fontSize: 16, color: ForgeColors.muted),
           filled: true,
-          fillColor: ForgeColors.card,
+          fillColor: ForgeColors.surface,
           contentPadding: const EdgeInsets.symmetric(horizontal: 14, vertical: 14),
-          enabledBorder: _border(ForgeColors.searchBorder),
+          prefixIcon: IconButton(
+            tooltip: 'Tìm kiếm',
+            icon: const Icon(Icons.search_rounded, color: ForgeColors.muted, size: 24),
+            onPressed: _submit,
+          ),
+          enabledBorder: _border(Colors.transparent),
           focusedBorder: _border(ForgeColors.accent),
-          suffixIcon: Row(
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              if (hasText)
-                IconButton(
+          suffixIcon: hasText
+              ? IconButton(
                   tooltip: 'Xóa',
                   icon: Icon(Icons.close_rounded, color: ForgeColors.textSoft, size: 20),
                   onPressed: _clear,
-                ),
-              IconButton(
-                tooltip: 'Tìm kiếm',
-                icon: Icon(Icons.search, color: ForgeColors.textSoft),
-                onPressed: _submit,
-              ),
-            ],
-          ),
+                )
+              : null,
         ),
       ),
     );
   }
 
   OutlineInputBorder _border(Color color) => OutlineInputBorder(
-    borderRadius: BorderRadius.circular(10),
-    borderSide: BorderSide(color: color, width: 1),
+    borderRadius: BorderRadius.circular(12),
+    borderSide: BorderSide(color: color, width: 1.2),
   );
 
   Widget _buildBody() {
-    // Ô trống → để trống hoàn toàn.
-    if (_query.trim().isEmpty) return const SizedBox.expand();
-
     if (_isLoading && _catalog == null) {
       return const Center(child: CircularProgressIndicator(color: ForgeColors.accent));
     }
@@ -178,86 +168,166 @@ class _SearchPageState extends State<SearchPage> {
     }
 
     final results = _results;
-    if (results.isEmpty) {
-      return Center(
-        child: Text(
-          'Không tìm thấy bộ truyện nào phù hợp',
-          style: GoogleFonts.plusJakartaSans(fontSize: 14, color: ForgeColors.muted),
-        ),
-      );
-    }
+    final searching = _query.trim().isNotEmpty;
+    final sections = _sections;
 
-    return ListView.separated(
+    return CustomScrollView(
       keyboardDismissBehavior: ScrollViewKeyboardDismissBehavior.onDrag,
-      padding: const EdgeInsets.fromLTRB(16, 4, 16, 24),
-      itemCount: results.length,
-      separatorBuilder: (_, _) => const SizedBox(height: 10),
-      itemBuilder: (_, i) =>
-          _SearchResultCard(series: results[i], onTap: () => context.push('/series/${results[i].id}')),
+      slivers: [
+        SliverToBoxAdapter(
+          child: Padding(
+            padding: const EdgeInsets.fromLTRB(16, 14, 16, 10),
+            child: Text(
+              searching ? 'Kết quả (${results.length})' : 'Truyện (A–Z)',
+              style: GoogleFonts.plusJakartaSans(fontSize: 21, fontWeight: FontWeight.w800, color: ForgeColors.text),
+            ),
+          ),
+        ),
+        if (results.isEmpty)
+          SliverFillRemaining(
+            hasScrollBody: false,
+            child: Center(
+              child: Text(
+                searching ? 'Không tìm thấy bộ truyện nào phù hợp' : 'Chưa có bộ truyện nào được phát hành.',
+                style: GoogleFonts.plusJakartaSans(fontSize: 14, color: ForgeColors.muted),
+              ),
+            ),
+          )
+        else
+          SliverPadding(
+            padding: const EdgeInsets.fromLTRB(16, 0, 16, 24),
+            sliver: SliverList.separated(
+              itemCount: results.length,
+              separatorBuilder: (_, _) => Divider(height: 1, color: ForgeColors.divider),
+              itemBuilder: (_, i) => _SeriesRow(
+                series: results[i],
+                isNew: sections.isNew(results[i]),
+                isUpdated: sections.isUpdated(results[i]),
+                onTap: () => context.push('/series/${results[i].id}'),
+              ),
+            ),
+          ),
+      ],
     );
   }
 }
 
-/// Thẻ kết quả: ảnh bìa dọc, tên truyện, tác giả / Studio, chương mới nhất.
-class _SearchResultCard extends StatelessWidget {
+/// Một dòng A–Z: ảnh bìa bên trái; bên phải huy hiệu, tên truyện, Studio, lượt đọc và ngày cập nhật.
+class _SeriesRow extends StatelessWidget {
   final SeriesItem series;
+  final bool isNew;
+  final bool isUpdated;
   final VoidCallback onTap;
 
-  const _SearchResultCard({required this.series, required this.onTap});
+  const _SeriesRow({required this.series, required this.isNew, required this.isUpdated, required this.onTap});
+
+  static const _thumbW = 148.0;
+  static const _thumbH = 100.0;
 
   @override
   Widget build(BuildContext context) {
-    return Material(
-      color: ForgeColors.card,
-      borderRadius: BorderRadius.circular(12),
-      child: InkWell(
-        onTap: onTap,
-        borderRadius: BorderRadius.circular(12),
-        child: Padding(
-          padding: const EdgeInsets.all(10),
-          child: Row(
-            children: [
-              SizedBox(width: 66, height: 88, child: SeriesCover(series: series, radius: 8)),
-              const SizedBox(width: 12),
-              Expanded(
+    final updated = series.latestPublishedAt;
+    return InkWell(
+      onTap: onTap,
+      child: Padding(
+        padding: const EdgeInsets.symmetric(vertical: 12),
+        child: Row(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            // Ảnh ngang: cắt phần trên của bìa dọc.
+            SizedBox(
+              width: _thumbW,
+              height: _thumbH,
+              child: ClipRRect(
+                borderRadius: BorderRadius.circular(4),
+                child: FittedBox(
+                  fit: BoxFit.cover,
+                  alignment: Alignment.topCenter,
+                  clipBehavior: Clip.hardEdge,
+                  child: SizedBox(
+                    width: _thumbW,
+                    height: _thumbW * 4 / 3,
+                    child: SeriesCover(series: series, radius: 0),
+                  ),
+                ),
+              ),
+            ),
+            const SizedBox(width: 12),
+            Expanded(
+              child: SizedBox(
+                height: _thumbH,
                 child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
+                  crossAxisAlignment: CrossAxisAlignment.stretch,
                   children: [
-                    Text(
-                      series.title,
+                    StudioStrip(studio: series.author),
+                    const SizedBox(height: 5),
+                    Text.rich(
+                      TextSpan(
+                        children: [
+                          if (isNew)
+                            const WidgetSpan(
+                              alignment: PlaceholderAlignment.middle,
+                              child: _Gap(SeriesBadge.newSeries()),
+                            ),
+                          if (isUpdated)
+                            const WidgetSpan(
+                              alignment: PlaceholderAlignment.middle,
+                              child: _Gap(SeriesBadge.updated()),
+                            ),
+                          TextSpan(text: series.title),
+                        ],
+                      ),
                       maxLines: 2,
                       overflow: TextOverflow.ellipsis,
                       style: GoogleFonts.plusJakartaSans(
                         fontSize: 15,
-                        fontWeight: FontWeight.w800,
-                        color: ForgeColors.text,
-                        height: 1.25,
-                      ),
-                    ),
-                    const SizedBox(height: 4),
-                    Text(
-                      series.author.isEmpty ? 'PanelForge Studio' : series.author,
-                      maxLines: 1,
-                      overflow: TextOverflow.ellipsis,
-                      style: GoogleFonts.plusJakartaSans(fontSize: 12.5, color: ForgeColors.textSoft),
-                    ),
-                    const SizedBox(height: 4),
-                    Text(
-                      'Chương ${series.totalChapters}',
-                      style: GoogleFonts.plusJakartaSans(
-                        fontSize: 12,
                         fontWeight: FontWeight.w700,
-                        color: ForgeColors.accent,
+                        color: ForgeColors.text,
+                        height: 1.3,
                       ),
+                    ),
+                    const Spacer(),
+                    Row(
+                      children: [
+                        const Icon(Icons.visibility_rounded, size: 16, color: ForgeColors.muted),
+                        const SizedBox(width: 4),
+                        Text(formatViews(series.views), style: ForgeText.tabular(fontSize: 13.5)),
+                        const SizedBox(width: 10),
+                        Text(
+                          '${series.totalChapters} chương',
+                          style: ForgeText.tabular(
+                            fontSize: 12.5,
+                            fontWeight: FontWeight.w500,
+                            color: ForgeColors.muted,
+                          ),
+                        ),
+                        const Spacer(),
+                        if (updated != null)
+                          Text(
+                            '${updated.day.toString().padLeft(2, '0')}/${updated.month.toString().padLeft(2, '0')}/${updated.year}',
+                            style: ForgeText.tabular(
+                              fontSize: 12.5,
+                              fontWeight: FontWeight.w700,
+                              color: ForgeColors.textSoft,
+                            ),
+                          ),
+                      ],
                     ),
                   ],
                 ),
               ),
-              const Icon(Icons.chevron_right_rounded, color: ForgeColors.muted),
-            ],
-          ),
+            ),
+          ],
         ),
       ),
     );
   }
+}
+
+class _Gap extends StatelessWidget {
+  final Widget child;
+  const _Gap(this.child);
+
+  @override
+  Widget build(BuildContext context) => Padding(padding: const EdgeInsets.only(right: 5), child: child);
 }
