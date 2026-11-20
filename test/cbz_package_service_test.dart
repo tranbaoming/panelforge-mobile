@@ -157,17 +157,15 @@ void main() {
   });
 
   group('Monetization & Payment DTOs Test Suite', () {
-    test('UserWalletDto deserializes correctly with VIP status', () {
-      final now = DateTime.now();
+    test('UserWalletDto deserializes correctly', () {
       final json = {
-        'balanceCoins': 350,
-        'isVip': true,
-        'vipExpiresAt': now.toIso8601String(),
+        'balanceVnd': 35000,
+        'unlockedChapterIds': ['chap-1:vi'],
       };
       final wallet = UserWalletDto.fromJson(json);
+      expect(wallet.balanceVnd, 35000);
       expect(wallet.balanceCoins, 350);
-      expect(wallet.isVip, isTrue);
-      expect(wallet.vipExpiresAt, isNotNull);
+      expect(wallet.unlockedChapterIds, contains('chap-1:vi'));
     });
 
     test('UnlockChapterRequest and UnlockChapterResponse serialize correctly', () {

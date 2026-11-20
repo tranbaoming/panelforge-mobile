@@ -88,7 +88,7 @@ class _SeriesRatingBarState extends ConsumerState<SeriesRatingBar> {
                   key: ValueKey('rate-$stars'),
                   visualDensity: VisualDensity.compact,
                   padding: EdgeInsets.zero,
-                  constraints: const BoxConstraints(minWidth: 32, minHeight: 32),
+                  constraints: const BoxConstraints(minWidth: 44, minHeight: 44),
                   tooltip: '$stars sao',
                   onPressed: _saving ? null : () => _rate(stars),
                   icon: Icon(

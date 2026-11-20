@@ -105,18 +105,13 @@ void main() {
       expect(find.text('Thử lại'), findsOneWidget);
     });
 
-    testWidgets('For You tab shows the VIP banner and links to the Shop VIP plans', (WidgetTester tester) async {
+    testWidgets('For You tab renders without VIP banner', (WidgetTester tester) async {
       await openApp(tester);
 
       await tester.tap(find.byTooltip('Dành cho bạn'));
       await tester.pumpAndSettle();
-      expect(find.text('VIP PANELFORGE'), findsOneWidget);
+      expect(find.text('VIP PANELFORGE'), findsNothing);
       expect(find.text('Không thể kết nối đến máy chủ'), findsOneWidget);
-
-      await tester.tap(find.text('VIP PANELFORGE'));
-      await tester.pumpAndSettle();
-      expect(find.text('NẠP VÍ'), findsOneWidget);
-      expect(find.text('Đăng ký gói tháng'), findsOneWidget);
     });
 
     testWidgets('Shop tab shows the balance card and the top-up packages', (WidgetTester tester) async {
@@ -124,9 +119,9 @@ void main() {
 
       await tester.tap(find.byTooltip('Cửa hàng'));
       await tester.pumpAndSettle();
-      expect(find.text('Đăng nhập để xem số dư Ví và gói VIP.'), findsOneWidget);
+      expect(find.text('Đăng nhập để xem số dư Ví và nạp tiền.'), findsOneWidget);
       expect(find.text('NẠP VÍ'), findsOneWidget);
-      expect(find.text('GÓI VIP'), findsOneWidget);
+      expect(find.text('GÓI VIP'), findsNothing);
       expect(find.text('+10.000đ'), findsOneWidget);
     });
 

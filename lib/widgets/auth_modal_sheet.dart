@@ -435,7 +435,7 @@ class _AuthModalSheetState extends ConsumerState<AuthModalSheet> {
                     ),
                   ),
                   Text(
-                    'Mở khóa truyện & đồng bộ ForgeCoins',
+                    'Mở khóa truyện & đồng bộ Ví VNĐ',
                     style: GoogleFonts.plusJakartaSans(
                       fontSize: 12,
                       color: AppColors.darkTextSecondary,

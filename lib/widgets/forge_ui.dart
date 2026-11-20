@@ -515,7 +515,7 @@ class StudioStrip extends StatelessWidget {
   }
 }
 
-/// Thanh vàng full-width dưới thẻ: số chương ("13 chương") hoặc "Tất cả chương" (VIP).
+/// Thanh vàng full-width dưới thẻ: số chương ("13 chương") hoặc nhãn bộ sưu tập.
 class ChapterCountBar extends StatelessWidget {
   final String label;
   final IconData icon;

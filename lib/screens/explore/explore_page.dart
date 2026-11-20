@@ -403,7 +403,9 @@ class _ContinueReading extends ConsumerWidget {
                         ),
                       ),
                       Text(
-                        'Chương ${e.chapterNumber} • ${timeAgo(e.readAt)}',
+                        e.lastPageNumber > 1
+                            ? 'Chương ${e.chapterNumberLabel} • Trang ${e.lastPageNumber} • ${timeAgo(e.readAt)}'
+                            : 'Chương ${e.chapterNumberLabel} • ${timeAgo(e.readAt)}',
                         style: GoogleFonts.plusJakartaSans(fontSize: 12, color: ForgeColors.muted),
                       ),
                     ],

@@ -22,8 +22,6 @@ class PreferencesService {
   static const String _keyWalletBalance = 'panelforge_wallet_balance';
   static const String _keyWalletBalanceVnd = 'panelforge_wallet_balance_vnd';
   static const String _keyWalletTransactions = 'panelforge_wallet_transactions';
-  static const String _keyIsVip = 'panelforge_is_vip';
-  static const String _keyVipExpiresAt = 'panelforge_vip_expires_at';
 
   // ─── Authentication & Session Keys ─────────────────────────────────────────
   static const String _keyAuthUser = 'panelforge_auth_user';
@@ -215,18 +213,24 @@ class PreferencesService {
     return list.toSet();
   }
 
-  static Future<void> addUnlockedChapterId(String chapterId) async {
+  static Future<void> addUnlockedChapterId(String chapterId, {String? language}) async {
     final clean = chapterId.trim();
     if (clean.isEmpty) return;
     final current = getUnlockedChapterIds();
     current.add(clean);
+    if (!clean.contains(':')) {
+      current.add(ChapterEntitlement.editionKey(clean, language));
+    }
     await _prefs?.setStringList(_keyUnlockedChapters, current.toList());
   }
 
-  static Future<void> removeUnlockedChapterId(String chapterId) async {
+  static Future<void> removeUnlockedChapterId(String chapterId, {String? language}) async {
     final clean = chapterId.trim();
     final current = getUnlockedChapterIds();
     current.remove(clean);
+    if (!clean.contains(':')) {
+      current.remove(ChapterEntitlement.editionKey(clean, language));
+    }
     await _prefs?.setStringList(_keyUnlockedChapters, current.toList());
   }
 
@@ -241,32 +245,40 @@ class PreferencesService {
     }
   }
 
-  static ChapterEntitlement? getChapterEntitlement(String chapterId) {
+  static ChapterEntitlement? getChapterEntitlement(String chapterId, {String? language}) {
     final entitlements = getChapterEntitlements();
-    return entitlements[chapterId.trim()];
+    final clean = chapterId.trim();
+    if (language != null && language.trim().isNotEmpty) {
+      final key = ChapterEntitlement.editionKey(clean, language);
+      if (entitlements.containsKey(key)) return entitlements[key];
+    }
+    return entitlements[clean] ?? entitlements[ChapterEntitlement.editionKey(clean, language)];
   }
 
   static Future<void> saveChapterEntitlement(ChapterEntitlement entitlement) async {
     final entitlements = getChapterEntitlements();
     final cleanId = entitlement.chapterId.trim();
+    final editionKey = ChapterEntitlement.editionKey(cleanId, entitlement.language);
     entitlements[cleanId] = entitlement;
+    entitlements[editionKey] = entitlement;
     final encoded = jsonEncode(entitlements.map((k, v) => MapEntry(k, v.toJson())));
     await _prefs?.setString(_keyChapterEntitlements, encoded);
 
     if (entitlement.isValid) {
-      await addUnlockedChapterId(cleanId);
+      await addUnlockedChapterId(cleanId, language: entitlement.language);
     } else {
-      await removeUnlockedChapterId(cleanId);
+      await removeUnlockedChapterId(cleanId, language: entitlement.language);
     }
   }
 
-  static Future<void> removeChapterEntitlement(String chapterId) async {
+  static Future<void> removeChapterEntitlement(String chapterId, {String? language}) async {
     final cleanId = chapterId.trim();
     final entitlements = getChapterEntitlements();
     entitlements.remove(cleanId);
+    entitlements.remove(ChapterEntitlement.editionKey(cleanId, language));
     final encoded = jsonEncode(entitlements.map((k, v) => MapEntry(k, v.toJson())));
     await _prefs?.setString(_keyChapterEntitlements, encoded);
-    await removeUnlockedChapterId(cleanId);
+    await removeUnlockedChapterId(cleanId, language: language);
   }
 
   /// Ghi đè cache chương đã mở khóa bằng danh sách quyền sở hữu thật từ `GET /api/wallet/me`
@@ -277,23 +289,37 @@ class PreferencesService {
       for (final id in clean)
         id:
             getChapterEntitlement(id) ??
-            ChapterEntitlement(chapterId: id, isPermanent: true, unlockedAt: DateTime.now()),
+            ChapterEntitlement(
+              chapterId: id.contains(':') ? id.split(':').first : id,
+              language: id.contains(':') ? id.split(':').last : null,
+              isPermanent: true,
+              unlockedAt: DateTime.now(),
+            ),
     };
     final encoded = jsonEncode(entitlements.map((k, v) => MapEntry(k, v.toJson())));
     await _prefs?.setString(_keyChapterEntitlements, encoded);
     await _prefs?.setStringList(_keyUnlockedChapters, clean.toList());
   }
 
-  static bool isChapterUnlocked(String chapterId) {
-    if (getLocalIsVip()) return true;
-    final ent = getChapterEntitlement(chapterId);
+  static bool isChapterUnlocked(String chapterId, {String? language}) {
+    final clean = chapterId.trim();
+    final unlocked = getUnlockedChapterIds();
+    if (language != null && language.trim().isNotEmpty) {
+      final key = ChapterEntitlement.editionKey(clean, language);
+      if (unlocked.contains(key)) return true;
+      // Nếu trong danh sách đã có khóa theo ngôn ngữ khác của cùng chương (vd "ch1:vi"),
+      // thì không tự coi bản "ch1:en" là đã mở khóa (BR-33/Q10: mua ngôn ngữ nào đọc ngôn ngữ đó).
+      final hasAnyLanguageSpecific = unlocked.any((id) => id.startsWith('$clean:'));
+      if (hasAnyLanguageSpecific) return false;
+    }
+    final ent = getChapterEntitlement(clean, language: language);
     if (ent != null) {
       return ent.isValid;
     }
-    return getUnlockedChapterIds().contains(chapterId.trim());
+    return unlocked.contains(clean);
   }
 
-  // ─── Local Wallet & VIP Cache ─────────────────────────────────────────────
+  // ─── Local Wallet Cache ───────────────────────────────────────────────────
   static int getLocalBalanceVnd() {
     final vnd = _prefs?.getInt(_keyWalletBalanceVnd);
     if (vnd != null) return vnd;
@@ -332,33 +358,6 @@ class PreferencesService {
     list.insert(0, tx);
     final encoded = list.take(50).map((t) => jsonEncode(t.toJson())).toList();
     await _prefs?.setStringList(_keyWalletTransactions, encoded);
-  }
-
-  static bool getLocalIsVip() {
-    final isVip = _prefs?.getBool(_keyIsVip) ?? false;
-    if (!isVip) return false;
-    final exp = getLocalVipExpiresAt();
-    if (exp != null && exp.isBefore(DateTime.now())) {
-      return false;
-    }
-    return true;
-  }
-
-  static DateTime? getLocalVipExpiresAt() {
-    final str = _prefs?.getString(_keyVipExpiresAt);
-    if (str != null && str.isNotEmpty) {
-      return DateTime.tryParse(str);
-    }
-    return null;
-  }
-
-  static Future<void> setLocalVip({required bool isVip, DateTime? expiresAt}) async {
-    await _prefs?.setBool(_keyIsVip, isVip);
-    if (expiresAt != null) {
-      await _prefs?.setString(_keyVipExpiresAt, expiresAt.toIso8601String());
-    } else {
-      await _prefs?.remove(_keyVipExpiresAt);
-    }
   }
 
   // ─── Authentication & Session Storage ───────────────────────────────────────
@@ -430,27 +429,43 @@ class PreferencesService {
   }
 }
 
-/// Một mục lịch sử đọc: chương gần nhất của một bộ truyện.
+/// Một mục lịch sử đọc: chương gần nhất của một bộ truyện, kèm trang đang đọc dở và ngôn ngữ.
 class ReadingHistoryEntry {
   final String seriesId;
   final String seriesTitle;
   final String chapterId;
-  final int chapterNumber;
+  final double chapterNumber;
+  final int lastPageNumber;
+  final int totalPages;
+  final String language;
   final DateTime readAt;
 
   const ReadingHistoryEntry({
     required this.seriesId,
     required this.seriesTitle,
     required this.chapterId,
-    required this.chapterNumber,
+    required num chapterNumber,
+    this.lastPageNumber = 1,
+    this.totalPages = 0,
+    this.language = 'vi',
     required this.readAt,
-  });
+  }) : chapterNumber = chapterNumber is double ? chapterNumber : (chapterNumber as int) * 1.0;
+
+  String get chapterNumberLabel {
+    if (chapterNumber == chapterNumber.truncateToDouble()) {
+      return chapterNumber.toInt().toString();
+    }
+    return chapterNumber.toString().replaceAll(RegExp(r'\.?0+$'), '');
+  }
 
   factory ReadingHistoryEntry.fromJson(Map<String, dynamic> json) => ReadingHistoryEntry(
     seriesId: json['seriesId'] as String,
     seriesTitle: json['seriesTitle'] as String? ?? '',
     chapterId: json['chapterId'] as String,
-    chapterNumber: (json['chapterNumber'] as num?)?.toInt() ?? 1,
+    chapterNumber: (json['chapterNumber'] as num?)?.toDouble() ?? 1.0,
+    lastPageNumber: (json['lastPageNumber'] as num?)?.toInt() ?? 1,
+    totalPages: (json['totalPages'] as num?)?.toInt() ?? 0,
+    language: json['language'] as String? ?? 'vi',
     readAt: DateTime.tryParse(json['readAt'] as String? ?? '') ?? DateTime.now(),
   );
 
@@ -459,6 +474,25 @@ class ReadingHistoryEntry {
     'seriesTitle': seriesTitle,
     'chapterId': chapterId,
     'chapterNumber': chapterNumber,
+    'lastPageNumber': lastPageNumber,
+    'totalPages': totalPages,
+    'language': language,
     'readAt': readAt.toIso8601String(),
   };
+
+  ReadingHistoryEntry copyWith({
+    int? lastPageNumber,
+    int? totalPages,
+    String? language,
+    DateTime? readAt,
+  }) => ReadingHistoryEntry(
+    seriesId: seriesId,
+    seriesTitle: seriesTitle,
+    chapterId: chapterId,
+    chapterNumber: chapterNumber,
+    lastPageNumber: lastPageNumber ?? this.lastPageNumber,
+    totalPages: totalPages ?? this.totalPages,
+    language: language ?? this.language,
+    readAt: readAt ?? this.readAt,
+  );
 }

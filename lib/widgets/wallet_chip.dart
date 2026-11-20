@@ -8,7 +8,7 @@ import '../theme/app_theme.dart';
 import 'auth_modal_sheet.dart';
 import 'wallet_topup_dialog.dart';
 
-/// Chip hiển thị số dư Ví tiền (VNĐ) và huy hiệu VIP trên Header
+/// Chip hiển thị số dư Ví tiền (VNĐ) trên Header
 /// Luôn hiển thị số dư trực tuyến từ server hoặc số dư dự phòng cục bộ cho Độc giả
 class WalletChip extends ConsumerWidget {
   final bool? isServerConnected;
@@ -27,7 +27,6 @@ class WalletChip extends ConsumerWidget {
     // Lấy số dư VNĐ: ưu tiên từ server (walletAsync), fallback về cache cục bộ
     final cachedVnd = PreferencesService.getLocalBalanceVnd();
     final balanceVnd = walletAsync.asData?.value.balanceVnd ?? cachedVnd;
-    final isVip = walletAsync.asData?.value.isVip ?? PreferencesService.getLocalIsVip();
 
     return InkWell(
       onTap: () {
@@ -66,22 +65,6 @@ class WalletChip extends ConsumerWidget {
             const Icon(Icons.account_balance_wallet_rounded, color: ForgeColors.gold, size: 15),
             const SizedBox(width: 5),
             Text(formatVnd(balanceVnd), style: ForgeText.tabular(fontSize: 12.5)),
-            if (isVip) ...[
-              const SizedBox(width: 6),
-              Container(
-                padding: const EdgeInsets.symmetric(horizontal: 5, vertical: 1.5),
-                decoration: BoxDecoration(color: ForgeColors.gold, borderRadius: BorderRadius.circular(4)),
-                child: Text(
-                  'VIP',
-                  style: GoogleFonts.plusJakartaSans(
-                    fontSize: 9,
-                    fontWeight: FontWeight.w900,
-                    color: const Color(0xFF13161F),
-                    letterSpacing: 0.5,
-                  ),
-                ),
-              ),
-            ],
           ],
         ),
       ),

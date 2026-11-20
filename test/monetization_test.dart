@@ -14,13 +14,12 @@ import 'package:panelforge/widgets/wallet_chip.dart';
 /// Backend giả lập theo đúng hợp đồng `WalletController` (.NET).
 class FakeWalletBackend {
   int balanceVnd;
-  bool isVip;
   final Set<String> unlocked = {};
   final List<RequestOptions> requests = [];
   String orderStatus = 'Pending';
   bool unauthorized = false;
 
-  FakeWalletBackend({this.balanceVnd = 20000, this.isVip = false});
+  FakeWalletBackend({this.balanceVnd = 20000});
 
   Dio createDio() {
     final dio = Dio();
@@ -45,8 +44,6 @@ class FakeWalletBackend {
           return handler.resolve(ok({
             'balanceVnd': balanceVnd,
             'balanceCoins': balanceVnd ~/ 100,
-            'isVip': isVip,
-            'vipExpiresAt': null,
             'unlockedChapterIds': unlocked.toList(),
             'transactions': [
               {'id': 'PF100001', 'title': 'Nạp ví', 'amountVnd': 20000, 'createdAt': '2026-11-01T00:00:00Z', 'balanceAfter': 20000},
@@ -55,10 +52,10 @@ class FakeWalletBackend {
         }
         if (path.endsWith('/api/wallet/unlock-chapter')) {
           const price = 5000; // giá do server lấy từ chương
-          if (!isVip && balanceVnd < price) {
+          if (balanceVnd < price) {
             return handler.reject(fail(400, 'Số dư trong Ví không đủ để mở khóa chương (thiếu 3.000đ).'));
           }
-          if (!isVip) balanceVnd -= price;
+          balanceVnd -= price;
           unlocked.add(body['chapterId'] as String);
           return handler.resolve(ok({
             'chapterId': body['chapterId'],
@@ -67,16 +64,6 @@ class FakeWalletBackend {
             'remainingBalanceVnd': balanceVnd,
             'message': 'Đã trừ 5.000đ trong Ví. Mở khóa vĩnh viễn thành công!',
             'isPermanent': true,
-          }));
-        }
-        if (path.endsWith('/api/wallet/subscribe-vip')) {
-          balanceVnd -= 19900;
-          isVip = true;
-          return handler.resolve(ok({
-            'success': true,
-            'isVip': true,
-            'vipExpiresAt': DateTime.now().add(const Duration(days: 30)).toIso8601String(),
-            'remainingCoins': balanceVnd ~/ 100,
           }));
         }
         if (path.endsWith('/api/wallet/topup')) {
@@ -186,7 +173,7 @@ void main() {
   });
 
   group('MonetizationService ↔ WalletController', () {
-    test('getMyWallet đồng bộ số dư, VIP và chương đã mở khóa từ server', () async {
+    test('getMyWallet đồng bộ số dư và chương đã mở khóa từ server', () async {
       final backend = FakeWalletBackend(balanceVnd: 20000)..unlocked.add('ch-owned');
       await PreferencesService.addUnlockedChapterId('stale-from-other-account');
 
@@ -254,14 +241,6 @@ void main() {
       expect((await service.getTransactionStatus('PF123456')).isPending, isTrue);
       backend.orderStatus = 'Approved';
       expect((await service.getTransactionStatus('PF123456')).isApproved, isTrue);
-    });
-
-    test('subscribeVipWithWallet kích hoạt VIP', () async {
-      final backend = FakeWalletBackend(balanceVnd: 50000);
-      final resp = await MonetizationService(dio: backend.createDio()).subscribeVipWithWallet(plan: 'monthly');
-
-      expect(resp.isVip, isTrue);
-      expect(PreferencesService.getLocalIsVip(), isTrue);
     });
   });
 

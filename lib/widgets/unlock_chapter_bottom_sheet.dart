@@ -17,7 +17,7 @@ enum _UnlockMethod { wallet, vietQr }
 
 /// Mở khóa chương trả phí do Producer cấu hình (`isLocked` + `priceVnd`).
 ///
-/// - **Trừ Ví**: `POST /api/wallet/unlock-chapter` (miễn phí nếu có VIP).
+/// - **Trừ Ví**: `POST /api/wallet/unlock-chapter` (mở khóa vĩnh viễn theo ấn bản).
 /// - **VietQR trực tiếp**: `POST /api/wallet/topup` với purpose `ChapterUnlock` → đơn Pending xuất hiện ngay
 ///   trên màn hình Thanh toán của Producer; khi Producer xác nhận, chương được mở khóa tự động.
 class UnlockChapterBottomSheet extends ConsumerStatefulWidget {
@@ -69,7 +69,7 @@ class _UnlockChapterBottomSheetState extends ConsumerState<UnlockChapterBottomSh
   String? _errorMessage;
   TopupResponse? _vietQrOrder;
 
-  int get _priceVnd => widget.chapter.priceVnd;
+  int get _priceVnd => widget.chapter.priceVndFor(widget.language);
 
   @override
   void initState() {
@@ -139,12 +139,12 @@ class _UnlockChapterBottomSheetState extends ConsumerState<UnlockChapterBottomSh
     }
   }
 
-  /// Producer đã xác nhận đơn VietQR → Backend đã tạo quyền đọc; đồng bộ lại Ví & danh sách chương.
+  /// Producer/Publisher đã xác nhận đơn VietQR → Backend đã tạo quyền đọc; đồng bộ lại Ví & danh sách chương.
   Future<void> _onVietQrApproved(TransactionStatusDto status) async {
-    ref.read(unlockedChaptersProvider.notifier).add(widget.chapter.id);
+    ref.read(unlockedChaptersProvider.notifier).add(widget.chapter.id, language: widget.language);
     await ref.read(walletNotifierProvider.notifier).refresh(silent: true);
     if (!mounted) return;
-    _finishUnlocked('Studio đã xác nhận thanh toán ${formatVnd(status.amountVnd)}. Chương đã được mở khóa!');
+    _finishUnlocked('Hệ thống đã xác nhận thanh toán ${formatVnd(status.amountVnd)}. Ấn bản đã được mở khóa!');
   }
 
   void _finishUnlocked(String message) {
@@ -190,8 +190,7 @@ class _UnlockChapterBottomSheetState extends ConsumerState<UnlockChapterBottomSh
   Widget build(BuildContext context) {
     final wallet = ref.watch(walletNotifierProvider).asData?.value;
     final currentBalanceVnd = wallet?.balanceVnd ?? PreferencesService.getLocalBalanceVnd();
-    final isVip = wallet?.hasActiveVip ?? PreferencesService.getLocalIsVip();
-    final hasEnoughMoney = isVip || currentBalanceVnd >= _priceVnd;
+    final hasEnoughMoney = currentBalanceVnd >= _priceVnd;
     final missingVnd = (_priceVnd - currentBalanceVnd).clamp(0, 1 << 31);
 
     return Container(
@@ -226,15 +225,16 @@ class _UnlockChapterBottomSheetState extends ConsumerState<UnlockChapterBottomSh
                 onCancel: () => setState(() => _vietQrOrder = null),
               )
             else ...[
-              if (!isVip) ...[_buildMethodSelector(), const SizedBox(height: 14)],
-              if (isVip || _method == _UnlockMethod.wallet)
-                _buildWalletSummary(currentBalanceVnd, isVip, hasEnoughMoney)
+              _buildMethodSelector(),
+              const SizedBox(height: 14),
+              if (_method == _UnlockMethod.wallet)
+                _buildWalletSummary(currentBalanceVnd, hasEnoughMoney)
               else
                 _buildVietQrHint(),
               const SizedBox(height: 16),
               if (_errorMessage != null) _buildError(_errorMessage!),
-              if (!isVip && _method == _UnlockMethod.wallet && !hasEnoughMoney) _buildInsufficientBanner(missingVnd),
-              _buildPrimaryAction(isVip, hasEnoughMoney),
+              if (_method == _UnlockMethod.wallet && !hasEnoughMoney) _buildInsufficientBanner(missingVnd),
+              _buildPrimaryAction(hasEnoughMoney),
             ],
           ],
         ),
@@ -278,8 +278,8 @@ class _UnlockChapterBottomSheetState extends ConsumerState<UnlockChapterBottomSh
               ),
               const SizedBox(height: 2),
               Text(
-                'Chương trả phí • Mở khóa vĩnh viễn ${formatVnd(_priceVnd)}',
-                style: GoogleFonts.plusJakartaSans(fontSize: 11.5, color: AppColors.darkTextSecondary),
+                'Ấn bản ${contentLanguageLabel(widget.language)} • Mở khóa vĩnh viễn ${formatVnd(_priceVnd)}',
+                style: GoogleFonts.plusJakartaSans(fontSize: 12, color: AppColors.darkTextSecondary),
               ),
             ],
           ),
@@ -344,7 +344,7 @@ class _UnlockChapterBottomSheetState extends ConsumerState<UnlockChapterBottomSh
     );
   }
 
-  Widget _buildWalletSummary(int balance, bool isVip, bool hasEnoughMoney) {
+  Widget _buildWalletSummary(int balance, bool hasEnoughMoney) {
     Widget row(String label, String value, {Color color = Colors.white, bool bold = false}) => Row(
       mainAxisAlignment: MainAxisAlignment.spaceBetween,
       children: [
@@ -372,13 +372,13 @@ class _UnlockChapterBottomSheetState extends ConsumerState<UnlockChapterBottomSh
           const SizedBox(height: 10),
           row(
             'Giá mở khóa:',
-            isVip ? '0đ (VIP)' : '-${formatVnd(_priceVnd)}',
-            color: isVip ? AppColors.mint : AppColors.primary,
+            '-${formatVnd(_priceVnd)}',
+            color: AppColors.primary,
           ),
           const Divider(color: AppColors.darkBorder, height: 22),
           row(
             'Số dư sau thanh toán:',
-            formatVnd(isVip ? balance : balance - _priceVnd),
+            formatVnd(balance - _priceVnd),
             color: hasEnoughMoney ? AppColors.mint : AppColors.rose,
             bold: true,
           ),
@@ -452,7 +452,7 @@ class _UnlockChapterBottomSheetState extends ConsumerState<UnlockChapterBottomSh
     );
   }
 
-  Widget _buildPrimaryAction(bool isVip, bool hasEnoughMoney) {
+  Widget _buildPrimaryAction(bool hasEnoughMoney) {
     final style = ElevatedButton.styleFrom(
       backgroundColor: AppColors.primary,
       foregroundColor: Colors.white,
@@ -466,7 +466,7 @@ class _UnlockChapterBottomSheetState extends ConsumerState<UnlockChapterBottomSh
       child: CircularProgressIndicator(strokeWidth: 2, color: Colors.white),
     );
 
-    if (!isVip && _method == _UnlockMethod.vietQr) {
+    if (_method == _UnlockMethod.vietQr) {
       return ElevatedButton.icon(
         onPressed: _isProcessing ? null : _createVietQrOrder,
         icon: _isProcessing ? spinner : const Icon(Icons.qr_code_rounded, size: 18),
@@ -487,10 +487,7 @@ class _UnlockChapterBottomSheetState extends ConsumerState<UnlockChapterBottomSh
       style: style,
       child: _isProcessing
           ? spinner
-          : Text(
-              isVip ? 'Mở khóa ngay (Đặc quyền VIP)' : 'Thanh toán ${formatVnd(_priceVnd)} & Đọc ngay',
-              style: labelStyle,
-            ),
+          : Text('Thanh toán ${formatVnd(_priceVnd)} & Đọc ngay', style: labelStyle),
     );
   }
 }
@@ -506,13 +503,20 @@ enum ChapterPurchaseChoice { useWallet, preview }
 class ChapterPurchaseOptionsSheet extends ConsumerWidget {
   final ChapterItem chapter;
   final SeriesItem series;
+  final String language;
 
-  const ChapterPurchaseOptionsSheet({super.key, required this.chapter, required this.series});
+  const ChapterPurchaseOptionsSheet({
+    super.key,
+    required this.chapter,
+    required this.series,
+    this.language = 'vi',
+  });
 
   static Future<ChapterPurchaseChoice?> show(
     BuildContext context, {
     required ChapterItem chapter,
     required SeriesItem series,
+    String language = 'vi',
   }) {
     return showModalBottomSheet<ChapterPurchaseChoice>(
       context: context,
@@ -520,7 +524,7 @@ class ChapterPurchaseOptionsSheet extends ConsumerWidget {
       useSafeArea: true,
       backgroundColor: Colors.transparent,
       barrierColor: Colors.black.withValues(alpha: 0.6),
-      builder: (_) => ChapterPurchaseOptionsSheet(chapter: chapter, series: series),
+      builder: (_) => ChapterPurchaseOptionsSheet(chapter: chapter, series: series, language: language),
     );
   }
 
@@ -528,9 +532,9 @@ class ChapterPurchaseOptionsSheet extends ConsumerWidget {
   Widget build(BuildContext context, WidgetRef ref) {
     final wallet = ref.watch(walletNotifierProvider).asData?.value;
     final balance = wallet?.balanceVnd ?? PreferencesService.getLocalBalanceVnd();
-    final isVip = wallet?.hasActiveVip ?? PreferencesService.getLocalIsVip();
     final subtitle = chapterSubtitle(chapter.title);
     final hasTitle = subtitle.isNotEmpty;
+    final price = chapter.priceVndFor(language);
 
     Widget action(String label, VoidCallback onTap, {Color? color}) => InkWell(
       onTap: onTap,
@@ -581,25 +585,6 @@ class ChapterPurchaseOptionsSheet extends ConsumerWidget {
                       color: ForgeColors.text,
                     ),
                   ),
-                  const SizedBox(width: 18),
-                  CircleAvatar(
-                    radius: 14,
-                    backgroundColor: isVip ? ForgeColors.accent : ForgeColors.chip,
-                    child: Icon(
-                      Icons.workspace_premium_rounded,
-                      size: 15,
-                      color: isVip ? Colors.white : ForgeColors.muted,
-                    ),
-                  ),
-                  const SizedBox(width: 8),
-                  Text(
-                    isVip ? 'VIP' : 'Chưa VIP',
-                    style: GoogleFonts.plusJakartaSans(
-                      fontSize: 16,
-                      fontWeight: FontWeight.w800,
-                      color: ForgeColors.text,
-                    ),
-                  ),
                 ],
               ),
             ],
@@ -620,14 +605,14 @@ class ChapterPurchaseOptionsSheet extends ConsumerWidget {
                 child: Row(
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
-                    ChapterThumbnail(series: series, number: '${chapter.number}', width: 136, height: 96),
+                    ChapterThumbnail(series: series, number: chapter.numberLabel, width: 136, height: 96),
                     const SizedBox(width: 14),
                     Expanded(
                       child: Column(
                         crossAxisAlignment: CrossAxisAlignment.start,
                         children: [
                           Text(
-                            'Chương ${chapter.number}',
+                            'Chương ${chapter.numberLabel} (${language.toUpperCase()})',
                             style: GoogleFonts.plusJakartaSans(
                               fontSize: 20,
                               fontWeight: FontWeight.w700,
@@ -647,7 +632,7 @@ class ChapterPurchaseOptionsSheet extends ConsumerWidget {
                               const Icon(Icons.lock_rounded, size: 18, color: ForgeColors.accent),
                               const SizedBox(width: 6),
                               Text(
-                                formatVnd(chapter.priceVnd),
+                                formatVnd(price),
                                 style: GoogleFonts.plusJakartaSans(
                                   fontSize: 17,
                                   fontWeight: FontWeight.w800,
