@@ -4,7 +4,9 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:go_router/go_router.dart';
 import 'package:shared_preferences/shared_preferences.dart';
+import 'package:panelforge/models/comic_model.dart';
 import 'package:panelforge/providers/api_providers.dart';
+import 'package:panelforge/providers/catalog_providers.dart';
 import 'package:panelforge/providers/notification_providers.dart';
 import 'package:panelforge/screens/profile/activity_page.dart';
 import 'package:panelforge/services/api_client.dart';
@@ -88,6 +90,8 @@ const _reader = AuthState(
 );
 
 void main() {
+  followUpdateTests();
+
   setUp(() async {
     SharedPreferences.setMockInitialValues({});
     await PreferencesService.init();
@@ -96,6 +100,7 @@ void main() {
   ProviderContainer makeContainer(_FakeNotificationsBackend backend) => ProviderContainer(
     overrides: [
       notificationServiceProvider.overrideWithValue(NotificationService(ApiClient(customDio: backend.createDio()))),
+      catalogSeriesProvider.overrideWith((ref) async => const <SeriesItem>[]),
     ],
   );
 
@@ -196,5 +201,72 @@ void main() {
 
     expect(find.text('Đăng nhập để nhận thông báo.'), findsOneWidget);
     expect(backend.calls, isEmpty);
+  });
+}
+
+SeriesItem _followed(String id, DateTime? latest) => SeriesItem(
+  id: id,
+  title: 'Series $id',
+  author: 'Studio',
+  artist: 'Studio',
+  format: ComicFormat.manga,
+  coverGradientStart: '',
+  coverGradientEnd: '',
+  synopsisQuote: '',
+  fullSynopsis: '',
+  views: 0,
+  readProgressChapter: 0,
+  totalChapters: 3,
+  genres: const [],
+  chapters: const [],
+  editorialNote: '',
+  latestPublishedAt: latest,
+);
+
+void followUpdateTests() {
+  group('followed series updates', () {
+    setUp(() async {
+      SharedPreferences.setMockInitialValues({});
+      await PreferencesService.init();
+    });
+
+    ProviderContainer containerWith(List<SeriesItem> catalog) =>
+        ProviderContainer(overrides: [catalogSeriesProvider.overrideWith((ref) async => catalog)]);
+
+    test('only chapters published after following count, and opening clears them', () async {
+      final now = DateTime.now();
+      await PreferencesService.toggleFollow('a');
+      await PreferencesService.toggleFollow('b');
+      await PreferencesService.setFollowSeenAt('a', now.subtract(const Duration(days: 2)));
+      await PreferencesService.setFollowSeenAt('b', now.subtract(const Duration(days: 2)));
+
+      final container = containerWith([
+        _followed('a', now.subtract(const Duration(days: 1))), // mới sau mốc đã xem
+        _followed('b', now.subtract(const Duration(days: 3))), // cũ hơn mốc
+        _followed('c', now), // không theo dõi
+      ]);
+      addTearDown(container.dispose);
+      await container.read(catalogSeriesProvider.future);
+
+      expect(container.read(followUpdatesProvider).map((s) => s.id), ['a']);
+      expect(container.read(bellBadgeCountProvider), 1);
+
+      await container.read(followUpdatesProvider.notifier).markSeen('a');
+      expect(container.read(followUpdatesProvider), isEmpty);
+      expect(container.read(bellBadgeCountProvider), 0);
+    });
+
+    test('follows from before the feature get a baseline instead of a flood of alerts', () async {
+      SharedPreferences.setMockInitialValues({
+        'panelforge_follows': ['a'],
+      });
+      await PreferencesService.init();
+      final container = containerWith([_followed('a', DateTime.now().subtract(const Duration(hours: 1)))]);
+      addTearDown(container.dispose);
+      await container.read(catalogSeriesProvider.future);
+
+      expect(container.read(followUpdatesProvider), isEmpty);
+      expect(PreferencesService.getFollowSeenAt().containsKey('a'), isTrue);
+    });
   });
 }

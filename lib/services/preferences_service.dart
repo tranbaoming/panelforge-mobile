@@ -12,6 +12,7 @@ class PreferencesService {
   static const String _keyFavorites = 'panelforge_favorites';
   static const String _keyAppThemeMode = 'panelforge_app_theme_mode';
   static const String _keyFollows = 'panelforge_follows';
+  static const String _keyFollowSeenAt = 'panelforge_follow_seen_at';
   static const String _keyKeepScreenOn = 'panelforge_keep_screen_on';
   static const String _keyLastSyncAt = 'panelforge_last_sync_at';
   static const String _keyPromoSeenSeries = 'panelforge_promo_seen_series';
@@ -77,7 +78,31 @@ class PreferencesService {
     final added = current.add(seriesId);
     if (!added) current.remove(seriesId);
     await _prefs?.setStringList(_keyFollows, current.toList());
+    // Bắt đầu theo dõi → chỉ báo các chương phát hành sau thời điểm này.
+    if (added) await setFollowSeenAt(seriesId, DateTime.now());
     return added;
+  }
+
+  /// Lần cuối độc giả đã "thấy" chương mới của từng bộ đang theo dõi (seriesId → thời điểm).
+  static Map<String, DateTime> getFollowSeenAt() {
+    final raw = _prefs?.getString(_keyFollowSeenAt);
+    if (raw == null || raw.isEmpty) return {};
+    try {
+      final decoded = jsonDecode(raw) as Map<String, dynamic>;
+      final result = <String, DateTime>{};
+      for (final e in decoded.entries) {
+        final t = DateTime.tryParse(e.value.toString());
+        if (t != null) result[e.key] = t;
+      }
+      return result;
+    } catch (_) {
+      return {};
+    }
+  }
+
+  static Future<void> setFollowSeenAt(String seriesId, DateTime at) async {
+    final map = getFollowSeenAt()..[seriesId] = at;
+    await _prefs?.setString(_keyFollowSeenAt, jsonEncode(map.map((k, v) => MapEntry(k, v.toIso8601String()))));
   }
 
   // ─── Cài đặt màn Cá nhân ────────────────────────────────────────────────

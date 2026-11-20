@@ -25,6 +25,7 @@ class ActivityPage extends ConsumerWidget {
     final history = PreferencesService.getReadingHistory();
     final notifications = ref.watch(notificationsProvider);
     final unread = ref.watch(unreadNotificationCountProvider);
+    final followUpdates = ref.watch(followUpdatesProvider);
 
     return Scaffold(
       backgroundColor: ForgeColors.bg,
@@ -61,6 +62,37 @@ class ActivityPage extends ConsumerWidget {
                 ],
               ),
             ),
+            if (followUpdates.isNotEmpty) ...[
+              _card(
+                child: Column(
+                  children: [
+                    for (final (i, s) in followUpdates.indexed) ...[
+                      if (i > 0) Divider(height: 1, color: ForgeColors.divider),
+                      ListTile(
+                        key: ValueKey('follow-update-${s.id}'),
+                        onTap: () {
+                          ref.read(followUpdatesProvider.notifier).markSeen(s.id);
+                          context.push('/series/${s.id}');
+                        },
+                        leading: SizedBox(width: 36, height: 48, child: SeriesCover(series: s, radius: 4)),
+                        title: Text(
+                          'Chương mới: ${s.title}',
+                          maxLines: 2,
+                          overflow: TextOverflow.ellipsis,
+                          style: GoogleFonts.plusJakartaSans(fontWeight: FontWeight.w800, color: ForgeColors.text),
+                        ),
+                        subtitle: Text(
+                          'Truyện bạn theo dõi vừa cập nhật • ${timeAgo(s.latestPublishedAt)}',
+                          style: GoogleFonts.plusJakartaSans(fontSize: 12, color: ForgeColors.muted),
+                        ),
+                        trailing: const Icon(Icons.chevron_right_rounded, color: ForgeColors.muted),
+                      ),
+                    ],
+                  ],
+                ),
+              ),
+              const SizedBox(height: 12),
+            ],
             if (!auth.isAuthenticated)
               _empty('Đăng nhập để nhận thông báo.')
             else

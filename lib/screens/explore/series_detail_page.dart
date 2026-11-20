@@ -7,6 +7,7 @@ import '../../models/api_dtos.dart';
 import '../../models/comic_model.dart';
 import '../../navigation/read_guard.dart';
 import '../../providers/api_providers.dart';
+import '../../providers/notification_providers.dart';
 import '../../providers/catalog_providers.dart';
 import '../../services/app_info.dart';
 import '../../theme/app_theme.dart';
@@ -42,6 +43,10 @@ class _SeriesDetailPageState extends ConsumerState<SeriesDetailPage> {
   void initState() {
     super.initState();
     _fetchDetailFromApi();
+    // Mở trang chi tiết = đã thấy chương mới của bộ đang theo dõi.
+    if (PreferencesService.isFollowing(widget.seriesId)) {
+      Future.microtask(() => ref.read(followUpdatesProvider.notifier).markSeen(widget.seriesId));
+    }
   }
 
   Future<void> _fetchDetailFromApi() async {
@@ -117,6 +122,7 @@ class _SeriesDetailPageState extends ConsumerState<SeriesDetailPage> {
   /// 🔔 Theo dõi (danh sách THEO DÕI ở màn Cá nhân) — khác 🔖 Đọc sau (bookmark).
   Future<void> _toggleFollow() async {
     final following = await PreferencesService.toggleFollow(widget.seriesId);
+    ref.read(followUpdatesProvider.notifier).recompute();
     if (mounted) setState(() => _isFollowing = following);
   }
 
