@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:flutter/material.dart';
 import 'package:panelforge/services/api_client.dart';
 import 'package:flutter/services.dart';
@@ -62,6 +64,15 @@ class _ComicReaderPageState extends ConsumerState<ComicReaderPage> with WidgetsB
   bool _isScreenLocked = false;
   bool _isPrivacyShieldActive = false;
 
+  /// Cài đặt riêng của bộ truyện này (chế độ đọc, nền, độ sáng) — lưu ngay khi độc giả đổi.
+  late ReaderSeriesSettings _seriesSettings = PreferencesService.getReaderSeriesSettings(widget.seriesId);
+  bool _autoNext = PreferencesService.getAutoNextChapter();
+
+  /// Đếm ngược tự sang chương sau khi đọc tới trang cuối; null = không chờ.
+  Timer? _autoNextTimer;
+  ChapterItem? _autoNextTarget;
+  static const autoNextDelay = Duration(seconds: 3);
+
   @override
   void initState() {
     super.initState();
@@ -69,11 +80,70 @@ class _ComicReaderPageState extends ConsumerState<ComicReaderPage> with WidgetsB
     HardwareKeyboard.instance.addHandler(_handleKeyEvent);
     // Cài đặt "Giữ màn hình sáng khi đọc" ở màn Cá nhân.
     ScreenSecurityService.keepScreenAwake(PreferencesService.getKeepScreenOn());
+    final savedTheme = ReaderThemeMode.values.where((t) => t.name == _seriesSettings.theme).firstOrNull;
+    if (savedTheme != null) _themeMode = savedTheme;
     _loadData();
+  }
+
+  ReadingMode? get _savedReadingMode =>
+      ReadingMode.values.where((m) => m.name == _seriesSettings.readingMode).firstOrNull;
+
+  void _updateSeriesSettings(ReaderSeriesSettings next) {
+    _seriesSettings = next;
+    PreferencesService.saveReaderSeriesSettings(widget.seriesId, next);
+  }
+
+  void _setReadingMode(ReadingMode mode) {
+    setState(() => _readingMode = mode);
+    _updateSeriesSettings(_seriesSettings.copyWith(readingMode: mode.name));
+  }
+
+  void _setTheme(ReaderThemeMode theme) {
+    setState(() => _themeMode = theme);
+    _updateSeriesSettings(_seriesSettings.copyWith(theme: theme.name));
+  }
+
+  void _setBrightness(double value) {
+    setState(() => _seriesSettings = _seriesSettings.copyWith(brightness: value));
+    PreferencesService.saveReaderSeriesSettings(widget.seriesId, _seriesSettings);
+  }
+
+  /// Chương kế tiếp theo số chương (null nếu đang ở chương mới nhất).
+  ChapterItem? _nextChapterOf(SeriesItem series, ChapterItem current) {
+    final sorted = [...series.chapters]..sort((a, b) => a.chapterNumber.compareTo(b.chapterNumber));
+    final idx = sorted.indexWhere((c) => c.id == current.id);
+    return (idx >= 0 && idx < sorted.length - 1) ? sorted[idx + 1] : null;
+  }
+
+  /// Tới trang cuối → đếm ngược rồi sang chương sau. Không tự mở chương còn khóa (tránh bất ngờ trừ tiền / paywall).
+  void _maybeScheduleAutoNext(SeriesItem series, ChapterItem current, int page) {
+    final atEnd = current.pages.isNotEmpty && page >= current.pages.length;
+    if (!atEnd) {
+      _cancelAutoNext();
+      return;
+    }
+    if (!_autoNext || _autoNextTimer != null || _isScreenLocked) return;
+    final next = _nextChapterOf(series, current);
+    if (next == null || !_isChapterUnlocked(next)) return;
+    setState(() => _autoNextTarget = next);
+    _autoNextTimer = Timer(autoNextDelay, () {
+      _autoNextTimer = null;
+      if (!mounted || _autoNextTarget == null) return;
+      final target = _autoNextTarget!;
+      setState(() => _autoNextTarget = null);
+      _switchToChapter(target);
+    });
+  }
+
+  void _cancelAutoNext() {
+    _autoNextTimer?.cancel();
+    _autoNextTimer = null;
+    if (_autoNextTarget != null && mounted) setState(() => _autoNextTarget = null);
   }
 
   @override
   void dispose() {
+    _autoNextTimer?.cancel();
     WidgetsBinding.instance.removeObserver(this);
     HardwareKeyboard.instance.removeHandler(_handleKeyEvent);
     ScreenSecurityService.keepScreenAwake(false);
@@ -340,6 +410,8 @@ class _ComicReaderPageState extends ConsumerState<ComicReaderPage> with WidgetsB
           readingMode = ReadingMode.webtoon;
         }
       }
+      // Độc giả đã chọn chế độ đọc riêng cho bộ này → ưu tiên hơn hướng đọc mặc định của server.
+      readingMode = _savedReadingMode ?? readingMode;
 
       String? selectedLang = _selectedLanguage;
       if (loadedPackage.availableLanguages.isNotEmpty) {
@@ -589,6 +661,7 @@ class _ComicReaderPageState extends ConsumerState<ComicReaderPage> with WidgetsB
                 },
                 onPageChanged: (newPage) {
                   setState(() => _currentPage = newPage);
+                  _maybeScheduleAutoNext(series, currentChapter, newPage);
                   PreferencesService.saveReadingProgress(
                     ReadingHistoryEntry(
                       seriesId: series.id,
@@ -607,6 +680,45 @@ class _ComicReaderPageState extends ConsumerState<ComicReaderPage> with WidgetsB
               ),
             ),
           ),
+
+          // Độ sáng trong app: phủ lớp tối lên trang, không chặn thao tác.
+          if (_seriesSettings.brightness < 1.0)
+            Positioned.fill(
+              child: IgnorePointer(
+                child: ColoredBox(
+                  key: const ValueKey('reader-dim-overlay'),
+                  color: Colors.black.withValues(alpha: (1 - _seriesSettings.brightness) * 0.85),
+                ),
+              ),
+            ),
+
+          // Đếm ngược tự sang chương sau.
+          if (_autoNextTarget != null)
+            Positioned(
+              left: 16,
+              right: 16,
+              bottom: MediaQuery.of(context).padding.bottom + (_showHud ? 230 : 24),
+              child: Material(
+                color: AppColors.darkSurface.withValues(alpha: 0.96),
+                borderRadius: BorderRadius.circular(14),
+                child: Padding(
+                  padding: const EdgeInsets.fromLTRB(14, 6, 6, 6),
+                  child: Row(
+                    children: [
+                      const Icon(Icons.skip_next_rounded, color: AppColors.primary),
+                      const SizedBox(width: 8),
+                      Expanded(
+                        child: Text(
+                          'Sang Chương ${_autoNextTarget!.numberLabel} sau ${autoNextDelay.inSeconds} giây',
+                          style: GoogleFonts.plusJakartaSans(color: Colors.white, fontWeight: FontWeight.w700),
+                        ),
+                      ),
+                      TextButton(onPressed: _cancelAutoNext, child: const Text('Hủy')),
+                    ],
+                  ),
+                ),
+              ),
+            ),
 
           // TOP HUD: Back button, Chapter info, Language selector, TOC Drawer
           AnimatedPositioned(
@@ -780,9 +892,7 @@ class _ComicReaderPageState extends ConsumerState<ComicReaderPage> with WidgetsB
                         ],
                       ),
                     ),
-                    onSelected: (mode) {
-                      setState(() => _readingMode = mode);
-                    },
+                    onSelected: _setReadingMode,
                     itemBuilder: (context) => ReadingMode.values.map((mode) {
                       return PopupMenuItem<ReadingMode>(
                         value: mode,
@@ -884,7 +994,7 @@ class _ComicReaderPageState extends ConsumerState<ComicReaderPage> with WidgetsB
                         return Padding(
                           padding: const EdgeInsets.symmetric(horizontal: 4),
                           child: InkWell(
-                            onTap: () => setState(() => _themeMode = theme),
+                            onTap: () => _setTheme(theme),
                             borderRadius: BorderRadius.circular(16),
                             child: Container(
                               padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 6),
@@ -998,7 +1108,43 @@ class _ComicReaderPageState extends ConsumerState<ComicReaderPage> with WidgetsB
                     ),
                   ],
 
-                  const SizedBox(height: 10),
+                  // Độ sáng (riêng cho bộ này) + tự sang chương sau.
+                  Row(
+                    children: [
+                      Icon(Icons.brightness_low_rounded, size: 18, color: hudTextColor.withValues(alpha: 0.7)),
+                      Expanded(
+                        child: Slider(
+                          key: const ValueKey('reader-brightness'),
+                          value: _seriesSettings.brightness,
+                          min: 0.2,
+                          max: 1.0,
+                          activeColor: AppColors.primary,
+                          label: 'Độ sáng',
+                          semanticFormatterCallback: (v) => 'Độ sáng ${(v * 100).round()}%',
+                          onChanged: _setBrightness,
+                        ),
+                      ),
+                      Icon(Icons.brightness_high_rounded, size: 18, color: hudTextColor.withValues(alpha: 0.7)),
+                      const SizedBox(width: 10),
+                      Text(
+                        'Tự sang chương',
+                        style: GoogleFonts.plusJakartaSans(fontSize: 11, fontWeight: FontWeight.w700, color: hudTextColor),
+                      ),
+                      Switch(
+                        key: const ValueKey('reader-auto-next'),
+                        value: _autoNext,
+                        activeThumbColor: Colors.white,
+                        activeTrackColor: AppColors.primary,
+                        onChanged: (v) {
+                          setState(() => _autoNext = v);
+                          PreferencesService.setAutoNextChapter(v);
+                          if (!v) _cancelAutoNext();
+                        },
+                      ),
+                    ],
+                  ),
+
+                  const SizedBox(height: 4),
 
                   // INTERACTIVE SCRUBBER WITH TANGERINE CITRUS THEME
                   InteractiveScrubber(
@@ -1085,6 +1231,7 @@ class _ComicReaderPageState extends ConsumerState<ComicReaderPage> with WidgetsB
   }
 
   Future<void> _switchToChapter(ChapterItem chapter) async {
+    _cancelAutoNext();
     setState(() => _isLoading = true);
     await _loadChapterContent(_series!, chapter);
     _readerSwitcherKey.currentState?.jumpToPage(1);

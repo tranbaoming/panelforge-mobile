@@ -6,6 +6,8 @@ class PreferencesService {
   static const String _keyBaseUrl = 'panelforge_custom_base_url';
   static const String _keyReadingMode = 'panelforge_reading_mode';
   static const String _keyReaderTheme = 'panelforge_reader_theme';
+  static const String _keyReaderSeriesSettings = 'panelforge_reader_series_settings';
+  static const String _keyAutoNextChapter = 'panelforge_auto_next_chapter';
   static const String _keyContentLanguage = 'panelforge_content_language';
   static const String _keyBookmarks = 'panelforge_bookmarks';
   static const String _keyReadingHistory = 'panelforge_reading_history';
@@ -185,6 +187,33 @@ class PreferencesService {
   static Future<void> setReaderTheme(String theme) async {
     await _prefs?.setString(_keyReaderTheme, theme);
   }
+
+  /// Cài đặt đọc riêng của từng bộ truyện (chế độ đọc, nền, độ sáng).
+  static ReaderSeriesSettings getReaderSeriesSettings(String seriesId) {
+    final raw = _prefs?.getString(_keyReaderSeriesSettings);
+    if (raw == null || raw.isEmpty) return const ReaderSeriesSettings();
+    try {
+      final all = jsonDecode(raw) as Map<String, dynamic>;
+      final one = all[seriesId];
+      return one is Map<String, dynamic> ? ReaderSeriesSettings.fromJson(one) : const ReaderSeriesSettings();
+    } catch (_) {
+      return const ReaderSeriesSettings();
+    }
+  }
+
+  static Future<void> saveReaderSeriesSettings(String seriesId, ReaderSeriesSettings settings) async {
+    Map<String, dynamic> all = {};
+    try {
+      all = jsonDecode(_prefs?.getString(_keyReaderSeriesSettings) ?? '{}') as Map<String, dynamic>;
+    } catch (_) {}
+    all[seriesId] = settings.toJson();
+    await _prefs?.setString(_keyReaderSeriesSettings, jsonEncode(all));
+  }
+
+  /// Đọc hết trang cuối → tự sang chương sau (nếu chương đó đọc được). Mặc định bật.
+  static bool getAutoNextChapter() => _prefs?.getBool(_keyAutoNextChapter) ?? true;
+
+  static Future<void> setAutoNextChapter(bool value) async => _prefs?.setBool(_keyAutoNextChapter, value);
 
   // ─── Recent Review Tokens ─────────────────────────────────────────────────
   static List<String> getRecentReviewTokens() {
@@ -584,4 +613,27 @@ class OfflineChapterInfo {
     'chapterTitle': chapterTitle,
     'downloadedAt': downloadedAt.toIso8601String(),
   };
+}
+
+/// Cài đặt đọc của một bộ truyện. `null` = chưa chọn, dùng mặc định (hướng đọc do server / nền Đêm).
+class ReaderSeriesSettings {
+  final String? readingMode;
+  final String? theme;
+  final double brightness;
+
+  const ReaderSeriesSettings({this.readingMode, this.theme, this.brightness = 1.0});
+
+  ReaderSeriesSettings copyWith({String? readingMode, String? theme, double? brightness}) => ReaderSeriesSettings(
+    readingMode: readingMode ?? this.readingMode,
+    theme: theme ?? this.theme,
+    brightness: brightness ?? this.brightness,
+  );
+
+  factory ReaderSeriesSettings.fromJson(Map<String, dynamic> json) => ReaderSeriesSettings(
+    readingMode: json['readingMode'] as String?,
+    theme: json['theme'] as String?,
+    brightness: ((json['brightness'] as num?)?.toDouble() ?? 1.0).clamp(0.2, 1.0),
+  );
+
+  Map<String, dynamic> toJson() => {'readingMode': readingMode, 'theme': theme, 'brightness': brightness};
 }
