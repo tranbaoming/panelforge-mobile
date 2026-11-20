@@ -7,17 +7,30 @@ import 'api_providers.dart';
 /// Toàn bộ catalog công khai (mọi trang, tối đa 1000 bộ) — dùng chung cho Trang chủ, Dành cho bạn, Tìm kiếm.
 /// Backend chỉ tìm theo tên, nên app tải hết một lần rồi chia khối / lọc tại máy.
 final catalogSeriesProvider = FutureProvider<List<SeriesItem>>((ref) async {
-  final items = await loadWholeCatalog(ref.watch(catalogServiceProvider));
-  ref.read(isServerConnectedProvider.notifier).setConnected(true);
+  final service = ref.watch(catalogServiceProvider);
+  final items = await loadWholeCatalog(service);
+  final fromCache = service.lastSeriesFromCache;
+  ref.read(isServerConnectedProvider.notifier).setConnected(!fromCache);
+  ref.read(catalogFromCacheProvider.notifier).set(fromCache);
   return items;
 });
+
+/// true khi catalog đang hiển thị là bản đã lưu (không kết nối được máy chủ).
+final catalogFromCacheProvider = NotifierProvider<CatalogFromCacheNotifier, bool>(CatalogFromCacheNotifier.new);
+
+class CatalogFromCacheNotifier extends Notifier<bool> {
+  @override
+  bool build() => false;
+
+  void set(bool value) => state = value;
+}
 
 Future<List<SeriesItem>> loadWholeCatalog(CatalogService service, {int maxPages = 20}) async {
   final all = <SeriesItem>[];
   for (var page = 1; page <= maxPages; page++) {
     final res = await service.getSeries(pageIndex: page, pageSize: 50);
     all.addAll(res.items.map(SeriesItem.fromPublicDto));
-    if (page >= res.totalPages || res.items.isEmpty) break;
+    if (page >= res.totalPages || res.items.isEmpty || service.lastSeriesFromCache) break;
   }
   return all;
 }

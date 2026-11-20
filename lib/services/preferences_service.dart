@@ -27,6 +27,9 @@ class PreferencesService {
   static const String _keyWalletBalance = 'panelforge_wallet_balance';
   static const String _keyWalletBalanceVnd = 'panelforge_wallet_balance_vnd';
   static const String _keyWalletTransactions = 'panelforge_wallet_transactions';
+  static const String _keyCatalogCache = 'panelforge_catalog_cache';
+  static const String _keyCrashLog = 'panelforge_crash_log';
+  static const String _keyTextScale = 'panelforge_text_scale';
 
   // ─── Authentication & Session Keys ─────────────────────────────────────────
   static const String _keyAuthUser = 'panelforge_auth_user';
@@ -454,6 +457,52 @@ class PreferencesService {
     await _prefs?.setStringList(_keyWalletTransactions, encoded);
   }
 
+  // ─── Catalog đã lưu (mở app khi không có mạng) ────────────────────────────
+  /// JSON thô của trang catalog `pageIndex/pageSize` lần tải thành công gần nhất.
+  static Map<String, dynamic>? getCachedCatalogPage(int pageIndex, int pageSize) {
+    try {
+      final all = jsonDecode(_prefs?.getString(_keyCatalogCache) ?? '{}') as Map<String, dynamic>;
+      final page = all['$pageIndex/$pageSize'];
+      return page is Map<String, dynamic> ? page : null;
+    } catch (_) {
+      return null;
+    }
+  }
+
+  static Future<void> cacheCatalogPage(int pageIndex, int pageSize, Map<String, dynamic> json) async {
+    Map<String, dynamic> all = {};
+    try {
+      all = jsonDecode(_prefs?.getString(_keyCatalogCache) ?? '{}') as Map<String, dynamic>;
+    } catch (_) {}
+    all['$pageIndex/$pageSize'] = json;
+    await _prefs?.setString(_keyCatalogCache, jsonEncode(all));
+  }
+
+  // ─── Nhật ký lỗi (crash log) trên máy ────────────────────────────────────
+  /// Lỗi chưa bắt được gần nhất trước, tối đa 20 mục. Chỉ lưu trên máy; độc giả tự sao chép gửi hỗ trợ.
+  static List<CrashLogEntry> getCrashLog() {
+    final list = <CrashLogEntry>[];
+    for (final raw in _prefs?.getStringList(_keyCrashLog) ?? const <String>[]) {
+      try {
+        list.add(CrashLogEntry.fromJson(jsonDecode(raw) as Map<String, dynamic>));
+      } catch (_) {}
+    }
+    return list;
+  }
+
+  static Future<void> addCrashLog(CrashLogEntry entry) async {
+    final next = [entry, ...getCrashLog()].take(20).map((e) => jsonEncode(e.toJson())).toList();
+    await _prefs?.setStringList(_keyCrashLog, next);
+  }
+
+  static Future<void> clearCrashLog() async => _prefs?.remove(_keyCrashLog);
+
+  // ─── Cỡ chữ ứng dụng ────────────────────────────────────────────────────
+  /// Hệ số nhân cỡ chữ (1.0 = theo hệ thống). Áp lên cỡ chữ hệ thống của thiết bị.
+  static double getTextScale() => _prefs?.getDouble(_keyTextScale) ?? 1.0;
+
+  static Future<void> setTextScale(double value) async => _prefs?.setDouble(_keyTextScale, value);
+
   // ─── Authentication & Session Storage ───────────────────────────────────────
   static Map<String, dynamic>? getAuthUser() {
     final str = _prefs?.getString(_keyAuthUser);
@@ -653,4 +702,24 @@ class ReaderSeriesSettings {
   );
 
   Map<String, dynamic> toJson() => {'readingMode': readingMode, 'theme': theme, 'brightness': brightness};
+}
+
+/// Một lỗi chưa bắt được trong app.
+class CrashLogEntry {
+  final DateTime time;
+  final String error;
+  final String stack;
+
+  const CrashLogEntry({required this.time, required this.error, required this.stack});
+
+  factory CrashLogEntry.fromJson(Map<String, dynamic> json) => CrashLogEntry(
+    time: DateTime.tryParse(json['time'] as String? ?? '') ?? DateTime.now(),
+    error: json['error'] as String? ?? '',
+    stack: json['stack'] as String? ?? '',
+  );
+
+  Map<String, dynamic> toJson() => {'time': time.toIso8601String(), 'error': error, 'stack': stack};
+
+  @override
+  String toString() => '[${time.toIso8601String()}] $error\n$stack';
 }

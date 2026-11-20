@@ -71,6 +71,19 @@ class AppThemeModeNotifier extends Notifier<ThemeMode> {
   }
 }
 
+/// Hệ số cỡ chữ của app (Cài đặt → Cỡ chữ).
+final textScaleProvider = NotifierProvider<TextScaleNotifier, double>(TextScaleNotifier.new);
+
+class TextScaleNotifier extends Notifier<double> {
+  @override
+  double build() => PreferencesService.getTextScale();
+
+  Future<void> set(double value) async {
+    state = value;
+    await PreferencesService.setTextScale(value);
+  }
+}
+
 final appThemeModeProvider = NotifierProvider<AppThemeModeNotifier, ThemeMode>(AppThemeModeNotifier.new);
 
 /// Provider tải danh sách Series phát hành từ backend

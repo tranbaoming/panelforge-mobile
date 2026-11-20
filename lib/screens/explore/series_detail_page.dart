@@ -283,9 +283,10 @@ class _SeriesDetailPageState extends ConsumerState<SeriesDetailPage> {
   }
 
   Future<void> _share(SeriesItem series) async {
+    final link = AppInfo.seriesDeepLink(series.id);
     final text = AppInfo.shareUrl.isEmpty
-        ? 'Đọc "${series.title}" trên PanelForge'
-        : 'Đọc "${series.title}" trên PanelForge: ${AppInfo.shareUrl}';
+        ? 'Đọc "${series.title}" trên PanelForge: $link'
+        : 'Đọc "${series.title}" trên PanelForge: $link\nTải ứng dụng: ${AppInfo.shareUrl}';
     await Clipboard.setData(ClipboardData(text: text));
     if (!mounted) return;
     ScaffoldMessenger.of(context).showSnackBar(

@@ -19,4 +19,7 @@ class AppInfo {
 
   /// Liên kết tải ứng dụng dùng khi chia sẻ.
   static const String shareUrl = '';
+
+  /// Link mở thẳng trang truyện trong app (Android / iOS đã đăng ký scheme `panelforge`).
+  static String seriesDeepLink(String seriesId) => 'panelforge://app/series/$seriesId';
 }
