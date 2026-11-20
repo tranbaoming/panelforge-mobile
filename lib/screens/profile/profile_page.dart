@@ -437,19 +437,8 @@ class _SeriesListRow extends StatelessWidget {
         ),
         child: Row(
           children: [
-            SizedBox(
-              width: 132,
-              height: 84,
-              child: ClipRRect(
-                borderRadius: BorderRadius.circular(4),
-                child: FittedBox(
-                  fit: BoxFit.cover,
-                  alignment: Alignment.topCenter,
-                  clipBehavior: Clip.hardEdge,
-                  child: SizedBox(width: 132, height: 176, child: SeriesCover(series: series, radius: 0)),
-                ),
-              ),
-            ),
+            // Bìa dọc 3:4 hiển thị trọn vẹn (không cắt).
+            SizedBox(width: 72, height: 96, child: SeriesCover(series: series, radius: 6)),
             const SizedBox(width: 14),
             Expanded(
               child: Column(

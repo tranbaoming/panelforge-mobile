@@ -221,8 +221,8 @@ class _SeriesRow extends StatelessWidget {
 
   const _SeriesRow({required this.series, required this.isNew, required this.isUpdated, required this.onTap});
 
-  static const _thumbW = 148.0;
-  static const _thumbH = 100.0;
+  static const _thumbH = 112.0;
+  static const _thumbW = _thumbH * 3 / 4;
 
   @override
   Widget build(BuildContext context) {
@@ -234,23 +234,11 @@ class _SeriesRow extends StatelessWidget {
         child: Row(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            // Ảnh ngang: cắt phần trên của bìa dọc.
+            // Bìa dọc 3:4 hiển thị trọn vẹn (không cắt).
             SizedBox(
               width: _thumbW,
               height: _thumbH,
-              child: ClipRRect(
-                borderRadius: BorderRadius.circular(4),
-                child: FittedBox(
-                  fit: BoxFit.cover,
-                  alignment: Alignment.topCenter,
-                  clipBehavior: Clip.hardEdge,
-                  child: SizedBox(
-                    width: _thumbW,
-                    height: _thumbW * 4 / 3,
-                    child: SeriesCover(series: series, radius: 0),
-                  ),
-                ),
-              ),
+              child: SeriesCover(series: series, radius: 6),
             ),
             const SizedBox(width: 12),
             Expanded(

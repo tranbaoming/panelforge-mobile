@@ -3,6 +3,7 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:go_router/go_router.dart';
 import 'package:panelforge/models/comic_model.dart';
 import 'package:panelforge/screens/explore/search_page.dart';
+import 'package:panelforge/widgets/forge_ui.dart';
 
 SeriesItem _series(String id, String title, String studio) => SeriesItem(
   id: id,
@@ -54,6 +55,17 @@ void main() {
     final sky = tester.getTopLeft(find.text('Sky Harbor')).dy;
     expect(iron < moon && moon < sky, isTrue, reason: 'A–Z order');
     expect(find.text('Không tìm thấy bộ truyện nào phù hợp'), findsNothing);
+  });
+
+  testWidgets('list covers are portrait 3:4 and shown whole, not cropped', (tester) async {
+    await tester.pumpWidget(_app());
+    await tester.pumpAndSettle();
+
+    final covers = find.byType(SeriesCover);
+    expect(covers, findsNWidgets(_catalog.length));
+    final size = tester.getSize(covers.first);
+    expect(size.width / size.height, closeTo(3 / 4, 0.01));
+    expect(find.byType(FittedBox), findsNothing);
   });
 
   testWidgets('filters by title, case-insensitive, as the user types', (tester) async {
