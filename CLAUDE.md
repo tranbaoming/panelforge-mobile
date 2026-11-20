@@ -32,6 +32,7 @@ lib/
 │   └── review_model.dart              # Review token, feedback, pinpoint annotations
 ├── providers/
 │   ├── api_providers.dart             # Riverpod providers (ApiClient, Auth, Catalog, Review)
+│   ├── notification_providers.dart    # notificationsProvider (GET /api/notifications khi đã đăng nhập), unreadNotificationCountProvider, đánh dấu đã đọc
 │   └── catalog_providers.dart         # catalogSeriesProvider (toàn bộ catalog) + CatalogSections (Phổ biến, Mới, Thể loại, Đề xuất, badge MỚI/UP)
 ├── services/
 │   ├── api_client.dart                # Dio HTTP client wrapper with JWT interceptor
@@ -40,6 +41,7 @@ lib/
 │   ├── catalog_service.dart           # Public catalog & chapter reader queries (BR-23)
 │   ├── preview_service.dart           # Token inspection & feedback submission (BR-16, BR-17)
 │   ├── cbz_package_service.dart       # Offline CBZ caching & package extraction
+│   ├── notification_service.dart      # /api/notifications: danh sách, {id}/read, read-all
 │   ├── monetization_service.dart      # Wallet balance & chapter paywall unlocking
 │   ├── preferences_service.dart       # SharedPreferences: bookmarks (Đọc sau), theo dõi, lịch sử đọc, giao diện, giữ màn hình sáng
 │   └── app_info.dart                  # Phiên bản & liên kết Liên hệ / Chính sách / Cửa hàng (điền khi có)
@@ -57,7 +59,7 @@ lib/
 │   │   ├── profile_page.dart          # Tab Cá nhân: thẻ Tạo tài khoản / hồ sơ + Ví, lối tắt Đọc sau / Theo dõi / Đã mở khóa, thẻ Lịch sử / Yêu thích
 │   │   ├── settings_page.dart         # /settings (bánh răng): Tài khoản (hồ sơ, đổi MK, thiết bị tin cậy, giao dịch, mã Review, đăng xuất, xoá TK), Cài đặt ứng dụng (ngôn ngữ giao diện, giao diện, ...), Trợ giúp, Khác
 │   │   ├── legal_page.dart            # /legal/:id — terms | privacy | copyright | faq (nội dung ở lib/content/legal_content.dart)
-│   │   └── activity_page.dart         # /activity (chuông ở tab Cá nhân): giao dịch Ví, đọc gần đây, lối vào Review (/review)
+│   │   └── activity_page.dart         # /activity (chuông có số chưa đọc ở tab Cá nhân): thông báo từ server, giao dịch Ví, đọc gần đây, lối vào Review (/review)
 │   ├── reader/
 │   │   └── comic_reader_page.dart     # Multi-mode manga/comic/webtoon reader
 │   └── review/
