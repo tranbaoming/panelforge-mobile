@@ -252,10 +252,15 @@ class _ComicReaderPageState extends ConsumerState<ComicReaderPage> with WidgetsB
     _activeLanguage = options.any((o) => o.language == _preferredLanguage) ? _preferredLanguage : 'vi';
   }
 
-  /// Độc giả đổi bản ngôn ngữ: lưu lựa chọn và tải lại (giá / trạng thái mở khóa theo bản mới).
+  /// Độc giả đổi bản ngôn ngữ: lưu lựa chọn (thiết bị + tài khoản nếu đã đăng nhập) và tải lại.
   Future<void> _changeEdition(String language) async {
     if (language == _activeLanguage) return;
     await PreferencesService.setContentLanguage(language);
+    if (ref.read(authStateProvider).isAuthenticated) {
+      CatalogService().updatePreferredReadingLanguage(language).catchError((Object e) {
+        debugPrint('[ReadingLanguage] $e');
+      });
+    }
     if (!mounted) return;
     setState(() => _preferredLanguage = language);
     await _loadData();
@@ -313,15 +318,18 @@ class _ComicReaderPageState extends ConsumerState<ComicReaderPage> with WidgetsB
         }
         currentChapter = targetChapter.copyWith(pageCount: offlinePages.length, pages: offlinePages);
       } else {
-        // Nạp qua Catalog API
+        // Nạp qua Catalog API — D9b: 404 EDITION_NOT_PUBLISHED tuyệt đối không tự động fallback sang ngôn ngữ khác.
         PublicChapterReadDto readDto;
         try {
           readDto = await CatalogService().readChapter(chId, lang: _activeLanguage);
         } on ApiException catch (e) {
-          // Chương này chưa phát hành bản ngôn ngữ đang chọn → đọc bản gốc.
-          if (e.statusCode != 404 || _activeLanguage == 'vi') rethrow;
-          _activeLanguage = 'vi';
-          readDto = await CatalogService().readChapter(chId);
+          if (e.statusCode == 404) {
+            throw ApiException(
+              'Ấn bản ${contentLanguageLabel(_activeLanguage)} chưa được phát hành cho chương này.',
+              statusCode: 404,
+            );
+          }
+          rethrow;
         }
         _applyChapterLanguages(readDto.languages);
         currentChapter = ChapterItem.fromPublicReadDto(readDto);

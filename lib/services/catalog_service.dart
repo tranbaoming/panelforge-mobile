@@ -36,9 +36,10 @@ class CatalogService {
   /// Lấy chi tiết Series và danh sách các chương đã Published
   /// GET /api/catalog/series/{seriesId}
   Future<PublicSeriesDetailDto> getSeriesDetail(String seriesId, {String? lang}) async {
+    final cleanLang = lang?.trim();
     final response = await _client.get(
       '/api/catalog/series/$seriesId',
-      queryParameters: lang != null && lang != 'vi' ? {'lang': lang} : null,
+      queryParameters: (cleanLang != null && cleanLang.isNotEmpty) ? {'lang': cleanLang} : null,
     );
     return PublicSeriesDetailDto.fromJson(response.data as Map<String, dynamic>);
   }
@@ -46,20 +47,33 @@ class CatalogService {
   /// Ghi một lượt đọc thật sau khi Reader mở xong chương (Backend gộp lượt đọc lại trong 30 phút).
   /// POST /api/catalog/chapters/{chapterId}/views
   Future<void> recordChapterView(String chapterId, {String? lang}) async {
-    await _client.post(lang != null && lang != 'vi'
-        ? '/api/catalog/chapters/$chapterId/views?lang=$lang'
-        : '/api/catalog/chapters/$chapterId/views');
+    final cleanLang = lang?.trim();
+    await _client.post(
+      (cleanLang != null && cleanLang.isNotEmpty)
+          ? '/api/catalog/chapters/$chapterId/views?lang=$cleanLang'
+          : '/api/catalog/chapters/$chapterId/views',
+    );
   }
 
   /// Lấy nội dung chương đọc cho Reader: hướng đọc và danh sách URL ảnh các trang
   /// GET /api/catalog/chapters/{chapterId}
-  /// [lang]: bản ngôn ngữ (vi/en/ja). 404 nếu bản đó chưa phát hành, 403 nếu chưa mua bản đó.
+  /// [lang]: bản ngôn ngữ (vi/en). 404 (`EDITION_NOT_PUBLISHED`) nếu bản đó chưa phát hành (D9b, không fallback).
   Future<PublicChapterReadDto> readChapter(String chapterId, {String? lang}) async {
+    final cleanLang = lang?.trim();
     final response = await _client.get(
       '/api/catalog/chapters/$chapterId',
-      queryParameters: lang != null && lang != 'vi' ? {'lang': lang} : null,
+      queryParameters: (cleanLang != null && cleanLang.isNotEmpty) ? {'lang': cleanLang} : null,
     );
     return PublicChapterReadDto.fromJson(response.data as Map<String, dynamic>);
+  }
+
+  /// Lưu ngôn ngữ đọc ưa thích lên tài khoản (BR-34 / RDR-11).
+  /// PUT /api/users/me/reading-language
+  Future<void> updatePreferredReadingLanguage(String languageCode) async {
+    await _client.put(
+      '/api/users/me/reading-language',
+      data: {'languageCode': languageCode.trim().toLowerCase()},
+    );
   }
 
   /// Đánh giá 1–5 sao cho bộ truyện (cần đăng nhập). PUT /api/catalog/series/{seriesId}/rating
