@@ -186,7 +186,7 @@ class ActivityPage extends ConsumerWidget {
                           style: GoogleFonts.plusJakartaSans(color: ForgeColors.text),
                         ),
                         subtitle: Text(
-                          'Chương ${h.chapterNumber} • ${timeAgo(h.readAt)}',
+                          'Chương ${h.chapterNumberLabel} • ${timeAgo(h.readAt)}',
                           style: GoogleFonts.plusJakartaSans(fontSize: 11.5, color: ForgeColors.muted),
                         ),
                       ),
