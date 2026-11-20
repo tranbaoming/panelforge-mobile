@@ -114,7 +114,6 @@ class _WalletTopupDialogState extends ConsumerState<WalletTopupDialog> with Sing
     final wallet = walletState.asData?.value;
     final cachedVnd = PreferencesService.getLocalBalanceVnd();
     final currentVnd = wallet?.balanceVnd ?? cachedVnd;
-    final isVip = wallet?.isVip ?? PreferencesService.getLocalIsVip();
 
     return Dialog(
       backgroundColor: AppColors.darkSurface,
@@ -166,25 +165,6 @@ class _WalletTopupDialogState extends ConsumerState<WalletTopupDialog> with Sing
                                 ],
                               ),
                             ),
-                            if (isVip) ...[
-                              const SizedBox(width: 8),
-                              Container(
-                                padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
-                                decoration: BoxDecoration(
-                                  color: AppColors.mint.withValues(alpha: 0.15),
-                                  borderRadius: BorderRadius.circular(8),
-                                  border: Border.all(color: AppColors.mint.withValues(alpha: 0.3)),
-                                ),
-                                child: Text(
-                                  'VIP ACTIVE',
-                                  style: GoogleFonts.plusJakartaSans(
-                                    fontSize: 10,
-                                    fontWeight: FontWeight.w800,
-                                    color: AppColors.mint,
-                                  ),
-                                ),
-                              ),
-                            ],
                           ],
                         ),
                       ],

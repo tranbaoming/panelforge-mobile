@@ -932,17 +932,13 @@ class WalletTransactionDto {
 
 class UserWalletDto {
   final int balanceVnd;
-  final bool isVip;
-  final DateTime? vipExpiresAt;
   final List<WalletTransactionDto> transactions;
 
-  /// Chương đã mở khóa vĩnh viễn trên server (ChapterEntitlement).
+  /// Chương đã mở khóa vĩnh viễn trên server (ChapterEntitlement / EditionEntitlement).
   final Set<String> unlockedChapterIds;
 
   const UserWalletDto({
     required this.balanceVnd,
-    this.isVip = false,
-    this.vipExpiresAt,
     this.transactions = const [],
     this.unlockedChapterIds = const {},
   });
@@ -950,10 +946,7 @@ class UserWalletDto {
   /// Getter tương thích ngược cho ForgeCoins
   int get balanceCoins => balanceVnd ~/ 100;
 
-  /// VIP còn hiệu lực (server có thể chưa kịp tắt cờ khi hết hạn).
-  bool get hasActiveVip => isVip && (vipExpiresAt == null || vipExpiresAt!.isAfter(DateTime.now()));
-
-  /// `GET /api/wallet/me` → UserWalletDto(BalanceVnd, BalanceCoins, IsVip, VipExpiresAt, UnlockedChapterIds, Transactions)
+  /// `GET /api/wallet/me` → UserWalletDto(BalanceVnd, BalanceCoins, UnlockedChapterIds, Transactions)
   factory UserWalletDto.fromJson(Map<String, dynamic> json) {
     final balance = (json['balanceVnd'] as num?)?.toInt() ?? (((json['balanceCoins'] as num?)?.toInt() ?? 0) * 100);
 
@@ -962,8 +955,6 @@ class UserWalletDto {
 
     return UserWalletDto(
       balanceVnd: balance,
-      isVip: json['isVip'] as bool? ?? false,
-      vipExpiresAt: json['vipExpiresAt'] != null ? DateTime.tryParse(json['vipExpiresAt'].toString()) : null,
       transactions: rawTx.map((e) => WalletTransactionDto.fromJson(e as Map<String, dynamic>)).toList(),
       unlockedChapterIds: rawUnlocked.map((e) => e.toString()).toSet(),
     );
@@ -971,15 +962,11 @@ class UserWalletDto {
 
   UserWalletDto copyWith({
     int? balanceVnd,
-    bool? isVip,
-    DateTime? vipExpiresAt,
     List<WalletTransactionDto>? transactions,
     Set<String>? unlockedChapterIds,
   }) {
     return UserWalletDto(
       balanceVnd: balanceVnd ?? this.balanceVnd,
-      isVip: isVip ?? this.isVip,
-      vipExpiresAt: vipExpiresAt ?? this.vipExpiresAt,
       transactions: transactions ?? this.transactions,
       unlockedChapterIds: unlockedChapterIds ?? this.unlockedChapterIds,
     );
@@ -988,8 +975,6 @@ class UserWalletDto {
   Map<String, dynamic> toJson() => {
     'balanceVnd': balanceVnd,
     'balanceCoins': balanceCoins,
-    'isVip': isVip,
-    if (vipExpiresAt != null) 'vipExpiresAt': vipExpiresAt!.toIso8601String(),
     'transactions': transactions.map((t) => t.toJson()).toList(),
     'unlockedChapterIds': unlockedChapterIds.toList(),
   };
@@ -1087,57 +1072,10 @@ class UnlockChapterResponse {
   String? get fullCbzDownloadUrl => cbzDownloadUrl != null ? ApiConfig.resolveUrl(cbzDownloadUrl!) : null;
 }
 
-class SubscribeVipRequest {
-  final String plan; // 'monthly' | 'yearly'
-
-  const SubscribeVipRequest({required this.plan});
-
-  factory SubscribeVipRequest.fromJson(Map<String, dynamic> json) {
-    return SubscribeVipRequest(plan: json['plan']?.toString() ?? 'monthly');
-  }
-
-  Map<String, dynamic> toJson() => {'plan': plan};
-}
-
-class SubscribeVipResponse {
-  final bool success;
-  final bool isVip;
-  final DateTime? vipExpiresAt;
-  final int remainingCoins;
-  final String? message;
-
-  const SubscribeVipResponse({
-    required this.success,
-    required this.isVip,
-    this.vipExpiresAt,
-    required this.remainingCoins,
-    this.message,
-  });
-
-  factory SubscribeVipResponse.fromJson(Map<String, dynamic> json) {
-    return SubscribeVipResponse(
-      success: json['success'] as bool? ?? false,
-      isVip: json['isVip'] as bool? ?? false,
-      vipExpiresAt: json['vipExpiresAt'] != null ? DateTime.tryParse(json['vipExpiresAt'].toString()) : null,
-      remainingCoins: (json['remainingCoins'] as num?)?.toInt() ?? 0,
-      message: json['message']?.toString(),
-    );
-  }
-
-  Map<String, dynamic> toJson() => {
-    'success': success,
-    'isVip': isVip,
-    if (vipExpiresAt != null) 'vipExpiresAt': vipExpiresAt!.toIso8601String(),
-    'remainingCoins': remainingCoins,
-    if (message != null) 'message': message,
-  };
-}
-
 /// Mục đích của đơn VietQR — khớp `TopupRequest.Purpose` / `PaymentTransactionType` trên Backend.
 enum PaymentPurpose {
   topup('Topup'),
-  chapterUnlock('ChapterUnlock'),
-  vipSubscription('VipSubscription');
+  chapterUnlock('ChapterUnlock');
 
   final String value;
   const PaymentPurpose(this.value);
@@ -1145,7 +1083,7 @@ enum PaymentPurpose {
 
 /// `POST /api/wallet/topup` — tạo đơn chuyển khoản VietQR ở trạng thái Pending.
 /// Ngữ cảnh (series/chapter/workspace) giúp đơn hiển thị đúng Studio trên màn hình Thanh toán của Producer.
-/// Với [PaymentPurpose.chapterUnlock] / [PaymentPurpose.vipSubscription], số tiền do server quyết định.
+/// Với [PaymentPurpose.chapterUnlock], số tiền do server quyết định.
 class TopupRequest {
   final int? amountVnd;
   final String paymentMethod;
@@ -1153,7 +1091,6 @@ class TopupRequest {
   final String? workspaceId;
   final String? seriesId;
   final String? chapterId;
-  final String? vipPlan;
 
   /// Bản ngôn ngữ mua khi trả VietQR trực tiếp để mở chương.
   final String? language;
@@ -1166,7 +1103,6 @@ class TopupRequest {
     this.seriesId,
     this.chapterId,
     this.language,
-    this.vipPlan,
   });
 
   Map<String, dynamic> toJson() => {
@@ -1177,7 +1113,6 @@ class TopupRequest {
     if (seriesId != null) 'seriesId': seriesId,
     if (chapterId != null) 'chapterId': chapterId,
     if (language != null) 'language': language,
-    if (vipPlan != null) 'vipPlan': vipPlan,
   };
 }
 

@@ -173,13 +173,11 @@ class _ComicReaderPageState extends ConsumerState<ComicReaderPage> with WidgetsB
     );
   }
 
-  /// Cùng quy tắc với SeriesDetailPage: Backend `isLocked`/`isUnlocked` + VIP + quyền sở hữu theo ấn bản ngôn ngữ.
+  /// Cùng quy tắc với SeriesDetailPage: Backend `isLocked`/`isUnlocked` + quyền sở hữu theo ấn bản ngôn ngữ.
   bool _isChapterUnlocked(ChapterItem chapter, [String? lang]) {
     final targetLang = lang ?? _activeLanguage;
     if (!chapter.isLockedFor(targetLang)) return true;
     if (chapter.isServerUnlockedFor(targetLang)) return true;
-    final wallet = ref.watch(walletNotifierProvider).asData?.value;
-    if (wallet?.hasActiveVip ?? false) return true;
     final unlockedSet = ref.watch(unlockedChaptersProvider);
     final editionKey = ChapterEntitlement.editionKey(chapter.id, targetLang);
     if (unlockedSet.contains(editionKey)) return true;
@@ -234,7 +232,7 @@ class _ComicReaderPageState extends ConsumerState<ComicReaderPage> with WidgetsB
     }
   }
 
-  /// Trang ngoài phần xem trước: mở sheet mở khóa cả chương (Ví / VietQR / VIP);
+  /// Trang ngoài phần xem trước: mở sheet mở khóa ấn bản (Ví / VietQR);
   /// mua xong tải lại chương để server trả ảnh mọi trang.
   void _showUnlockChapterSheet(ComicPageData page) {
     final chapter = _currentChapter;

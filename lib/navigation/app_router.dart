@@ -88,13 +88,13 @@ final appRouterProvider = Provider<GoRouter>((ref) {
             routes: [GoRoute(path: '/search', builder: (context, state) => const SearchPage())],
           ),
 
-          // Tab 4: Cửa hàng (Ví & VIP). `?tab=vip` mở thẳng thẻ Gói VIP.
+          // Tab 4: Cửa hàng (Nạp Ví).
           StatefulShellBranch(
             navigatorKey: _shopNavigatorKey,
             routes: [
               GoRoute(
                 path: '/shop',
-                builder: (context, state) => ShopPage(initialTab: state.uri.queryParameters['tab'] == 'vip' ? 1 : 0),
+                builder: (context, state) => const ShopPage(),
               ),
             ],
           ),

@@ -126,12 +126,10 @@ class _SeriesDetailPageState extends ConsumerState<SeriesDetailPage> {
   }
 
   /// Chương đọc được ở ngôn ngữ [_selectedLanguage] khi: không khóa ở ngôn ngữ đó, Backend báo `isUnlocked`,
-  /// người dùng đang có VIP, hoặc đã mở khóa đúng ấn bản ngôn ngữ này.
+  /// hoặc đã mở khóa đúng ấn bản ngôn ngữ này.
   bool _isChapterUnlocked(ChapterItem chapter) {
     final lang = _effectiveChapterLanguage(chapter);
     if (!chapter.isLockedFor(lang) || chapter.isServerUnlockedFor(lang)) return true;
-    final wallet = ref.read(walletNotifierProvider).asData?.value;
-    if (wallet?.hasActiveVip ?? false) return true;
     return ref.read(unlockedChaptersProvider.notifier).isUnlocked(chapter.id, language: lang);
   }
 
@@ -139,8 +137,6 @@ class _SeriesDetailPageState extends ConsumerState<SeriesDetailPage> {
     final lang = _effectiveChapterLanguage(chapter);
     if (!chapter.isLockedFor(lang)) return true;
     if (chapter.isServerUnlockedFor(lang)) return true;
-    final wallet = ref.watch(walletNotifierProvider).asData?.value;
-    if (wallet?.hasActiveVip ?? false) return true;
     final unlockedSet = ref.watch(unlockedChaptersProvider);
     final editionKey = ChapterEntitlement.editionKey(chapter.id, lang);
     if (unlockedSet.contains(editionKey)) return true;
@@ -161,7 +157,7 @@ class _SeriesDetailPageState extends ConsumerState<SeriesDetailPage> {
     if (!await ensureLoggedInForReading(context, ref, series: series)) return;
     if (!mounted) return;
     if (!wasLoggedIn) {
-      // Vừa đăng nhập: tải lại quyền đọc (đã mua / VIP) trước khi quyết định có cần mở khóa không.
+      // Vừa đăng nhập: tải lại quyền đọc (đã mua) trước khi quyết định có cần mở khóa không.
       await Future.wait([_fetchDetailFromApi(), ref.read(walletNotifierProvider.notifier).refresh()]);
       if (!mounted) return;
       series = _series ?? series;
@@ -195,7 +191,7 @@ class _SeriesDetailPageState extends ConsumerState<SeriesDetailPage> {
     // Tải offline cũng là đọc → cần tài khoản thật (Lazy Authentication).
     if (!await ensureLoggedInForReading(context, ref, series: series)) return;
     if (!mounted) return;
-    // Chương trả phí chưa mở khóa (không VIP, chưa mua) → không cho tải CBZ, mời mở khóa trước.
+    // Chương trả phí chưa mở khóa → không cho tải CBZ, mời mở khóa trước.
     if (!_isChapterUnlocked(chapter)) {
       ScaffoldMessenger.of(context).showSnackBar(
         const SnackBar(
@@ -213,9 +209,8 @@ class _SeriesDetailPageState extends ConsumerState<SeriesDetailPage> {
       );
       return;
     }
-    final isVip = ref.read(walletNotifierProvider).asData?.value.isVip ?? PreferencesService.getLocalIsVip();
     final ent = PreferencesService.getChapterEntitlement(chapter.id);
-    if (!isVip && ent != null && !ent.isPermanent) {
+    if (ent != null && !ent.isPermanent) {
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(
           backgroundColor: AppColors.darkSurface,
@@ -669,23 +664,22 @@ class _SeriesDetailPageState extends ConsumerState<SeriesDetailPage> {
     final downloadStatus = ref.watch(chapterDownloadStatusProvider(chapter.id));
     final downloadProgress = ref.watch(chapterDownloadProgressProvider(chapter.id));
     final isDownloading = downloadStatus == DownloadStatus.downloading || downloadStatus == DownloadStatus.extracting;
-    final isVip = ref.watch(walletNotifierProvider).asData?.value.isVip ?? PreferencesService.getLocalIsVip();
     final ent =
         ref.watch(chapterEntitlementsProvider)[ChapterEntitlement.editionKey(chapter.id, lang)] ??
         ref.watch(chapterEntitlementsProvider)[chapter.id] ??
         PreferencesService.getChapterEntitlement(chapter.id, language: lang);
-    final isPermanent = isVip || (ent != null ? ent.isPermanent : unlocked);
+    final isPermanent = ent != null ? ent.isPermanent : unlocked;
     final subtitle = chapterSubtitle(chapter.title);
     final hasTitle = subtitle.isNotEmpty;
     final history = isLastRead ? PreferencesService.getReadingHistoryFor(series.id) : null;
 
-    // Nhãn bên phải: miễn phí / đã mở khóa (mua hoặc VIP) / giá (đang khóa).
+    // Nhãn bên phải: miễn phí / đã mở khóa / giá (đang khóa).
     Widget status;
     if (!locked) {
       status = _pill('Miễn phí', AppColors.mint);
     } else if (unlocked) {
       status = _pill(
-        isVip && !chapter.isServerUnlockedFor(lang) ? 'VIP' : 'Đã mở',
+        'Đã mở',
         AppColors.mint,
         icon: Icons.lock_open_rounded,
       );

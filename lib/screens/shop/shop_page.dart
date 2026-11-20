@@ -7,24 +7,18 @@ import '../../providers/api_providers.dart';
 import '../../services/api_client.dart';
 import '../../theme/app_theme.dart';
 import '../../widgets/vietqr_payment_panel.dart';
-import '../../widgets/vip_purchase_sheet.dart';
 import '../../widgets/wallet_topup_dialog.dart';
 
-/// Tab Cửa hàng: thẻ "Tài sản của bạn" (số dư Ví thật + VIP) và hai thẻ
-/// NẠP VÍ (mệnh giá VietQR → Studio duyệt) / GÓI VIP (trừ Ví hoặc VietQR).
-/// Không có "xu" hay thưởng thêm — chỉ những gì Backend `/api/wallet/*` hỗ trợ.
+/// Tab Cửa hàng: thẻ "Tài sản của bạn" (số dư Ví thật VNĐ) và danh sách mệnh giá
+/// NẠP VÍ (VietQR → xác nhận cộng Ví). Không có gói VIP (BR-33).
 class ShopPage extends ConsumerStatefulWidget {
-  /// 0 = Nạp Ví, 1 = Gói VIP.
-  final int initialTab;
-  const ShopPage({super.key, this.initialTab = 0});
+  const ShopPage({super.key});
 
   @override
   ConsumerState<ShopPage> createState() => _ShopPageState();
 }
 
-class _ShopPageState extends ConsumerState<ShopPage> with SingleTickerProviderStateMixin {
-  late final TabController _tabs = TabController(length: 2, vsync: this, initialIndex: widget.initialTab.clamp(0, 1));
-
+class _ShopPageState extends ConsumerState<ShopPage> {
   @override
   void initState() {
     super.initState();
@@ -33,19 +27,6 @@ class _ShopPageState extends ConsumerState<ShopPage> with SingleTickerProviderSt
         ref.read(walletNotifierProvider.notifier).refresh(silent: true);
       }
     });
-  }
-
-  @override
-  void didUpdateWidget(covariant ShopPage oldWidget) {
-    super.didUpdateWidget(oldWidget);
-    // Mở lại tab từ banner VIP (`/shop?tab=vip`) khi trang đã có sẵn trong nhánh.
-    if (oldWidget.initialTab != widget.initialTab) _tabs.animateTo(widget.initialTab.clamp(0, 1));
-  }
-
-  @override
-  void dispose() {
-    _tabs.dispose();
-    super.dispose();
   }
 
   /// Chưa đăng nhập → mở màn Đăng nhập; trả true khi đã đăng nhập.
@@ -69,11 +50,6 @@ class _ShopPageState extends ConsumerState<ShopPage> with SingleTickerProviderSt
     );
   }
 
-  Future<void> _buyVip(String plan) async {
-    if (!await _ensureLoggedIn() || !mounted) return;
-    await VipPurchaseSheet.show(context, initialPlan: plan);
-  }
-
   Future<void> _openHistory() async {
     if (!await _ensureLoggedIn() || !mounted) return;
     await WalletTopupDialog.show(context, initialTab: 1);
@@ -85,53 +61,29 @@ class _ShopPageState extends ConsumerState<ShopPage> with SingleTickerProviderSt
       backgroundColor: ForgeColors.bg,
       body: SafeArea(
         bottom: false,
-        child: NestedScrollView(
-          headerSliverBuilder: (context, _) => [
+        child: CustomScrollView(
+          slivers: [
             SliverToBoxAdapter(child: _BalanceCard(onLogin: _ensureLoggedIn)),
             SliverToBoxAdapter(
-              child: TabBar(
-                controller: _tabs,
-                indicatorColor: ForgeColors.accent,
-                indicatorWeight: 3,
-                indicatorSize: TabBarIndicatorSize.label,
-                dividerColor: Colors.transparent,
-                labelColor: ForgeColors.text,
-                unselectedLabelColor: ForgeColors.muted,
-                labelStyle: GoogleFonts.plusJakartaSans(fontSize: 17, fontWeight: FontWeight.w800),
-                tabs: [
-                  const Tab(text: 'NẠP VÍ'),
-                  Tab(
-                    child: Row(
-                      mainAxisSize: MainAxisSize.min,
-                      children: [
-                        const Text('GÓI VIP'),
-                        const SizedBox(width: 6),
-                        Container(
-                          padding: const EdgeInsets.symmetric(horizontal: 5, vertical: 2),
-                          decoration: BoxDecoration(color: ForgeColors.gold, borderRadius: BorderRadius.circular(8)),
-                          child: const Icon(Icons.workspace_premium_rounded, size: 13, color: Color(0xFF13161F)),
-                        ),
-                      ],
-                    ),
-                  ),
-                ],
+              child: Padding(
+                padding: const EdgeInsets.fromLTRB(16, 8, 16, 4),
+                child: Text(
+                  'NẠP VÍ',
+                  style: GoogleFonts.plusJakartaSans(fontSize: 17, fontWeight: FontWeight.w800, color: ForgeColors.text),
+                ),
               ),
             ),
+            SliverFillRemaining(
+              child: _TopupTab(onBuy: _buyTopup, onHistory: _openHistory),
+            ),
           ],
-          body: TabBarView(
-            controller: _tabs,
-            children: [
-              _TopupTab(onBuy: _buyTopup, onHistory: _openHistory),
-              _VipTab(onBuy: _buyVip, onHistory: _openHistory),
-            ],
-          ),
         ),
       ),
     );
   }
 }
 
-/// "Tài sản của bạn": số dư Ví (VNĐ) + trạng thái VIP từ `GET /api/wallet/me`.
+/// "Tài sản của bạn": số dư Ví (VNĐ) từ `GET /api/wallet/me`.
 class _BalanceCard extends ConsumerWidget {
   final Future<bool> Function() onLogin;
   const _BalanceCard({required this.onLogin});
@@ -141,8 +93,6 @@ class _BalanceCard extends ConsumerWidget {
     final authed = ref.watch(authStateProvider).isAuthenticated;
     final walletState = authed ? ref.watch(walletNotifierProvider) : null;
     final wallet = walletState?.asData?.value;
-    final isVip = wallet?.hasActiveVip ?? false;
-    final expires = wallet?.vipExpiresAt;
 
     final walletError = wallet == null ? walletState?.error : null;
     final sessionExpired = walletError is ApiException && walletError.statusCode == 401;
@@ -162,7 +112,7 @@ class _BalanceCard extends ConsumerWidget {
 
     Widget content;
     if (!authed) {
-      content = notice('Đăng nhập để xem số dư Ví và gói VIP.', 'Đăng nhập', onLogin);
+      content = notice('Đăng nhập để xem số dư Ví và nạp tiền.', 'Đăng nhập', onLogin);
     } else if (sessionExpired) {
       content = notice('Phiên đăng nhập đã hết hạn. Đăng nhập lại để xem Ví.', 'Đăng nhập', () async {
         await context.push<bool>('/login');
@@ -185,12 +135,6 @@ class _BalanceCard extends ConsumerWidget {
                 style: GoogleFonts.plusJakartaSans(fontSize: 14, fontWeight: FontWeight.w700, color: ForgeColors.muted),
               ),
               const Spacer(),
-              _Chip(
-                icon: Icons.workspace_premium_rounded,
-                color: isVip ? ForgeColors.gold : ForgeColors.chip,
-                text: isVip ? 'VIP' : 'Chưa VIP',
-              ),
-              const SizedBox(width: 12),
               const _Chip(icon: Icons.account_balance_wallet_rounded, color: ForgeColors.gold, text: ''),
               const SizedBox(width: 4),
               walletState?.isLoading == true && wallet == null
@@ -207,9 +151,7 @@ class _BalanceCard extends ConsumerWidget {
           ),
           const SizedBox(height: 8),
           Text(
-            isVip
-                ? (expires == null ? 'VIP đang hoạt động.' : 'VIP còn hạn đến ${_date(expires)}.')
-                : 'Nạp Ví bằng VietQR — Studio xác nhận là tiền vào Ví.',
+            'Nạp Ví bằng VietQR — xác nhận là tiền vào Ví ngay để mở khóa từng ấn bản.',
             style: GoogleFonts.plusJakartaSans(fontSize: 13, color: ForgeColors.textSoft),
           ),
         ],
@@ -271,8 +213,8 @@ class _TopupTab extends StatelessWidget {
         Padding(
           padding: const EdgeInsets.fromLTRB(16, 12, 16, 8),
           child: Text(
-            'Số dư Ví dùng để mở khóa chương trả phí hoặc mua VIP. '
-            'Mỗi lần nạp tạo một mã VietQR; tiền vào Ví khi Studio xác nhận đã nhận.',
+            'Số dư Ví dùng để mở khóa vĩnh viễn từng ấn bản ngôn ngữ trả phí. '
+            'Mỗi lần nạp tạo một mã VietQR; tiền vào Ví ngay sau khi giao dịch được xác nhận.',
             style: GoogleFonts.plusJakartaSans(fontSize: 13.5, color: ForgeColors.textSoft, height: 1.4),
           ),
         ),
@@ -322,146 +264,17 @@ class _TopupTab extends StatelessWidget {
   }
 }
 
-/// Thẻ GÓI VIP: giá thật theo `VipPurchaseSheet` (khớp `VipPricing` ở Backend), quyền lợi và nút đăng ký.
-class _VipTab extends ConsumerWidget {
-  final void Function(String plan) onBuy;
-  final VoidCallback onHistory;
-  const _VipTab({required this.onBuy, required this.onHistory});
-
-  @override
-  Widget build(BuildContext context, WidgetRef ref) {
-    final authed = ref.watch(authStateProvider).isAuthenticated;
-    final isVip = authed && (ref.watch(walletNotifierProvider).asData?.value.hasActiveVip ?? false);
-
-    Widget benefit(String text) => Padding(
-      padding: const EdgeInsets.only(bottom: 10),
-      child: Row(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          const Icon(Icons.check_circle_outline_rounded, color: ForgeColors.gold, size: 22),
-          const SizedBox(width: 10),
-          Expanded(
-            child: Text(
-              text,
-              style: GoogleFonts.plusJakartaSans(
-                fontSize: 15.5,
-                fontWeight: FontWeight.w700,
-                color: ForgeColors.text,
-                height: 1.35,
-              ),
-            ),
-          ),
-        ],
-      ),
-    );
-
-    return ListView(
-      padding: const EdgeInsets.fromLTRB(16, 14, 16, 24),
-      children: [
-        Container(
-          padding: const EdgeInsets.fromLTRB(18, 16, 14, 16),
-          decoration: BoxDecoration(
-            color: ForgeColors.surface,
-            borderRadius: BorderRadius.circular(12),
-            border: Border.all(color: ForgeColors.gold.withValues(alpha: 0.45)),
-          ),
-          child: Row(
-            children: [
-              Expanded(
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    Text(
-                      isVip ? 'Bạn đang là VIP' : 'Đăng ký VIP PanelForge',
-                      style: GoogleFonts.plusJakartaSans(
-                        fontSize: 18,
-                        fontWeight: FontWeight.w900,
-                        color: ForgeColors.text,
-                      ),
-                    ),
-                    const SizedBox(height: 4),
-                    Text(
-                      'Đọc mọi chương trả phí khi gói còn hạn',
-                      style: GoogleFonts.plusJakartaSans(fontSize: 13.5, color: ForgeColors.textSoft),
-                    ),
-                  ],
-                ),
-              ),
-              const Icon(Icons.workspace_premium_rounded, color: ForgeColors.gold, size: 48),
-            ],
-          ),
-        ),
-        const SizedBox(height: 16),
-        for (final plan in const [
-          ('monthly', VipPurchaseSheet.monthlyVnd, 'tháng', '30 ngày'),
-          ('yearly', VipPurchaseSheet.yearlyVnd, 'năm', '365 ngày • tiết kiệm ~16%'),
-        ]) ...[
-          Container(
-            padding: const EdgeInsets.fromLTRB(18, 18, 18, 18),
-            decoration: BoxDecoration(
-              color: ForgeColors.surface,
-              borderRadius: BorderRadius.circular(14),
-              border: plan.$1 == 'monthly' ? Border.all(color: ForgeColors.accent, width: 1.4) : null,
-            ),
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.stretch,
-              children: [
-                Text.rich(
-                  TextSpan(
-                    children: [
-                      TextSpan(
-                        text: '${formatVnd(plan.$2)}/${plan.$3}',
-                        style: const TextStyle(fontWeight: FontWeight.w800, fontFeatures: ForgeText.tabularFeatures),
-                      ),
-                      TextSpan(
-                        text: '  (${plan.$4})',
-                        style: TextStyle(fontSize: 15, color: ForgeColors.muted),
-                      ),
-                    ],
-                  ),
-                  style: GoogleFonts.plusJakartaSans(fontSize: 24, color: ForgeColors.text),
-                ),
-                const SizedBox(height: 14),
-                benefit('Đọc trọn mọi chương trả phí của tất cả bộ truyện khi gói còn hạn'),
-                benefit('Mở khóa chương bằng VIP không trừ số dư Ví'),
-                benefit('Trả bằng số dư Ví hoặc chuyển khoản VietQR'),
-                const SizedBox(height: 6),
-                SizedBox(
-                  height: 52,
-                  child: ElevatedButton(
-                    onPressed: () => onBuy(plan.$1),
-                    style: ElevatedButton.styleFrom(
-                      backgroundColor: plan.$1 == 'monthly' ? ForgeColors.accent : ForgeColors.chip,
-                      foregroundColor: plan.$1 == 'monthly' ? Colors.white : ForgeColors.text,
-                      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
-                      textStyle: GoogleFonts.plusJakartaSans(fontSize: 17, fontWeight: FontWeight.w800),
-                    ),
-                    child: Text(isVip ? 'Gia hạn gói ${plan.$3}' : 'Đăng ký gói ${plan.$3}'),
-                  ),
-                ),
-              ],
-            ),
-          ),
-          const SizedBox(height: 14),
-        ],
-        _ShopLinks(onHistory: onHistory, padded: false),
-      ],
-    );
-  }
-}
-
 /// Liên kết cuối trang: Lịch sử giao dịch / Điều khoản thanh toán.
 class _ShopLinks extends StatelessWidget {
   final VoidCallback onHistory;
-  final bool padded;
-  const _ShopLinks({required this.onHistory, this.padded = true});
+  const _ShopLinks({required this.onHistory});
 
   @override
   Widget build(BuildContext context) {
     Widget link(String text, VoidCallback onTap) => InkWell(
       onTap: onTap,
       child: Padding(
-        padding: EdgeInsets.symmetric(horizontal: padded ? 16 : 0, vertical: 16),
+        padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 16),
         child: Row(
           children: [
             Expanded(
@@ -501,10 +314,9 @@ class _ShopLinks extends StatelessWidget {
             ),
             const SizedBox(height: 12),
             for (final line in const [
-              'Nạp Ví và mua VIP bằng VietQR là chuyển khoản trực tiếp tới Studio; giao dịch hoàn tất khi Studio xác nhận đã nhận tiền.',
-              'Số dư Ví dùng để mở khóa vĩnh viễn từng chương trả phí hoặc mua gói VIP.',
-              'VIP cho phép đọc mọi chương trả phí khi gói còn hạn.',
-              'Giá chương do Studio đặt trên web; máy chủ luôn tính lại giá khi thanh toán.',
+              'Nạp Ví bằng VietQR là chuyển khoản trực tiếp vào tài khoản nền tảng; giao dịch hoàn tất khi thanh toán được xác nhận.',
+              'Số dư Ví dùng để mở khóa vĩnh viễn từng ấn bản ngôn ngữ trả phí (mua ngôn ngữ nào đọc ngôn ngữ đó).',
+              'Giá ấn bản do Publisher quy định trên web; máy chủ luôn tính lại giá khi thanh toán.',
             ])
               Padding(
                 padding: const EdgeInsets.only(bottom: 8),
@@ -616,5 +428,3 @@ class _TopupOrderSheetState extends ConsumerState<_TopupOrderSheet> {
     );
   }
 }
-
-String _date(DateTime d) => '${d.day.toString().padLeft(2, '0')}/${d.month.toString().padLeft(2, '0')}/${d.year}';

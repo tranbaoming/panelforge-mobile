@@ -56,7 +56,7 @@ class CbzPackageService {
   /// Tải gói Single-file CBZ và giải nén vào thư mục offline của ứng dụng
   /// Gói offline chỉ chứa trang người đọc được xem: chặn tải khi chương trả phí chưa mua (chỉ có trang xem trước).
   /// Server là nguồn sự thật:
-  /// `GET /api/catalog/chapters/{id}` trả `isLocked`/`isUnlocked` theo tài khoản, VIP coi như đã mở).
+  /// `GET /api/catalog/chapters/{id}` trả `isLocked`/`isUnlocked` theo tài khoản).
   Future<void> ensureNoLockedPagesForOffline(String chapterId) async {
     final chapter = await _catalogService.readChapter(chapterId);
     final locked = chapter.pages.where((p) => p.isPaywalled).toList();

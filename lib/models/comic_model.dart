@@ -63,7 +63,7 @@ class ComicPageData {
   /// Trang nằm sau paywall của chương trả phí (không phải trang xem trước).
   final bool isLocked;
 
-  /// Người đọc đã có quyền xem trang (xem trước / đã mua chương / VIP). Khi false [imageUrl] luôn null.
+  /// Người đọc đã có quyền xem trang (xem trước / đã mua ấn bản). Khi false [imageUrl] luôn null.
   final bool isUnlocked;
 
   /// Trang xem trước của chương trả phí.

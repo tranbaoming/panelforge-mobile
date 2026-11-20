@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 import 'package:google_fonts/google_fonts.dart';
+import '../models/api_dtos.dart';
 import '../providers/api_providers.dart';
 import '../services/api_client.dart';
 import '../theme/app_theme.dart';
@@ -151,8 +152,7 @@ class _ReaderProfileSheetState extends ConsumerState<ReaderProfileSheet> {
     final user = authState.user;
     final walletAsync = ref.watch(walletNotifierProvider);
 
-    final coins = walletAsync.asData?.value.balanceCoins ?? 0;
-    final isVip = walletAsync.asData?.value.isVip ?? false;
+    final balanceVnd = walletAsync.asData?.value.balanceVnd ?? 0;
 
     return Container(
       decoration: const BoxDecoration(
@@ -301,10 +301,10 @@ class _ReaderProfileSheetState extends ConsumerState<ReaderProfileSheet> {
                   children: [
                     Row(
                       children: [
-                        const Icon(Icons.monetization_on_rounded, color: AppColors.primary, size: 20),
+                        const Icon(Icons.account_balance_wallet_rounded, color: AppColors.primary, size: 20),
                         const SizedBox(width: 8),
                         Text(
-                          'Ví ForgeCoins:',
+                          'Số dư Ví:',
                           style: GoogleFonts.plusJakartaSans(fontSize: 13, color: AppColors.darkTextSecondary),
                         ),
                       ],
@@ -312,24 +312,13 @@ class _ReaderProfileSheetState extends ConsumerState<ReaderProfileSheet> {
                     Row(
                       children: [
                         Text(
-                          '$coins Coins',
+                          formatVnd(balanceVnd),
                           style: GoogleFonts.plusJakartaSans(
                             fontSize: 14,
                             fontWeight: FontWeight.w800,
                             color: Colors.white,
                           ),
                         ),
-                        if (isVip) ...[
-                          const SizedBox(width: 6),
-                          Container(
-                            padding: const EdgeInsets.symmetric(horizontal: 5, vertical: 2),
-                            decoration: BoxDecoration(color: AppColors.mint, borderRadius: BorderRadius.circular(4)),
-                            child: const Text(
-                              'VIP',
-                              style: TextStyle(fontSize: 9, fontWeight: FontWeight.w900, color: Colors.black),
-                            ),
-                          ),
-                        ],
                         const SizedBox(width: 8),
                         InkWell(
                           onTap: () {

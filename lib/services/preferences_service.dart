@@ -22,8 +22,6 @@ class PreferencesService {
   static const String _keyWalletBalance = 'panelforge_wallet_balance';
   static const String _keyWalletBalanceVnd = 'panelforge_wallet_balance_vnd';
   static const String _keyWalletTransactions = 'panelforge_wallet_transactions';
-  static const String _keyIsVip = 'panelforge_is_vip';
-  static const String _keyVipExpiresAt = 'panelforge_vip_expires_at';
 
   // ─── Authentication & Session Keys ─────────────────────────────────────────
   static const String _keyAuthUser = 'panelforge_auth_user';
@@ -304,7 +302,6 @@ class PreferencesService {
   }
 
   static bool isChapterUnlocked(String chapterId, {String? language}) {
-    if (getLocalIsVip()) return true;
     final clean = chapterId.trim();
     final unlocked = getUnlockedChapterIds();
     if (language != null && language.trim().isNotEmpty) {
@@ -322,7 +319,7 @@ class PreferencesService {
     return unlocked.contains(clean);
   }
 
-  // ─── Local Wallet & VIP Cache ─────────────────────────────────────────────
+  // ─── Local Wallet Cache ───────────────────────────────────────────────────
   static int getLocalBalanceVnd() {
     final vnd = _prefs?.getInt(_keyWalletBalanceVnd);
     if (vnd != null) return vnd;
@@ -361,33 +358,6 @@ class PreferencesService {
     list.insert(0, tx);
     final encoded = list.take(50).map((t) => jsonEncode(t.toJson())).toList();
     await _prefs?.setStringList(_keyWalletTransactions, encoded);
-  }
-
-  static bool getLocalIsVip() {
-    final isVip = _prefs?.getBool(_keyIsVip) ?? false;
-    if (!isVip) return false;
-    final exp = getLocalVipExpiresAt();
-    if (exp != null && exp.isBefore(DateTime.now())) {
-      return false;
-    }
-    return true;
-  }
-
-  static DateTime? getLocalVipExpiresAt() {
-    final str = _prefs?.getString(_keyVipExpiresAt);
-    if (str != null && str.isNotEmpty) {
-      return DateTime.tryParse(str);
-    }
-    return null;
-  }
-
-  static Future<void> setLocalVip({required bool isVip, DateTime? expiresAt}) async {
-    await _prefs?.setBool(_keyIsVip, isVip);
-    if (expiresAt != null) {
-      await _prefs?.setString(_keyVipExpiresAt, expiresAt.toIso8601String());
-    } else {
-      await _prefs?.remove(_keyVipExpiresAt);
-    }
   }
 
   // ─── Authentication & Session Storage ───────────────────────────────────────
