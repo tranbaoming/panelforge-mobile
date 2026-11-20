@@ -9,6 +9,7 @@ import 'package:path_provider/path_provider.dart';
 import 'package:url_launcher/url_launcher.dart';
 import '../../providers/api_providers.dart';
 import '../../providers/catalog_providers.dart';
+import '../../providers/library_sync_provider.dart';
 import '../../services/api_client.dart';
 import '../../services/app_info.dart';
 import '../../services/preferences_service.dart';
@@ -82,13 +83,20 @@ class _SettingsPageState extends ConsumerState<SettingsPage> {
     try {
       if (ref.read(authStateProvider).isAuthenticated) {
         await ref.read(walletNotifierProvider.notifier).refresh();
+        await ref.read(librarySyncProvider.notifier).syncNow();
+        final error = ref.read(librarySyncProvider).error;
+        if (error != null) throw Exception(error);
       }
       ref.invalidate(catalogSeriesProvider);
       await ref.read(catalogSeriesProvider.future);
       final now = DateTime.now();
       await PreferencesService.setLastSyncAt(now);
       if (mounted) setState(() => _lastSync = now);
-      _snack('Đã đồng bộ Ví và danh sách truyện.');
+      _snack(
+        ref.read(authStateProvider).isAuthenticated
+            ? 'Đã đồng bộ Ví, thư viện cá nhân và danh sách truyện.'
+            : 'Đã cập nhật danh sách truyện. Đăng nhập để đồng bộ thư viện giữa các thiết bị.',
+      );
     } catch (_) {
       _snack('Không đồng bộ được. Vui lòng kiểm tra kết nối.');
     } finally {

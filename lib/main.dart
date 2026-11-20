@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'navigation/app_router.dart';
 import 'providers/api_providers.dart';
+import 'providers/library_sync_provider.dart';
 import 'services/api_client.dart';
 import 'services/crash_reporter.dart';
 import 'services/preferences_service.dart';
@@ -21,6 +22,8 @@ class PanelForgeApp extends ConsumerWidget {
   @override
   Widget build(BuildContext context, WidgetRef ref) {
     final router = ref.watch(appRouterProvider);
+    // Giữ đồng bộ thư viện cá nhân chạy suốt vòng đời app (không dựng lại MaterialApp khi trạng thái đổi).
+    ref.listen(librarySyncProvider, (_, _) {});
     return MaterialApp.router(
       title: 'PanelForge • Comic & Manga Review',
       debugShowCheckedModeBanner: false,

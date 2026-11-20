@@ -7,6 +7,7 @@ import '../../models/comic_model.dart';
 import '../../navigation/read_guard.dart';
 import '../../providers/api_providers.dart';
 import '../../providers/catalog_providers.dart';
+import '../../providers/library_sync_provider.dart';
 import '../../providers/notification_providers.dart';
 import '../../services/preferences_service.dart';
 import '../../theme/app_theme.dart';
@@ -35,6 +36,8 @@ class _ProfilePageState extends ConsumerState<ProfilePage> {
   @override
   Widget build(BuildContext context) {
     final auth = ref.watch(authStateProvider);
+    // Vẽ lại khi thư viện trên máy được cập nhật từ server.
+    ref.watch(librarySyncProvider.select((s) => s.version));
     final catalog = ref.watch(catalogSeriesProvider).asData?.value ?? const <SeriesItem>[];
     final wallet = auth.isAuthenticated ? ref.watch(walletNotifierProvider).asData?.value : null;
     final bookmarks = PreferencesService.getBookmarks();
