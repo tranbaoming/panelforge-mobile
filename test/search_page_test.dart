@@ -3,6 +3,8 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:go_router/go_router.dart';
 import 'package:panelforge/models/comic_model.dart';
 import 'package:panelforge/screens/explore/search_page.dart';
+import 'package:panelforge/services/preferences_service.dart';
+import 'package:shared_preferences/shared_preferences.dart';
 import 'package:panelforge/widgets/forge_ui.dart';
 
 SeriesItem _series(String id, String title, String studio) => SeriesItem(
@@ -43,6 +45,8 @@ Widget _app() {
 }
 
 void main() {
+  filterTests();
+
   testWidgets('shows the search box and the full A–Z list while the query is empty', (tester) async {
     await tester.pumpWidget(_app());
     await tester.pumpAndSettle();
@@ -119,5 +123,112 @@ void main() {
     await tester.pump();
     expect(find.text('Truyện (A–Z)'), findsOneWidget);
     expect(find.text('Moon Blade'), findsOneWidget);
+  });
+}
+
+SeriesItem _rich(String id, String title, {required List<String> genres, int views = 0, bool completed = false}) =>
+    SeriesItem(
+      id: id,
+      title: title,
+      author: 'Studio',
+      artist: 'Studio',
+      format: ComicFormat.manga,
+      coverGradientStart: '',
+      coverGradientEnd: '',
+      synopsisQuote: '',
+      fullSynopsis: '',
+      views: views,
+      readProgressChapter: 0,
+      totalChapters: 3,
+      genres: genres,
+      chapters: const [],
+      editorialNote: '',
+      isCompleted: completed,
+    );
+
+final _richCatalog = [
+  _rich('a', 'Alpha', genres: ['Action'], views: 10),
+  _rich('b', 'Bravo', genres: ['Romance'], views: 50, completed: true),
+  _rich('c', 'Charlie', genres: ['Action', 'Romance'], views: 30, completed: true),
+];
+
+Widget _richApp() => MaterialApp.router(
+  routerConfig: GoRouter(
+    routes: [
+      GoRoute(
+        path: '/',
+        builder: (_, _) => SearchPage(loadCatalog: () async => _richCatalog),
+      ),
+      GoRoute(path: '/series/:id', builder: (_, state) => Text('detail ${state.pathParameters['id']}')),
+    ],
+  ),
+);
+
+Future<void> _pick(WidgetTester tester, String chipKey, String item) async {
+  await tester.tap(find.byKey(ValueKey(chipKey)));
+  await tester.pumpAndSettle();
+  await tester.tap(find.text(item).last);
+  await tester.pumpAndSettle();
+}
+
+void filterTests() {
+  group('filters, sort and search history', () {
+    setUp(() async {
+      SharedPreferences.setMockInitialValues({});
+      await PreferencesService.init();
+    });
+
+    testWidgets('genre and status filters narrow the list', (tester) async {
+      await tester.pumpWidget(_richApp());
+      await tester.pumpAndSettle();
+
+      await _pick(tester, 'filter-genre', 'Romance');
+      expect(find.text('Kết quả (2)'), findsOneWidget);
+      expect(find.text('Alpha'), findsNothing);
+
+      await _pick(tester, 'filter-status', 'Hoàn thành');
+      expect(find.text('Kết quả (2)'), findsOneWidget);
+
+      await tester.tap(find.text('Bỏ lọc'));
+      await tester.pumpAndSettle();
+      expect(find.text('Truyện (A–Z)'), findsOneWidget);
+      expect(find.text('Alpha'), findsOneWidget);
+    });
+
+    testWidgets('sorting by views puts the most-read first', (tester) async {
+      await tester.pumpWidget(_richApp());
+      await tester.pumpAndSettle();
+
+      await _pick(tester, 'filter-sort', 'Xem nhiều');
+      final bravo = tester.getTopLeft(find.text('Bravo')).dy;
+      final charlie = tester.getTopLeft(find.text('Charlie')).dy;
+      final alpha = tester.getTopLeft(find.text('Alpha')).dy;
+      expect(bravo < charlie && charlie < alpha, isTrue);
+    });
+
+    testWidgets('submitted searches are remembered and can be reused or removed', (tester) async {
+      await tester.pumpWidget(_richApp());
+      await tester.pumpAndSettle();
+
+      await tester.enterText(find.byKey(const ValueKey('search-field')), 'char');
+      await tester.testTextInput.receiveAction(TextInputAction.search);
+      await tester.pumpAndSettle();
+      expect(PreferencesService.getRecentSearches(), ['char']);
+
+      await tester.tap(find.byTooltip('Xóa'));
+      await tester.pumpAndSettle();
+      expect(find.text('Tìm gần đây'), findsOneWidget);
+
+      await tester.tap(find.byKey(const ValueKey('recent-char')));
+      await tester.pumpAndSettle();
+      expect(find.text('Kết quả (1)'), findsOneWidget);
+
+      await tester.tap(find.byTooltip('Xóa'));
+      await tester.pumpAndSettle();
+      await tester.tap(find.text('Xoá lịch sử'));
+      await tester.pumpAndSettle();
+      expect(find.text('Tìm gần đây'), findsNothing);
+      expect(PreferencesService.getRecentSearches(), isEmpty);
+    });
   });
 }

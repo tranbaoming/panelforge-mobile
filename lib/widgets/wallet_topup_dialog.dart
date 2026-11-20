@@ -8,6 +8,7 @@ import '../services/preferences_service.dart';
 import '../theme/app_theme.dart';
 import 'auth_modal_sheet.dart';
 import 'vietqr_payment_panel.dart';
+import 'wallet_history.dart';
 
 /// Mệnh giá nạp Ví VietQR (dùng chung cho hộp thoại Ví và tab Cửa hàng). Không có thưởng thêm — Backend không hỗ trợ.
 const List<({int amount, String tag})> kTopupPackages = [
@@ -383,70 +384,6 @@ class _WalletTopupDialogState extends ConsumerState<WalletTopupDialog> with Sing
       );
     }
 
-    return ListView.separated(
-      padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
-      itemCount: transactions.length,
-      separatorBuilder: (context, index) => const Divider(color: AppColors.darkBorder, height: 1),
-      itemBuilder: (context, index) {
-        final tx = transactions[index];
-        final isPositive = tx.amountVnd > 0;
-        final dateStr =
-            '${tx.createdAt.day.toString().padLeft(2, '0')}/${tx.createdAt.month.toString().padLeft(2, '0')}/${tx.createdAt.year} ${tx.createdAt.hour.toString().padLeft(2, '0')}:${tx.createdAt.minute.toString().padLeft(2, '0')}';
-
-        return Padding(
-          padding: const EdgeInsets.symmetric(vertical: 10),
-          child: Row(
-            children: [
-              Container(
-                padding: const EdgeInsets.all(8),
-                decoration: BoxDecoration(
-                  color: isPositive
-                      ? AppColors.mint.withValues(alpha: 0.15)
-                      : AppColors.primary.withValues(alpha: 0.15),
-                  shape: BoxShape.circle,
-                ),
-                child: Icon(
-                  isPositive ? Icons.add_circle_outline_rounded : Icons.remove_circle_outline_rounded,
-                  color: isPositive ? AppColors.mint : AppColors.primary,
-                  size: 20,
-                ),
-              ),
-              const SizedBox(width: 12),
-              Expanded(
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    Text(
-                      tx.title,
-                      style: GoogleFonts.plusJakartaSans(
-                        fontSize: 13,
-                        fontWeight: FontWeight.w700,
-                        color: Colors.white,
-                      ),
-                      maxLines: 1,
-                      overflow: TextOverflow.ellipsis,
-                    ),
-                    const SizedBox(height: 2),
-                    Text(
-                      '$dateStr • Sau GD: ${formatVnd(tx.balanceAfter)}',
-                      style: GoogleFonts.plusJakartaSans(fontSize: 11, color: AppColors.darkTextSecondary),
-                    ),
-                  ],
-                ),
-              ),
-              const SizedBox(width: 8),
-              Text(
-                formatVnd(tx.amountVnd, showSign: true),
-                style: GoogleFonts.plusJakartaSans(
-                  fontSize: 13.5,
-                  fontWeight: FontWeight.w800,
-                  color: isPositive ? AppColors.mint : AppColors.primary,
-                ),
-              ),
-            ],
-          ),
-        );
-      },
-    );
+    return WalletHistoryList(transactions: transactions);
   }
 }

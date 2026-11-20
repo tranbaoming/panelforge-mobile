@@ -39,7 +39,7 @@ class _ProfilePageState extends ConsumerState<ProfilePage> {
     final wallet = auth.isAuthenticated ? ref.watch(walletNotifierProvider).asData?.value : null;
     final bookmarks = PreferencesService.getBookmarks();
     final follows = PreferencesService.getFollows();
-    final unreadNotifications = ref.watch(unreadNotificationCountProvider);
+    final unreadNotifications = ref.watch(bellBadgeCountProvider);
     final unlocked = {...?wallet?.unlockedChapterIds, ...PreferencesService.getUnlockedChapterIds()};
 
     return DefaultTabController(

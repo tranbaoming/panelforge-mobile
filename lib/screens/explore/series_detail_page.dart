@@ -7,6 +7,7 @@ import '../../models/api_dtos.dart';
 import '../../models/comic_model.dart';
 import '../../navigation/read_guard.dart';
 import '../../providers/api_providers.dart';
+import '../../providers/notification_providers.dart';
 import '../../providers/catalog_providers.dart';
 import '../../services/app_info.dart';
 import '../../theme/app_theme.dart';
@@ -42,6 +43,10 @@ class _SeriesDetailPageState extends ConsumerState<SeriesDetailPage> {
   void initState() {
     super.initState();
     _fetchDetailFromApi();
+    // Mở trang chi tiết = đã thấy chương mới của bộ đang theo dõi.
+    if (PreferencesService.isFollowing(widget.seriesId)) {
+      Future.microtask(() => ref.read(followUpdatesProvider.notifier).markSeen(widget.seriesId));
+    }
   }
 
   Future<void> _fetchDetailFromApi() async {
@@ -117,6 +122,7 @@ class _SeriesDetailPageState extends ConsumerState<SeriesDetailPage> {
   /// 🔔 Theo dõi (danh sách THEO DÕI ở màn Cá nhân) — khác 🔖 Đọc sau (bookmark).
   Future<void> _toggleFollow() async {
     final following = await PreferencesService.toggleFollow(widget.seriesId);
+    ref.read(followUpdatesProvider.notifier).recompute();
     if (mounted) setState(() => _isFollowing = following);
   }
 
@@ -241,6 +247,16 @@ class _SeriesDetailPageState extends ConsumerState<SeriesDetailPage> {
           ref.read(downloadStatusProvider.notifier).setStatus(chapter.id, status);
         },
       );
+      await PreferencesService.saveOfflineChapterInfo(
+        OfflineChapterInfo(
+          chapterId: chapter.id,
+          seriesId: series.id,
+          seriesTitle: series.title,
+          chapterNumber: chapter.chapterNumber,
+          chapterTitle: chapter.title,
+          downloadedAt: DateTime.now(),
+        ),
+      );
       ref.read(downloadedChaptersProvider.notifier).add(chapter.id);
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
@@ -267,9 +283,10 @@ class _SeriesDetailPageState extends ConsumerState<SeriesDetailPage> {
   }
 
   Future<void> _share(SeriesItem series) async {
+    final link = AppInfo.seriesDeepLink(series.id);
     final text = AppInfo.shareUrl.isEmpty
-        ? 'Đọc "${series.title}" trên PanelForge'
-        : 'Đọc "${series.title}" trên PanelForge: ${AppInfo.shareUrl}';
+        ? 'Đọc "${series.title}" trên PanelForge: $link'
+        : 'Đọc "${series.title}" trên PanelForge: $link\nTải ứng dụng: ${AppInfo.shareUrl}';
     await Clipboard.setData(ClipboardData(text: text));
     if (!mounted) return;
     ScaffoldMessenger.of(context).showSnackBar(

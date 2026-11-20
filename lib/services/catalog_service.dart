@@ -1,10 +1,14 @@
 import '../models/api_dtos.dart';
 import 'api_client.dart';
+import 'preferences_service.dart';
 
 class CatalogService {
   final ApiClient _client;
 
   CatalogService({ApiClient? client}) : _client = client ?? ApiClient();
+
+  /// true khi lần gọi [getSeries] gần nhất trả dữ liệu đã lưu vì không kết nối được máy chủ.
+  bool lastSeriesFromCache = false;
 
   /// Lấy danh sách Series đã có ít nhất 1 chương Published (BR-23)
   /// GET /api/catalog/series?search=&genre=&pageIndex=1&pageSize=20
@@ -25,12 +29,21 @@ class CatalogService {
       queryParams['genre'] = genre.trim();
     }
 
-    final response = await _client.get(
-      '/api/catalog/series',
-      queryParameters: queryParams,
-    );
-
-    return PagedCatalogResult.fromJson(response.data as Map<String, dynamic>);
+    // Chỉ danh sách đầy đủ (không tìm / lọc) được lưu để mở app khi không có mạng.
+    final cacheable = queryParams.length == 2;
+    lastSeriesFromCache = false;
+    try {
+      final response = await _client.get('/api/catalog/series', queryParameters: queryParams);
+      final json = response.data as Map<String, dynamic>;
+      if (cacheable) await PreferencesService.cacheCatalogPage(pageIndex, pageSize, json);
+      return PagedCatalogResult.fromJson(json);
+    } on ApiException catch (e) {
+      final offline = e.statusCode == null || e.statusCode! >= 500;
+      final cached = cacheable && offline ? PreferencesService.getCachedCatalogPage(pageIndex, pageSize) : null;
+      if (cached == null) rethrow;
+      lastSeriesFromCache = true;
+      return PagedCatalogResult.fromJson(cached);
+    }
   }
 
   /// Lấy chi tiết Series và danh sách các chương đã Published

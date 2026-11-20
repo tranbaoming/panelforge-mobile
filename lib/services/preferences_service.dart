@@ -6,22 +6,30 @@ class PreferencesService {
   static const String _keyBaseUrl = 'panelforge_custom_base_url';
   static const String _keyReadingMode = 'panelforge_reading_mode';
   static const String _keyReaderTheme = 'panelforge_reader_theme';
+  static const String _keyReaderSeriesSettings = 'panelforge_reader_series_settings';
+  static const String _keyAutoNextChapter = 'panelforge_auto_next_chapter';
   static const String _keyContentLanguage = 'panelforge_content_language';
   static const String _keyBookmarks = 'panelforge_bookmarks';
   static const String _keyReadingHistory = 'panelforge_reading_history';
   static const String _keyFavorites = 'panelforge_favorites';
   static const String _keyAppThemeMode = 'panelforge_app_theme_mode';
   static const String _keyFollows = 'panelforge_follows';
+  static const String _keyFollowSeenAt = 'panelforge_follow_seen_at';
   static const String _keyKeepScreenOn = 'panelforge_keep_screen_on';
   static const String _keyLastSyncAt = 'panelforge_last_sync_at';
   static const String _keyPromoSeenSeries = 'panelforge_promo_seen_series';
   static const String _keyRecentTokens = 'panelforge_recent_tokens';
+  static const String _keyRecentSearches = 'panelforge_recent_searches';
   static const String _keyOfflineChapters = 'panelforge_offline_chapters';
+  static const String _keyOfflineChapterMeta = 'panelforge_offline_chapter_meta';
   static const String _keyUnlockedChapters = 'panelforge_unlocked_chapters';
   static const String _keyChapterEntitlements = 'panelforge_chapter_entitlements';
   static const String _keyWalletBalance = 'panelforge_wallet_balance';
   static const String _keyWalletBalanceVnd = 'panelforge_wallet_balance_vnd';
   static const String _keyWalletTransactions = 'panelforge_wallet_transactions';
+  static const String _keyCatalogCache = 'panelforge_catalog_cache';
+  static const String _keyCrashLog = 'panelforge_crash_log';
+  static const String _keyTextScale = 'panelforge_text_scale';
 
   // ─── Authentication & Session Keys ─────────────────────────────────────────
   static const String _keyAuthUser = 'panelforge_auth_user';
@@ -77,7 +85,31 @@ class PreferencesService {
     final added = current.add(seriesId);
     if (!added) current.remove(seriesId);
     await _prefs?.setStringList(_keyFollows, current.toList());
+    // Bắt đầu theo dõi → chỉ báo các chương phát hành sau thời điểm này.
+    if (added) await setFollowSeenAt(seriesId, DateTime.now());
     return added;
+  }
+
+  /// Lần cuối độc giả đã "thấy" chương mới của từng bộ đang theo dõi (seriesId → thời điểm).
+  static Map<String, DateTime> getFollowSeenAt() {
+    final raw = _prefs?.getString(_keyFollowSeenAt);
+    if (raw == null || raw.isEmpty) return {};
+    try {
+      final decoded = jsonDecode(raw) as Map<String, dynamic>;
+      final result = <String, DateTime>{};
+      for (final e in decoded.entries) {
+        final t = DateTime.tryParse(e.value.toString());
+        if (t != null) result[e.key] = t;
+      }
+      return result;
+    } catch (_) {
+      return {};
+    }
+  }
+
+  static Future<void> setFollowSeenAt(String seriesId, DateTime at) async {
+    final map = getFollowSeenAt()..[seriesId] = at;
+    await _prefs?.setString(_keyFollowSeenAt, jsonEncode(map.map((k, v) => MapEntry(k, v.toIso8601String()))));
   }
 
   // ─── Cài đặt màn Cá nhân ────────────────────────────────────────────────
@@ -160,6 +192,49 @@ class PreferencesService {
     await _prefs?.setString(_keyReaderTheme, theme);
   }
 
+  /// Cài đặt đọc riêng của từng bộ truyện (chế độ đọc, nền, độ sáng).
+  static ReaderSeriesSettings getReaderSeriesSettings(String seriesId) {
+    final raw = _prefs?.getString(_keyReaderSeriesSettings);
+    if (raw == null || raw.isEmpty) return const ReaderSeriesSettings();
+    try {
+      final all = jsonDecode(raw) as Map<String, dynamic>;
+      final one = all[seriesId];
+      return one is Map<String, dynamic> ? ReaderSeriesSettings.fromJson(one) : const ReaderSeriesSettings();
+    } catch (_) {
+      return const ReaderSeriesSettings();
+    }
+  }
+
+  static Future<void> saveReaderSeriesSettings(String seriesId, ReaderSeriesSettings settings) async {
+    Map<String, dynamic> all = {};
+    try {
+      all = jsonDecode(_prefs?.getString(_keyReaderSeriesSettings) ?? '{}') as Map<String, dynamic>;
+    } catch (_) {}
+    all[seriesId] = settings.toJson();
+    await _prefs?.setString(_keyReaderSeriesSettings, jsonEncode(all));
+  }
+
+  /// Đọc hết trang cuối → tự sang chương sau (nếu chương đó đọc được). Mặc định bật.
+  static bool getAutoNextChapter() => _prefs?.getBool(_keyAutoNextChapter) ?? true;
+
+  static Future<void> setAutoNextChapter(bool value) async => _prefs?.setBool(_keyAutoNextChapter, value);
+
+  // ─── Lịch sử tìm kiếm ────────────────────────────────────────────────────
+  /// Từ khóa đã tìm, mới nhất trước, tối đa 10, không trùng (không phân biệt hoa thường).
+  static List<String> getRecentSearches() => _prefs?.getStringList(_keyRecentSearches) ?? const [];
+
+  static Future<void> addRecentSearch(String query) async {
+    final clean = query.trim();
+    if (clean.isEmpty) return;
+    final rest = getRecentSearches().where((q) => q.toLowerCase() != clean.toLowerCase());
+    await _prefs?.setStringList(_keyRecentSearches, [clean, ...rest].take(10).toList());
+  }
+
+  static Future<void> removeRecentSearch(String query) async =>
+      _prefs?.setStringList(_keyRecentSearches, getRecentSearches().where((q) => q != query).toList());
+
+  static Future<void> clearRecentSearches() async => _prefs?.remove(_keyRecentSearches);
+
   // ─── Recent Review Tokens ─────────────────────────────────────────────────
   static List<String> getRecentReviewTokens() {
     return _prefs?.getStringList(_keyRecentTokens) ?? [];
@@ -201,7 +276,29 @@ class PreferencesService {
     final current = getOfflineChapterIds();
     current.remove(clean);
     await _prefs?.setStringList(_keyOfflineChapters, current.toList());
+    final meta = getOfflineChapterMeta()..remove(clean);
+    await _saveOfflineMeta(meta);
   }
+
+  /// Thông tin hiển thị của chương đã tải (tên bộ, số chương...) cho màn "Đã tải".
+  static Map<String, OfflineChapterInfo> getOfflineChapterMeta() {
+    final raw = _prefs?.getString(_keyOfflineChapterMeta);
+    if (raw == null || raw.isEmpty) return {};
+    try {
+      final decoded = jsonDecode(raw) as Map<String, dynamic>;
+      return decoded.map((k, v) => MapEntry(k, OfflineChapterInfo.fromJson(v as Map<String, dynamic>)));
+    } catch (_) {
+      return {};
+    }
+  }
+
+  static Future<void> saveOfflineChapterInfo(OfflineChapterInfo info) async {
+    final meta = getOfflineChapterMeta()..[info.chapterId] = info;
+    await _saveOfflineMeta(meta);
+  }
+
+  static Future<void> _saveOfflineMeta(Map<String, OfflineChapterInfo> meta) async =>
+      _prefs?.setString(_keyOfflineChapterMeta, jsonEncode(meta.map((k, v) => MapEntry(k, v.toJson()))));
 
   static bool isChapterDownloaded(String chapterId) {
     return getOfflineChapterIds().contains(chapterId.trim());
@@ -360,6 +457,52 @@ class PreferencesService {
     await _prefs?.setStringList(_keyWalletTransactions, encoded);
   }
 
+  // ─── Catalog đã lưu (mở app khi không có mạng) ────────────────────────────
+  /// JSON thô của trang catalog `pageIndex/pageSize` lần tải thành công gần nhất.
+  static Map<String, dynamic>? getCachedCatalogPage(int pageIndex, int pageSize) {
+    try {
+      final all = jsonDecode(_prefs?.getString(_keyCatalogCache) ?? '{}') as Map<String, dynamic>;
+      final page = all['$pageIndex/$pageSize'];
+      return page is Map<String, dynamic> ? page : null;
+    } catch (_) {
+      return null;
+    }
+  }
+
+  static Future<void> cacheCatalogPage(int pageIndex, int pageSize, Map<String, dynamic> json) async {
+    Map<String, dynamic> all = {};
+    try {
+      all = jsonDecode(_prefs?.getString(_keyCatalogCache) ?? '{}') as Map<String, dynamic>;
+    } catch (_) {}
+    all['$pageIndex/$pageSize'] = json;
+    await _prefs?.setString(_keyCatalogCache, jsonEncode(all));
+  }
+
+  // ─── Nhật ký lỗi (crash log) trên máy ────────────────────────────────────
+  /// Lỗi chưa bắt được gần nhất trước, tối đa 20 mục. Chỉ lưu trên máy; độc giả tự sao chép gửi hỗ trợ.
+  static List<CrashLogEntry> getCrashLog() {
+    final list = <CrashLogEntry>[];
+    for (final raw in _prefs?.getStringList(_keyCrashLog) ?? const <String>[]) {
+      try {
+        list.add(CrashLogEntry.fromJson(jsonDecode(raw) as Map<String, dynamic>));
+      } catch (_) {}
+    }
+    return list;
+  }
+
+  static Future<void> addCrashLog(CrashLogEntry entry) async {
+    final next = [entry, ...getCrashLog()].take(20).map((e) => jsonEncode(e.toJson())).toList();
+    await _prefs?.setStringList(_keyCrashLog, next);
+  }
+
+  static Future<void> clearCrashLog() async => _prefs?.remove(_keyCrashLog);
+
+  // ─── Cỡ chữ ứng dụng ────────────────────────────────────────────────────
+  /// Hệ số nhân cỡ chữ (1.0 = theo hệ thống). Áp lên cỡ chữ hệ thống của thiết bị.
+  static double getTextScale() => _prefs?.getDouble(_keyTextScale) ?? 1.0;
+
+  static Future<void> setTextScale(double value) async => _prefs?.setDouble(_keyTextScale, value);
+
   // ─── Authentication & Session Storage ───────────────────────────────────────
   static Map<String, dynamic>? getAuthUser() {
     final str = _prefs?.getString(_keyAuthUser);
@@ -495,4 +638,88 @@ class ReadingHistoryEntry {
     language: language ?? this.language,
     readAt: readAt ?? this.readAt,
   );
+}
+
+/// Chương đã tải offline: đủ để hiện trong màn "Đã tải" mà không cần mạng.
+class OfflineChapterInfo {
+  final String chapterId;
+  final String seriesId;
+  final String seriesTitle;
+  final double chapterNumber;
+  final String chapterTitle;
+  final DateTime downloadedAt;
+
+  const OfflineChapterInfo({
+    required this.chapterId,
+    required this.seriesId,
+    required this.seriesTitle,
+    required this.chapterNumber,
+    required this.chapterTitle,
+    required this.downloadedAt,
+  });
+
+  String get chapterNumberLabel => chapterNumber == chapterNumber.truncateToDouble()
+      ? chapterNumber.toInt().toString()
+      : chapterNumber.toString();
+
+  factory OfflineChapterInfo.fromJson(Map<String, dynamic> json) => OfflineChapterInfo(
+    chapterId: json['chapterId'] as String? ?? '',
+    seriesId: json['seriesId'] as String? ?? '',
+    seriesTitle: json['seriesTitle'] as String? ?? '',
+    chapterNumber: (json['chapterNumber'] as num?)?.toDouble() ?? 0,
+    chapterTitle: json['chapterTitle'] as String? ?? '',
+    downloadedAt: DateTime.tryParse(json['downloadedAt'] as String? ?? '') ?? DateTime.now(),
+  );
+
+  Map<String, dynamic> toJson() => {
+    'chapterId': chapterId,
+    'seriesId': seriesId,
+    'seriesTitle': seriesTitle,
+    'chapterNumber': chapterNumber,
+    'chapterTitle': chapterTitle,
+    'downloadedAt': downloadedAt.toIso8601String(),
+  };
+}
+
+/// Cài đặt đọc của một bộ truyện. `null` = chưa chọn, dùng mặc định (hướng đọc do server / nền Đêm).
+class ReaderSeriesSettings {
+  final String? readingMode;
+  final String? theme;
+  final double brightness;
+
+  const ReaderSeriesSettings({this.readingMode, this.theme, this.brightness = 1.0});
+
+  ReaderSeriesSettings copyWith({String? readingMode, String? theme, double? brightness}) => ReaderSeriesSettings(
+    readingMode: readingMode ?? this.readingMode,
+    theme: theme ?? this.theme,
+    brightness: brightness ?? this.brightness,
+  );
+
+  factory ReaderSeriesSettings.fromJson(Map<String, dynamic> json) => ReaderSeriesSettings(
+    readingMode: json['readingMode'] as String?,
+    theme: json['theme'] as String?,
+    brightness: ((json['brightness'] as num?)?.toDouble() ?? 1.0).clamp(0.2, 1.0),
+  );
+
+  Map<String, dynamic> toJson() => {'readingMode': readingMode, 'theme': theme, 'brightness': brightness};
+}
+
+/// Một lỗi chưa bắt được trong app.
+class CrashLogEntry {
+  final DateTime time;
+  final String error;
+  final String stack;
+
+  const CrashLogEntry({required this.time, required this.error, required this.stack});
+
+  factory CrashLogEntry.fromJson(Map<String, dynamic> json) => CrashLogEntry(
+    time: DateTime.tryParse(json['time'] as String? ?? '') ?? DateTime.now(),
+    error: json['error'] as String? ?? '',
+    stack: json['stack'] as String? ?? '',
+  );
+
+  Map<String, dynamic> toJson() => {'time': time.toIso8601String(), 'error': error, 'stack': stack};
+
+  @override
+  String toString() => '[${time.toIso8601String()}] $error\n$stack';
 }

@@ -70,5 +70,18 @@
 	<string>Ứng dụng cần quyền Camera để quét mã QR mở bản thảo xem thử.</string>
 	<key>NSMicrophoneUsageDescription</key>
 	<string>Ứng dụng cần quyền Micro để ghi âm nhận xét cho khung tranh.</string>
+	<key>FlutterDeepLinkingEnabled</key>
+	<true/>
+	<key>CFBundleURLTypes</key>
+	<array>
+		<dict>
+			<key>CFBundleURLName</key>
+			<string>panelforge</string>
+			<key>CFBundleURLSchemes</key>
+			<array>
+				<string>panelforge</string>
+			</array>
+		</dict>
+	</array>
 </dict>
 </plist>

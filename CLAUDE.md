@@ -15,6 +15,8 @@ Backend API Base URL:
 - Android Emulator: `http://10.0.2.2:5044`
 - iOS / Desktop / Web: `http://localhost:5044`
 - Base URL is chosen automatically by `services/api_config.dart` (no in-app server config screen).
+- Catalog đầy đủ được lưu sau mỗi lần tải thành công; mất mạng (lỗi kết nối / 5xx) thì Trang chủ dùng bản đã lưu kèm dải "Không có kết nối".
+- Deep link: `panelforge://app/series/<id>` (Android intent-filter + iOS CFBundleURLTypes) → GoRouter mở `/series/<id>`.
 
 ## Project Structure & Navigation Map
 
@@ -44,6 +46,7 @@ lib/
 │   ├── notification_service.dart      # /api/notifications: danh sách, {id}/read, read-all
 │   ├── monetization_service.dart      # Wallet balance & chapter paywall unlocking
 │   ├── preferences_service.dart       # SharedPreferences: bookmarks (Đọc sau), theo dõi, lịch sử đọc, giao diện, giữ màn hình sáng
+│   ├── crash_reporter.dart            # Ghi lỗi chưa bắt được vào nhật ký trên máy (Cài đặt → Nhật ký lỗi)
 │   └── app_info.dart                  # Phiên bản & liên kết Liên hệ / Chính sách / Cửa hàng (điền khi có)
 ├── screens/
 │   ├── auth/login_page.dart           # User login modal/page
@@ -59,6 +62,7 @@ lib/
 │   │   ├── profile_page.dart          # Tab Cá nhân: thẻ Tạo tài khoản / hồ sơ + Ví, lối tắt Đọc sau / Theo dõi / Đã mở khóa, thẻ Lịch sử / Yêu thích
 │   │   ├── settings_page.dart         # /settings (bánh răng): Tài khoản (hồ sơ, đổi MK, thiết bị tin cậy, giao dịch, mã Review, đăng xuất, xoá TK), Cài đặt ứng dụng (ngôn ngữ giao diện, giao diện, ...), Trợ giúp, Khác
 │   │   ├── legal_page.dart            # /legal/:id — terms | privacy | copyright | faq (nội dung ở lib/content/legal_content.dart)
+│   │   ├── downloads_page.dart        # /downloads (từ Cài đặt): chương đã tải offline theo bộ, dung lượng, xoá từng chương / xoá hết
 │   │   └── activity_page.dart         # /activity (chuông có số chưa đọc ở tab Cá nhân): thông báo từ server, giao dịch Ví, đọc gần đây, lối vào Review (/review)
 │   ├── reader/
 │   │   └── comic_reader_page.dart     # Multi-mode manga/comic/webtoon reader
@@ -76,6 +80,7 @@ lib/
 │   ├── vip_purchase_sheet.dart        # Mua VIP: trừ Ví hoặc VietQR (đơn VipSubscription)
 │   ├── forge_ui.dart                  # Thẻ truyện, logo, header section, lưới 2 cột (bảng màu ForgeColors)
 │   ├── wallet_chip.dart               # Header wallet balance indicator
+│   ├── wallet_history.dart            # Lịch sử giao dịch Ví: lọc theo tháng, tổng nạp/chi, biên lai từng giao dịch
 │   ├── wallet_topup_dialog.dart       # Wallet top-up (VietQR order) & server transaction history
 │   ├── unlock_chapter_bottom_sheet.dart # Mở khóa cả chương trả phí: Ví / VietQR / VIP (người chưa mua chỉ đọc trang xem trước); ChapterPurchaseOptionsSheet (Số dư hiện tại + Dùng Ví để đọc / Đọc thử / Hủy)
 │   ├── locked_page_tile.dart          # Ô trang ngoài phần xem trước: làm mờ + nút "Mở khóa chương"

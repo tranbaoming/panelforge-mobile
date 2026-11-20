@@ -1,6 +1,7 @@
 import 'dart:io';
 
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 import 'package:google_fonts/google_fonts.dart';
@@ -153,6 +154,109 @@ class _SettingsPageState extends ConsumerState<SettingsPage> {
 
   /// Ngôn ngữ giao diện của ứng dụng (hệ thống). Hiện ứng dụng chỉ có Tiếng Việt.
   /// Không liên quan tới bản ngôn ngữ của chương: chọn bản đọc vẫn làm trong màn đọc truyện.
+  static const _textScales = [(1.0, 'Mặc định'), (1.15, 'Lớn'), (1.3, 'Rất lớn')];
+
+  static String _textScaleLabel(double scale) =>
+      _textScales.where((o) => o.$1 == scale).map((o) => o.$2).firstOrNull ?? 'Mặc định';
+
+  Future<void> _pickTextScale() async {
+    final picked = await _pick(_textScales, ref.read(textScaleProvider));
+    if (picked != null) await ref.read(textScaleProvider.notifier).set(picked);
+  }
+
+  Future<void> _showCrashLog() async {
+    final log = PreferencesService.getCrashLog();
+    await showModalBottomSheet<void>(
+      context: context,
+      isScrollControlled: true,
+      backgroundColor: ForgeColors.surface,
+      shape: const RoundedRectangleBorder(borderRadius: BorderRadius.vertical(top: Radius.circular(20))),
+      builder: (ctx) => SafeArea(
+        child: ConstrainedBox(
+          constraints: BoxConstraints(maxHeight: MediaQuery.of(ctx).size.height * 0.75),
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.stretch,
+            children: [
+              Padding(
+                padding: const EdgeInsets.fromLTRB(20, 18, 20, 6),
+                child: Text(
+                  'Nhật ký lỗi',
+                  style: GoogleFonts.plusJakartaSans(fontSize: 18, fontWeight: FontWeight.w800, color: ForgeColors.text),
+                ),
+              ),
+              Padding(
+                padding: const EdgeInsets.symmetric(horizontal: 20),
+                child: Text(
+                  'Chỉ lưu trên máy này. Sao chép rồi gửi cho bộ phận hỗ trợ khi cần.',
+                  style: GoogleFonts.plusJakartaSans(fontSize: 13, color: ForgeColors.muted),
+                ),
+              ),
+              Flexible(
+                child: log.isEmpty
+                    ? Padding(
+                        padding: const EdgeInsets.all(24),
+                        child: Text(
+                          'Chưa ghi nhận lỗi nào.',
+                          textAlign: TextAlign.center,
+                          style: GoogleFonts.plusJakartaSans(color: ForgeColors.muted),
+                        ),
+                      )
+                    : ListView(
+                        shrinkWrap: true,
+                        padding: const EdgeInsets.fromLTRB(20, 10, 20, 10),
+                        children: [
+                          for (final e in log)
+                            Padding(
+                              padding: const EdgeInsets.only(bottom: 10),
+                              child: Text(
+                                '${_formatTime(e.time)}\n${e.error}',
+                                maxLines: 4,
+                                overflow: TextOverflow.ellipsis,
+                                style: GoogleFonts.plusJakartaSans(fontSize: 12.5, color: ForgeColors.textSoft),
+                              ),
+                            ),
+                        ],
+                      ),
+              ),
+              if (log.isNotEmpty)
+                Padding(
+                  padding: const EdgeInsets.fromLTRB(16, 4, 16, 12),
+                  child: Row(
+                    children: [
+                      Expanded(
+                        child: OutlinedButton(
+                          onPressed: () async {
+                            await PreferencesService.clearCrashLog();
+                            if (ctx.mounted) Navigator.pop(ctx);
+                            if (mounted) setState(() {});
+                          },
+                          child: const Text('Xoá nhật ký'),
+                        ),
+                      ),
+                      const SizedBox(width: 10),
+                      Expanded(
+                        child: FilledButton(
+                          style: FilledButton.styleFrom(backgroundColor: ForgeColors.accent),
+                          onPressed: () async {
+                            final text = 'PanelForge ${AppInfo.version}\n\n${log.join('\n\n')}';
+                            await Clipboard.setData(ClipboardData(text: text));
+                            if (ctx.mounted) Navigator.pop(ctx);
+                            _snack('Đã sao chép nhật ký lỗi.');
+                          },
+                          child: const Text('Sao chép'),
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+
   Future<void> _showAppLanguage() => showModalBottomSheet<void>(
     context: context,
     backgroundColor: ForgeColors.surface,
@@ -303,6 +407,11 @@ class _SettingsPageState extends ConsumerState<SettingsPage> {
           ),
           _Item('Giao diện', subtitle: _themeLabel(themeMode), onTap: _pickTheme),
           _Item(
+            'Cỡ chữ',
+            subtitle: _textScaleLabel(ref.watch(textScaleProvider)),
+            onTap: _pickTextScale,
+          ),
+          _Item(
             'Giữ màn hình sáng khi đọc',
             subtitle: 'Không tự tắt màn hình trong lúc đọc chương',
             trailing: Switch(
@@ -315,7 +424,16 @@ class _SettingsPageState extends ConsumerState<SettingsPage> {
               },
             ),
           ),
-          _Item('Thông báo', subtitle: 'Giao dịch Ví và hoạt động đọc gần đây', onTap: () => context.push('/activity')),
+          _Item(
+            'Thông báo',
+            subtitle: 'Thông báo, chương mới của truyện theo dõi, giao dịch Ví',
+            onTap: () => context.push('/activity'),
+          ),
+          _Item(
+            'Truyện đã tải',
+            subtitle: '${ref.watch(downloadedChaptersProvider).length} chương đọc offline',
+            onTap: () => context.push('/downloads'),
+          ),
           _Item(
             'Xoá lịch sử đọc',
             subtitle: '$historyCount tựa sách',
@@ -336,6 +454,11 @@ class _SettingsPageState extends ConsumerState<SettingsPage> {
           const _Header('Trợ giúp'),
           _Item('Câu hỏi thường gặp', onTap: () => context.push('/legal/faq')),
           _Item('Liên hệ hỗ trợ', onTap: _contactSupport),
+          _Item(
+            'Nhật ký lỗi',
+            subtitle: '${PreferencesService.getCrashLog().length} lỗi được ghi trên máy',
+            onTap: _showCrashLog,
+          ),
           const _Header('Khác'),
           _Item('Điều khoản sử dụng', onTap: () => context.push('/legal/terms')),
           _Item('Chính sách bảo mật', onTap: () => context.push('/legal/privacy')),
