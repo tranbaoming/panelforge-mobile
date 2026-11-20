@@ -173,14 +173,18 @@ class _ComicReaderPageState extends ConsumerState<ComicReaderPage> with WidgetsB
     );
   }
 
-  /// Cùng quy tắc với SeriesDetailPage: Backend `isLocked`/`isUnlocked` + VIP + quyền sở hữu từ `/api/wallet/me`.
-  bool _isChapterUnlocked(ChapterItem chapter) {
-    if (!chapter.isLocked) return true;
-    if (chapter.isUnlocked) return true;
+  /// Cùng quy tắc với SeriesDetailPage: Backend `isLocked`/`isUnlocked` + VIP + quyền sở hữu theo ấn bản ngôn ngữ.
+  bool _isChapterUnlocked(ChapterItem chapter, [String? lang]) {
+    final targetLang = lang ?? _activeLanguage;
+    if (!chapter.isLockedFor(targetLang)) return true;
+    if (chapter.isServerUnlockedFor(targetLang)) return true;
     final wallet = ref.watch(walletNotifierProvider).asData?.value;
     if (wallet?.hasActiveVip ?? false) return true;
-    if (wallet?.unlockedChapterIds.contains(chapter.id) ?? false) return true;
-    return ref.watch(unlockedChaptersProvider).contains(chapter.id);
+    final unlockedSet = ref.watch(unlockedChaptersProvider);
+    final editionKey = ChapterEntitlement.editionKey(chapter.id, targetLang);
+    if (unlockedSet.contains(editionKey)) return true;
+    if (unlockedSet.any((id) => id.startsWith('${chapter.id}:'))) return false;
+    return unlockedSet.contains(chapter.id);
   }
 
   Future<void> _loadData() async {
@@ -217,18 +221,8 @@ class _ComicReaderPageState extends ConsumerState<ComicReaderPage> with WidgetsB
             ChapterItem(id: chId, number: 1, title: 'Chương Truyện', releaseDate: '', pageCount: 0, pages: const []),
       );
 
-      // Nếu chương đã được mở khóa, nạp chi tiết các trang
-      if (_isChapterUnlocked(targetChapter)) {
-        await _loadChapterContent(series, targetChapter);
-      } else {
-        if (mounted) {
-          setState(() {
-            _series = series;
-            _currentChapter = targetChapter;
-            _isLoading = false;
-          });
-        }
-      }
+      // Luôn gọi _loadChapterContent để lấy danh sách trang (kể cả chương khóa vẫn có N trang xem trước BR-33).
+      await _loadChapterContent(series, targetChapter);
     } catch (e) {
       debugPrint('[ComicReader API Error] $e');
       if (mounted) {
@@ -347,6 +341,10 @@ class _ComicReaderPageState extends ConsumerState<ComicReaderPage> with WidgetsB
       }
 
       if (mounted) {
+        final history = PreferencesService.getReadingHistoryFor(series.id);
+        final savedPage = (history != null && history.chapterId == currentChapter.id) ? history.lastPageNumber : 1;
+        final initialPage = currentChapter.pages.isEmpty ? 1 : savedPage.clamp(1, currentChapter.pages.length);
+
         setState(() {
           _series = series;
           _currentChapter = currentChapter;
@@ -356,14 +354,22 @@ class _ComicReaderPageState extends ConsumerState<ComicReaderPage> with WidgetsB
           _readingMode = readingMode;
           _webtoonTileSpacing = loadedPackage.manifest.webtoonTileSpacing;
           _isLoading = false;
-          _currentPage = 1;
+          _currentPage = initialPage;
         });
+        if (initialPage > 1) {
+          WidgetsBinding.instance.addPostFrameCallback((_) {
+            if (mounted) _readerSwitcherKey.currentState?.jumpToPage(initialPage);
+          });
+        }
         PreferencesService.saveReadingProgress(
           ReadingHistoryEntry(
             seriesId: series.id,
             seriesTitle: series.title,
             chapterId: currentChapter.id,
-            chapterNumber: currentChapter.number,
+            chapterNumber: currentChapter.chapterNumber,
+            lastPageNumber: initialPage,
+            totalPages: currentChapter.pages.length,
+            language: _activeLanguage,
             readAt: DateTime.now(),
           ),
         );
@@ -577,6 +583,18 @@ class _ComicReaderPageState extends ConsumerState<ComicReaderPage> with WidgetsB
                 },
                 onPageChanged: (newPage) {
                   setState(() => _currentPage = newPage);
+                  PreferencesService.saveReadingProgress(
+                    ReadingHistoryEntry(
+                      seriesId: series.id,
+                      seriesTitle: series.title,
+                      chapterId: currentChapter.id,
+                      chapterNumber: currentChapter.chapterNumber,
+                      lastPageNumber: newPage,
+                      totalPages: currentChapter.pages.length,
+                      language: _activeLanguage,
+                      readAt: DateTime.now(),
+                    ),
+                  );
                 },
                 onTapScreen: _toggleHud,
                 onUnlockPage: _isOfflinePackage ? null : _showUnlockChapterSheet,
@@ -995,6 +1013,12 @@ class _ComicReaderPageState extends ConsumerState<ComicReaderPage> with WidgetsB
                       }
                     },
                   ),
+
+                  // THANH CHUYỂN CHƯƠNG NHANH (CHƯƠNG TRƯỚC / CHƯƠNG TIẾP)
+                  if (series.chapters.length > 1) ...[
+                    const SizedBox(height: 8),
+                    _buildQuickChapterNav(series, currentChapter, hudTextColor),
+                  ],
                 ],
               ),
             ),
@@ -1051,6 +1075,74 @@ class _ComicReaderPageState extends ConsumerState<ComicReaderPage> with WidgetsB
             ),
         ],
       ),
+    );
+  }
+
+  Future<void> _switchToChapter(ChapterItem chapter) async {
+    setState(() => _isLoading = true);
+    await _loadChapterContent(_series!, chapter);
+    _readerSwitcherKey.currentState?.jumpToPage(1);
+  }
+
+  Widget _buildQuickChapterNav(SeriesItem series, ChapterItem currentChapter, Color hudTextColor) {
+    final sorted = [...series.chapters]..sort((a, b) => a.chapterNumber.compareTo(b.chapterNumber));
+    final idx = sorted.indexWhere((c) => c.id == currentChapter.id);
+    final prev = idx > 0 ? sorted[idx - 1] : null;
+    final next = (idx >= 0 && idx < sorted.length - 1) ? sorted[idx + 1] : null;
+    final isAtLastPage = currentChapter.pages.isNotEmpty && _currentPage >= currentChapter.pages.length;
+
+    return Row(
+      children: [
+        Expanded(
+          child: OutlinedButton.icon(
+            onPressed: prev == null ? null : () => _switchToChapter(prev),
+            icon: const Icon(Icons.skip_previous_rounded, size: 16),
+            label: Text(
+              prev == null ? 'Đầu truyện' : 'Chương ${prev.numberLabel}',
+              maxLines: 1,
+              overflow: TextOverflow.ellipsis,
+              style: GoogleFonts.plusJakartaSans(fontSize: 12, fontWeight: FontWeight.w700),
+            ),
+            style: OutlinedButton.styleFrom(
+              foregroundColor: hudTextColor,
+              side: BorderSide(color: hudTextColor.withValues(alpha: 0.25)),
+              padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 8),
+              shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
+            ),
+          ),
+        ),
+        const SizedBox(width: 10),
+        Expanded(
+          child: ElevatedButton.icon(
+            onPressed: next == null ? null : () => _switchToChapter(next),
+            icon: Icon(
+              next != null && !_isChapterUnlocked(next) ? Icons.lock_rounded : Icons.skip_next_rounded,
+              size: 16,
+            ),
+            label: Text(
+              next == null ? 'Chương mới nhất' : 'Chương ${next.numberLabel} ›',
+              maxLines: 1,
+              overflow: TextOverflow.ellipsis,
+              style: GoogleFonts.plusJakartaSans(fontSize: 12, fontWeight: FontWeight.w800),
+            ),
+            style: ElevatedButton.styleFrom(
+              backgroundColor: (next != null && isAtLastPage)
+                  ? AppColors.primary
+                  : AppColors.primary.withValues(alpha: 0.2),
+              foregroundColor: (next != null && isAtLastPage) ? Colors.white : AppColors.primary,
+              disabledBackgroundColor: Colors.transparent,
+              elevation: 0,
+              padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 8),
+              shape: RoundedRectangleBorder(
+                borderRadius: BorderRadius.circular(10),
+                side: BorderSide(
+                  color: next == null ? hudTextColor.withValues(alpha: 0.15) : AppColors.primary.withValues(alpha: 0.6),
+                ),
+              ),
+            ),
+          ),
+        ),
+      ],
     );
   }
 

@@ -393,7 +393,9 @@ class _HistoryTab extends ConsumerWidget {
             catalog.where((s) => s.id == h.seriesId).firstOrNull ?? _fallbackSeries(h.seriesId, h.seriesTitle);
         return _SeriesListRow(
           series: series,
-          line: 'Chương ${h.chapterNumber} • ${timeAgo(h.readAt)}',
+          line: h.lastPageNumber > 1
+              ? 'Chương ${h.chapterNumberLabel} (Trang ${h.lastPageNumber}) • ${timeAgo(h.readAt)}'
+              : 'Chương ${h.chapterNumberLabel} • ${timeAgo(h.readAt)}',
           date: _date(h.readAt),
           onTap: () => openReaderGuarded(context, ref, h.seriesId, h.chapterId, series: series),
         );

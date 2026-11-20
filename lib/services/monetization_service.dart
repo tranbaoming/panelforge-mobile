@@ -30,7 +30,7 @@ class MonetizationService {
   }
 
   /// `POST /api/wallet/unlock-chapter` — mở khóa vĩnh viễn bằng số dư Ví (hoặc miễn phí nếu VIP).
-  /// Giá trừ do server lấy từ cấu hình chương trên web.
+  /// Giá trừ do server lấy từ cấu hình ấn bản ngôn ngữ của chương trên web.
   Future<UnlockChapterResponse> unlockChapterWithWallet({
     required String chapterId,
     String? seriesId,
@@ -46,7 +46,12 @@ class MonetizationService {
     }
     await PreferencesService.setLocalBalanceVnd(resp.remainingBalanceVnd);
     await PreferencesService.saveChapterEntitlement(
-      ChapterEntitlement(chapterId: chapterId, isPermanent: true, unlockedAt: DateTime.now()),
+      ChapterEntitlement(
+        chapterId: chapterId,
+        language: language,
+        isPermanent: true,
+        unlockedAt: DateTime.now(),
+      ),
     );
     return resp;
   }
@@ -166,16 +171,17 @@ class WalletNotifier extends Notifier<AsyncValue<UserWalletDto>> {
       seriesId: seriesId,
       language: language,
     );
+    final editionKey = ChapterEntitlement.editionKey(chapterId, language);
     final current = state.asData?.value;
     if (current != null) {
       state = AsyncData(
         current.copyWith(
           balanceVnd: response.remainingBalanceVnd,
-          unlockedChapterIds: {...current.unlockedChapterIds, chapterId},
+          unlockedChapterIds: {...current.unlockedChapterIds, chapterId, editionKey},
         ),
       );
     }
-    ref.read(unlockedChaptersProvider.notifier).add(chapterId);
+    ref.read(unlockedChaptersProvider.notifier).add(chapterId, language: language);
     ref.read(chapterEntitlementsProvider.notifier).refresh();
     // Lấy lại lịch sử giao dịch thật từ server mà không làm nháy UI.
     unawaited(refresh(silent: true));
@@ -200,7 +206,7 @@ class WalletNotifier extends Notifier<AsyncValue<UserWalletDto>> {
 
 final walletNotifierProvider = NotifierProvider<WalletNotifier, AsyncValue<UserWalletDto>>(WalletNotifier.new);
 
-/// Notifier quản lý danh sách các chapterId đã mở khóa (cache của `UnlockedChapterIds` trên server).
+/// Notifier quản lý danh sách các chapterId / editionKey đã mở khóa (cache của `UnlockedChapterIds` trên server).
 class UnlockedChaptersNotifier extends Notifier<Set<String>> {
   @override
   Set<String> build() {
@@ -211,19 +217,27 @@ class UnlockedChaptersNotifier extends Notifier<Set<String>> {
     state = PreferencesService.getUnlockedChapterIds();
   }
 
-  void add(String chapterId) {
-    PreferencesService.addUnlockedChapterId(chapterId);
-    state = {...state, chapterId};
+  void add(String chapterId, {String? language}) {
+    PreferencesService.addUnlockedChapterId(chapterId, language: language);
+    final editionKey = ChapterEntitlement.editionKey(chapterId, language);
+    state = {...state, chapterId, editionKey};
   }
 
-  void remove(String chapterId) {
-    PreferencesService.removeUnlockedChapterId(chapterId);
-    state = state.where((id) => id != chapterId).toSet();
+  void remove(String chapterId, {String? language}) {
+    PreferencesService.removeUnlockedChapterId(chapterId, language: language);
+    final editionKey = ChapterEntitlement.editionKey(chapterId, language);
+    state = state.where((id) => id != chapterId && id != editionKey).toSet();
   }
 
-  bool isUnlocked(String chapterId) {
+  bool isUnlocked(String chapterId, {String? language}) {
     if (PreferencesService.getLocalIsVip()) return true;
-    return state.contains(chapterId);
+    final clean = chapterId.trim();
+    if (language != null && language.trim().isNotEmpty) {
+      final key = ChapterEntitlement.editionKey(clean, language);
+      if (state.contains(key)) return true;
+      if (state.any((id) => id.startsWith('$clean:'))) return false;
+    }
+    return state.contains(clean);
   }
 }
 

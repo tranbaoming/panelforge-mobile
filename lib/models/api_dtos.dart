@@ -70,9 +70,10 @@ enum ChapterAccessPolicy {
   }
 }
 
-/// Trạng thái sở hữu của Reader cho từng chapter
+  /// Trạng thái sở hữu của Reader cho từng chapter (hoặc từng ấn bản ngôn ngữ)
 class ChapterEntitlement {
   final String chapterId;
+  final String? language;
   final bool isPermanent;
   final int? remainingViews;
   final DateTime? lastOpenedAt;
@@ -80,11 +81,20 @@ class ChapterEntitlement {
 
   const ChapterEntitlement({
     required this.chapterId,
+    this.language,
     this.isPermanent = false,
     this.remainingViews,
     this.lastOpenedAt,
     this.unlockedAt,
   });
+
+  /// Khóa chuẩn cho ấn bản ngôn ngữ (`chapterId:lang`).
+  static String editionKey(String chapterId, [String? language]) {
+    final cleanId = chapterId.trim();
+    if (cleanId.contains(':')) return cleanId;
+    final cleanLang = (language == null || language.trim().isEmpty) ? 'vi' : language.trim().toLowerCase();
+    return '$cleanId:$cleanLang';
+  }
 
   bool get isValid {
     if (isPermanent) return true;
@@ -94,6 +104,7 @@ class ChapterEntitlement {
   factory ChapterEntitlement.fromJson(Map<String, dynamic> json) {
     return ChapterEntitlement(
       chapterId: json['chapterId']?.toString() ?? '',
+      language: json['language']?.toString(),
       isPermanent: json['isPermanent'] as bool? ?? false,
       remainingViews: (json['remainingViews'] as num?)?.toInt(),
       lastOpenedAt: json['lastOpenedAt'] != null ? DateTime.tryParse(json['lastOpenedAt'].toString()) : null,
@@ -103,6 +114,7 @@ class ChapterEntitlement {
 
   Map<String, dynamic> toJson() => {
     'chapterId': chapterId,
+    if (language != null) 'language': language,
     'isPermanent': isPermanent,
     if (remainingViews != null) 'remainingViews': remainingViews,
     if (lastOpenedAt != null) 'lastOpenedAt': lastOpenedAt!.toIso8601String(),
@@ -111,6 +123,7 @@ class ChapterEntitlement {
 
   ChapterEntitlement copyWith({
     String? chapterId,
+    String? language,
     bool? isPermanent,
     int? remainingViews,
     DateTime? lastOpenedAt,
@@ -118,6 +131,7 @@ class ChapterEntitlement {
   }) {
     return ChapterEntitlement(
       chapterId: chapterId ?? this.chapterId,
+      language: language ?? this.language,
       isPermanent: isPermanent ?? this.isPermanent,
       remainingViews: remainingViews ?? this.remainingViews,
       lastOpenedAt: lastOpenedAt ?? this.lastOpenedAt,
@@ -144,6 +158,9 @@ class PublicSeriesDto {
   final String id;
   final String title;
   final String? synopsis;
+  final String? logline;
+  final String? teaser;
+  final String? ageRating;
   final String genre;
   final String format;
   final ApiReadingDirection readingDirection;
@@ -167,6 +184,9 @@ class PublicSeriesDto {
     required this.id,
     required this.title,
     this.synopsis,
+    this.logline,
+    this.teaser,
+    this.ageRating,
     required this.genre,
     required this.format,
     required this.readingDirection,
@@ -194,6 +214,9 @@ class PublicSeriesDto {
       id: json['id']?.toString() ?? '',
       title: json['title']?.toString() ?? '',
       synopsis: json['synopsis']?.toString(),
+      logline: json['logline']?.toString(),
+      teaser: json['teaser']?.toString(),
+      ageRating: json['ageRating']?.toString(),
       genre: json['genre']?.toString() ?? 'Khác',
       format: json['format']?.toString() ?? 'Manga',
       readingDirection: ApiReadingDirection.fromDynamic(json['readingDirection']),
@@ -215,13 +238,12 @@ class PublicSeriesDto {
   }
 }
 
-/// Ngôn ngữ bản phát hành: vi = bản gốc Studio; en/ja = bản dịch (Publisher upload ảnh từng trang).
-/// Mua chương/trang theo từng ngôn ngữ.
-const List<String> kContentLanguages = ['vi', 'en', 'ja'];
+/// Ngôn ngữ bản phát hành: vi = bản gốc Studio; en = bản dịch tiếng Anh (BR-34).
+/// Mua chương/trang theo từng ấn bản ngôn ngữ.
+const List<String> kContentLanguages = ['vi', 'en'];
 
 String contentLanguageLabel(String code) => switch (code) {
   'en' => 'English',
-  'ja' => '日本語',
   _ => 'Tiếng Việt',
 };
 
@@ -359,6 +381,9 @@ class PublicSeriesDetailDto {
   final String id;
   final String title;
   final String? synopsis;
+  final String? logline;
+  final String? teaser;
+  final String? ageRating;
   final String genre;
   final String format;
   final ApiReadingDirection readingDirection;
@@ -381,10 +406,16 @@ class PublicSeriesDetailDto {
   /// Đánh giá của người đang đăng nhập (null nếu chưa đánh giá).
   final int? myRating;
 
+  /// Ngôn ngữ hiện tại dùng để tính giá và trạng thái mở khóa các chương.
+  final String language;
+
   PublicSeriesDetailDto({
     required this.id,
     required this.title,
     this.synopsis,
+    this.logline,
+    this.teaser,
+    this.ageRating,
     required this.genre,
     required this.format,
     required this.readingDirection,
@@ -399,6 +430,7 @@ class PublicSeriesDetailDto {
     this.ratingAverage = 0,
     this.ratingCount = 0,
     this.myRating,
+    this.language = 'vi',
   });
 
   String? get fullCoverUrl => coverUrl != null && coverUrl!.isNotEmpty ? ApiConfig.resolveUrl(coverUrl!) : null;
@@ -412,6 +444,9 @@ class PublicSeriesDetailDto {
       id: json['id']?.toString() ?? '',
       title: json['title']?.toString() ?? '',
       synopsis: json['synopsis']?.toString(),
+      logline: json['logline']?.toString(),
+      teaser: json['teaser']?.toString(),
+      ageRating: json['ageRating']?.toString(),
       genre: json['genre']?.toString() ?? 'Khác',
       format: json['format']?.toString() ?? 'Manga',
       readingDirection: ApiReadingDirection.fromDynamic(json['readingDirection']),
@@ -426,6 +461,7 @@ class PublicSeriesDetailDto {
       ratingCount: (json['ratingCount'] as num?)?.toInt() ?? 0,
       myRating: (json['myRating'] as num?)?.toInt(),
       viewCount: (json['viewCount'] as num?)?.toInt() ?? 0,
+      language: json['language']?.toString() ?? 'vi',
     );
   }
 }

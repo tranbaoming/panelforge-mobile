@@ -69,7 +69,7 @@ class _UnlockChapterBottomSheetState extends ConsumerState<UnlockChapterBottomSh
   String? _errorMessage;
   TopupResponse? _vietQrOrder;
 
-  int get _priceVnd => widget.chapter.priceVnd;
+  int get _priceVnd => widget.chapter.priceVndFor(widget.language);
 
   @override
   void initState() {
@@ -139,12 +139,12 @@ class _UnlockChapterBottomSheetState extends ConsumerState<UnlockChapterBottomSh
     }
   }
 
-  /// Producer đã xác nhận đơn VietQR → Backend đã tạo quyền đọc; đồng bộ lại Ví & danh sách chương.
+  /// Producer/Publisher đã xác nhận đơn VietQR → Backend đã tạo quyền đọc; đồng bộ lại Ví & danh sách chương.
   Future<void> _onVietQrApproved(TransactionStatusDto status) async {
-    ref.read(unlockedChaptersProvider.notifier).add(widget.chapter.id);
+    ref.read(unlockedChaptersProvider.notifier).add(widget.chapter.id, language: widget.language);
     await ref.read(walletNotifierProvider.notifier).refresh(silent: true);
     if (!mounted) return;
-    _finishUnlocked('Studio đã xác nhận thanh toán ${formatVnd(status.amountVnd)}. Chương đã được mở khóa!');
+    _finishUnlocked('Hệ thống đã xác nhận thanh toán ${formatVnd(status.amountVnd)}. Ấn bản đã được mở khóa!');
   }
 
   void _finishUnlocked(String message) {
@@ -278,8 +278,8 @@ class _UnlockChapterBottomSheetState extends ConsumerState<UnlockChapterBottomSh
               ),
               const SizedBox(height: 2),
               Text(
-                'Chương trả phí • Mở khóa vĩnh viễn ${formatVnd(_priceVnd)}',
-                style: GoogleFonts.plusJakartaSans(fontSize: 11.5, color: AppColors.darkTextSecondary),
+                'Ấn bản ${contentLanguageLabel(widget.language)} • Mở khóa vĩnh viễn ${formatVnd(_priceVnd)}',
+                style: GoogleFonts.plusJakartaSans(fontSize: 12, color: AppColors.darkTextSecondary),
               ),
             ],
           ),
@@ -506,13 +506,20 @@ enum ChapterPurchaseChoice { useWallet, preview }
 class ChapterPurchaseOptionsSheet extends ConsumerWidget {
   final ChapterItem chapter;
   final SeriesItem series;
+  final String language;
 
-  const ChapterPurchaseOptionsSheet({super.key, required this.chapter, required this.series});
+  const ChapterPurchaseOptionsSheet({
+    super.key,
+    required this.chapter,
+    required this.series,
+    this.language = 'vi',
+  });
 
   static Future<ChapterPurchaseChoice?> show(
     BuildContext context, {
     required ChapterItem chapter,
     required SeriesItem series,
+    String language = 'vi',
   }) {
     return showModalBottomSheet<ChapterPurchaseChoice>(
       context: context,
@@ -520,7 +527,7 @@ class ChapterPurchaseOptionsSheet extends ConsumerWidget {
       useSafeArea: true,
       backgroundColor: Colors.transparent,
       barrierColor: Colors.black.withValues(alpha: 0.6),
-      builder: (_) => ChapterPurchaseOptionsSheet(chapter: chapter, series: series),
+      builder: (_) => ChapterPurchaseOptionsSheet(chapter: chapter, series: series, language: language),
     );
   }
 
@@ -531,6 +538,7 @@ class ChapterPurchaseOptionsSheet extends ConsumerWidget {
     final isVip = wallet?.hasActiveVip ?? PreferencesService.getLocalIsVip();
     final subtitle = chapterSubtitle(chapter.title);
     final hasTitle = subtitle.isNotEmpty;
+    final price = chapter.priceVndFor(language);
 
     Widget action(String label, VoidCallback onTap, {Color? color}) => InkWell(
       onTap: onTap,
@@ -620,14 +628,14 @@ class ChapterPurchaseOptionsSheet extends ConsumerWidget {
                 child: Row(
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
-                    ChapterThumbnail(series: series, number: '${chapter.number}', width: 136, height: 96),
+                    ChapterThumbnail(series: series, number: chapter.numberLabel, width: 136, height: 96),
                     const SizedBox(width: 14),
                     Expanded(
                       child: Column(
                         crossAxisAlignment: CrossAxisAlignment.start,
                         children: [
                           Text(
-                            'Chương ${chapter.number}',
+                            'Chương ${chapter.numberLabel} (${language.toUpperCase()})',
                             style: GoogleFonts.plusJakartaSans(
                               fontSize: 20,
                               fontWeight: FontWeight.w700,
@@ -647,7 +655,7 @@ class ChapterPurchaseOptionsSheet extends ConsumerWidget {
                               const Icon(Icons.lock_rounded, size: 18, color: ForgeColors.accent),
                               const SizedBox(width: 6),
                               Text(
-                                formatVnd(chapter.priceVnd),
+                                formatVnd(price),
                                 style: GoogleFonts.plusJakartaSans(
                                   fontSize: 17,
                                   fontWeight: FontWeight.w800,

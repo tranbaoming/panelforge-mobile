@@ -83,12 +83,48 @@ void main() {
     expect(detail.chapters.single.languages.single.priceVnd, 10000);
   });
 
-  test('Yêu cầu mua chương gửi kèm ngôn ngữ; ngôn ngữ đọc lưu trong Preferences', () async {
-    expect(const UnlockChapterRequest(chapterId: 'c', language: 'ja').toJson()['language'], 'ja');
+  test('Yêu cầu mua chương gửi kèm ngôn ngữ; ngôn ngữ đọc lưu trong Preferences (chỉ vi/en)', () async {
+    expect(const UnlockChapterRequest(chapterId: 'c', language: 'en').toJson()['language'], 'en');
+    expect(kContentLanguages, ['vi', 'en']);
 
     expect(PreferencesService.getContentLanguage(), 'vi');
+    await PreferencesService.setContentLanguage('en');
+    expect(PreferencesService.getContentLanguage(), 'en');
+
+    // Ngôn ngữ đã gỡ bỏ (ja) tự rơi về vi
     await PreferencesService.setContentLanguage('ja');
-    expect(PreferencesService.getContentLanguage(), 'ja');
+    expect(PreferencesService.getContentLanguage(), 'vi');
+  });
+
+  test('Quyền mở khóa lưu riêng theo từng ấn bản ngôn ngữ (mua vi không tự mở en)', () async {
+    await PreferencesService.addUnlockedChapterId('chap-10', language: 'vi');
+    expect(PreferencesService.isChapterUnlocked('chap-10', language: 'vi'), isTrue);
+    expect(PreferencesService.isChapterUnlocked('chap-10', language: 'en'), isFalse);
+
+    await PreferencesService.addUnlockedChapterId('chap-10', language: 'en');
+    expect(PreferencesService.isChapterUnlocked('chap-10', language: 'en'), isTrue);
+  });
+
+  test('ChapterItem hỗ trợ số chương thập phân (D9a) và giá theo ngôn ngữ', () {
+    final dto = PublicChapterSummaryDto.fromJson({
+      'id': 'chap-1.5',
+      'chapterNumber': 1.5,
+      'title': 'Ngoại truyện',
+      'isLocked': true,
+      'priceVnd': 5000,
+      'isUnlocked': false,
+      'languages': [
+        {'language': 'vi', 'priceVnd': 5000, 'isUnlocked': true},
+        {'language': 'en', 'priceVnd': 8000, 'isUnlocked': false},
+      ],
+    });
+    final item = ChapterItem.fromPublicDto(dto);
+    expect(item.chapterNumber, 1.5);
+    expect(item.numberLabel, '1.5');
+    expect(item.priceVndFor('vi'), 5000);
+    expect(item.priceVndFor('en'), 8000);
+    expect(item.isServerUnlockedFor('vi'), isTrue);
+    expect(item.isServerUnlockedFor('en'), isFalse);
   });
 
   testWidgets('Menu bản ngôn ngữ hiện ổ khóa + giá cho bản chưa mua', (tester) async {
