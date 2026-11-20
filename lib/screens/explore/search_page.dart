@@ -4,11 +4,12 @@ import 'package:google_fonts/google_fonts.dart';
 import '../../models/comic_model.dart';
 import '../../providers/catalog_providers.dart';
 import '../../services/catalog_service.dart';
+import '../../services/preferences_service.dart';
 import '../../theme/app_theme.dart';
 import '../../widgets/forge_ui.dart';
 
-/// Tab Tìm kiếm: ô tìm ở trên cùng, bên dưới là danh sách truyện A–Z.
-/// Có từ khóa → lọc realtime theo tên truyện, tác giả / Studio hoặc thể loại.
+/// Tab Tìm kiếm: ô tìm ở trên cùng, hàng bộ lọc (Sắp xếp / Thể loại / Trạng thái), lịch sử tìm kiếm,
+/// bên dưới là danh sách truyện. Có từ khóa → lọc realtime theo tên truyện, tác giả / Studio hoặc thể loại.
 ///
 /// Backend chỉ tìm theo tên (`search` của /api/catalog/series), nên màn này tải toàn bộ catalog
 /// một lần rồi lọc tại máy để tìm được cả theo Studio / thể loại.
@@ -29,6 +30,10 @@ class _SearchPageState extends State<SearchPage> {
   bool _isLoading = false;
   bool _hasError = false;
   String _query = '';
+  SearchSort _sort = SearchSort.alphabetical;
+  String? _genre;
+  SeriesStatusFilter _status = SeriesStatusFilter.all;
+  List<String> _recent = PreferencesService.getRecentSearches();
 
   @override
   void initState() {
@@ -67,19 +72,44 @@ class _SearchPageState extends State<SearchPage> {
 
   CatalogSections get _sections => CatalogSections(_catalog ?? const <SeriesItem>[]);
 
-  /// Ô trống → toàn bộ A–Z; có từ khóa → lọc theo tên / Studio / thể loại (vẫn giữ thứ tự A–Z).
+  bool get _filtersActive => _genre != null || _status != SeriesStatusFilter.all;
+
+  /// Lọc theo từ khóa (tên / Studio / thể loại), thể loại và trạng thái, rồi sắp xếp theo lựa chọn.
   List<SeriesItem> get _results {
     final q = _query.trim().toLowerCase();
-    final az = _sections.alphabetical;
-    if (q.isEmpty) return az;
-    return az
-        .where(
-          (s) =>
-              s.title.toLowerCase().contains(q) ||
-              s.author.toLowerCase().contains(q) ||
-              s.genres.any((g) => g.toLowerCase().contains(q)),
-        )
-        .toList();
+    final sections = _sections;
+    final base = switch (_sort) {
+      SearchSort.alphabetical => sections.alphabetical,
+      SearchSort.mostViewed => sections.byViews,
+      SearchSort.recentlyUpdated => sections.recentlyUpdated,
+      SearchSort.newest => sections.newest,
+    };
+    return base.where((s) {
+      if (_genre != null && !s.genres.contains(_genre)) return false;
+      if (_status == SeriesStatusFilter.ongoing && s.isCompleted) return false;
+      if (_status == SeriesStatusFilter.completed && !s.isCompleted) return false;
+      if (q.isEmpty) return true;
+      return s.title.toLowerCase().contains(q) ||
+          s.author.toLowerCase().contains(q) ||
+          s.genres.any((g) => g.toLowerCase().contains(q));
+    }).toList();
+  }
+
+  List<String> get _allGenres {
+    final set = <String>{for (final s in _catalog ?? const <SeriesItem>[]) ...s.genres};
+    return set.toList()..sort((a, b) => a.toLowerCase().compareTo(b.toLowerCase()));
+  }
+
+  Future<void> _remember(String query) async {
+    await PreferencesService.addRecentSearch(query);
+    if (mounted) setState(() => _recent = PreferencesService.getRecentSearches());
+  }
+
+  void _useRecent(String query) {
+    _controller.text = query;
+    _controller.selection = TextSelection.collapsed(offset: query.length);
+    setState(() => _query = query);
+    _remember(query);
   }
 
   void _clear() {
@@ -90,6 +120,7 @@ class _SearchPageState extends State<SearchPage> {
 
   void _submit() {
     setState(() => _query = _controller.text);
+    _remember(_controller.text);
     _focusNode.unfocus();
     if (_hasError) _load();
   }
@@ -102,6 +133,7 @@ class _SearchPageState extends State<SearchPage> {
         child: Column(
           children: [
             Padding(padding: const EdgeInsets.fromLTRB(16, 12, 16, 4), child: _buildSearchField()),
+            if (_catalog != null) _buildFilterBar(),
             Expanded(child: _buildBody()),
           ],
         ),
@@ -147,6 +179,110 @@ class _SearchPageState extends State<SearchPage> {
     );
   }
 
+  Widget _buildFilterBar() {
+    final genres = _allGenres;
+    return SizedBox(
+      height: 48,
+      child: ListView(
+        scrollDirection: Axis.horizontal,
+        padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 6),
+        children: [
+          _MenuChip<SearchSort>(
+            key: const ValueKey('filter-sort'),
+            icon: Icons.sort_rounded,
+            label: _sort.label,
+            active: _sort != SearchSort.alphabetical,
+            values: SearchSort.values,
+            selected: _sort,
+            itemLabel: (v) => v.label,
+            onSelected: (v) => setState(() => _sort = v),
+          ),
+          const SizedBox(width: 8),
+          _MenuChip<String>(
+            key: const ValueKey('filter-genre'),
+            icon: Icons.category_outlined,
+            label: _genre ?? 'Thể loại',
+            active: _genre != null,
+            values: ['', ...genres],
+            selected: _genre ?? '',
+            itemLabel: (v) => v.isEmpty ? 'Tất cả thể loại' : v,
+            onSelected: (v) => setState(() => _genre = v.isEmpty ? null : v),
+          ),
+          const SizedBox(width: 8),
+          _MenuChip<SeriesStatusFilter>(
+            key: const ValueKey('filter-status'),
+            icon: Icons.flag_outlined,
+            label: _status == SeriesStatusFilter.all ? 'Trạng thái' : _status.label,
+            active: _status != SeriesStatusFilter.all,
+            values: SeriesStatusFilter.values,
+            selected: _status,
+            itemLabel: (v) => v.label,
+            onSelected: (v) => setState(() => _status = v),
+          ),
+          if (_filtersActive || _sort != SearchSort.alphabetical) ...[
+            const SizedBox(width: 4),
+            TextButton(
+              onPressed: () => setState(() {
+                _sort = SearchSort.alphabetical;
+                _genre = null;
+                _status = SeriesStatusFilter.all;
+              }),
+              child: Text('Bỏ lọc', style: GoogleFonts.plusJakartaSans(color: ForgeColors.accent)),
+            ),
+          ],
+        ],
+      ),
+    );
+  }
+
+  Widget _buildRecentSearches() {
+    return Padding(
+      padding: const EdgeInsets.fromLTRB(16, 10, 8, 0),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
+            children: [
+              Expanded(
+                child: Text(
+                  'Tìm gần đây',
+                  style: GoogleFonts.plusJakartaSans(fontWeight: FontWeight.w700, color: ForgeColors.textSoft),
+                ),
+              ),
+              TextButton(
+                onPressed: () async {
+                  await PreferencesService.clearRecentSearches();
+                  if (mounted) setState(() => _recent = const []);
+                },
+                child: Text('Xoá lịch sử', style: GoogleFonts.plusJakartaSans(color: ForgeColors.muted)),
+              ),
+            ],
+          ),
+          Wrap(
+            spacing: 8,
+            runSpacing: 6,
+            children: [
+              for (final q in _recent)
+                InputChip(
+                  key: ValueKey('recent-$q'),
+                  label: Text(q),
+                  labelStyle: GoogleFonts.plusJakartaSans(color: ForgeColors.text),
+                  backgroundColor: ForgeColors.surface,
+                  side: BorderSide(color: ForgeColors.divider),
+                  onPressed: () => _useRecent(q),
+                  deleteButtonTooltipMessage: 'Xoá "$q"',
+                  onDeleted: () async {
+                    await PreferencesService.removeRecentSearch(q);
+                    if (mounted) setState(() => _recent = PreferencesService.getRecentSearches());
+                  },
+                ),
+            ],
+          ),
+        ],
+      ),
+    );
+  }
+
   OutlineInputBorder _border(Color color) => OutlineInputBorder(
     borderRadius: BorderRadius.circular(12),
     borderSide: BorderSide(color: color, width: 1.2),
@@ -170,15 +306,21 @@ class _SearchPageState extends State<SearchPage> {
     final results = _results;
     final searching = _query.trim().isNotEmpty;
     final sections = _sections;
+    final narrowed = searching || _filtersActive;
 
     return CustomScrollView(
       keyboardDismissBehavior: ScrollViewKeyboardDismissBehavior.onDrag,
       slivers: [
+        if (!searching && _recent.isNotEmpty) SliverToBoxAdapter(child: _buildRecentSearches()),
         SliverToBoxAdapter(
           child: Padding(
             padding: const EdgeInsets.fromLTRB(16, 14, 16, 10),
             child: Text(
-              searching ? 'Kết quả (${results.length})' : 'Truyện (A–Z)',
+              narrowed
+                  ? 'Kết quả (${results.length})'
+                  : _sort == SearchSort.alphabetical
+                  ? 'Truyện (A–Z)'
+                  : 'Truyện • ${_sort.label}',
               style: GoogleFonts.plusJakartaSans(fontSize: 21, fontWeight: FontWeight.w800, color: ForgeColors.text),
             ),
           ),
@@ -188,7 +330,7 @@ class _SearchPageState extends State<SearchPage> {
             hasScrollBody: false,
             child: Center(
               child: Text(
-                searching ? 'Không tìm thấy bộ truyện nào phù hợp' : 'Chưa có bộ truyện nào được phát hành.',
+                narrowed ? 'Không tìm thấy bộ truyện nào phù hợp' : 'Chưa có bộ truyện nào được phát hành.',
                 style: GoogleFonts.plusJakartaSans(fontSize: 14, color: ForgeColors.muted),
               ),
             ),
@@ -203,7 +345,10 @@ class _SearchPageState extends State<SearchPage> {
                 series: results[i],
                 isNew: sections.isNew(results[i]),
                 isUpdated: sections.isUpdated(results[i]),
-                onTap: () => context.push('/series/${results[i].id}'),
+                onTap: () {
+                  if (searching) _remember(_query);
+                  context.push('/series/${results[i].id}');
+                },
               ),
             ),
           ),
@@ -318,4 +463,76 @@ class _Gap extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) => Padding(padding: const EdgeInsets.only(right: 5), child: child);
+}
+
+enum SearchSort {
+  alphabetical('A–Z'),
+  mostViewed('Xem nhiều'),
+  recentlyUpdated('Mới cập nhật'),
+  newest('Truyện mới');
+
+  final String label;
+  const SearchSort(this.label);
+}
+
+enum SeriesStatusFilter {
+  all('Tất cả'),
+  ongoing('Đang ra'),
+  completed('Hoàn thành');
+
+  final String label;
+  const SeriesStatusFilter(this.label);
+}
+
+/// Chip mở menu chọn một giá trị (Sắp xếp / Thể loại / Trạng thái); viền cam khi đang lọc.
+class _MenuChip<T> extends StatelessWidget {
+  final IconData icon;
+  final String label;
+  final bool active;
+  final List<T> values;
+  final T selected;
+  final String Function(T) itemLabel;
+  final ValueChanged<T> onSelected;
+
+  const _MenuChip({
+    super.key,
+    required this.icon,
+    required this.label,
+    required this.active,
+    required this.values,
+    required this.selected,
+    required this.itemLabel,
+    required this.onSelected,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    final color = active ? ForgeColors.accent : ForgeColors.textSoft;
+    return PopupMenuButton<T>(
+      tooltip: label,
+      initialValue: selected,
+      onSelected: onSelected,
+      itemBuilder: (_) => [
+        for (final v in values)
+          CheckedPopupMenuItem<T>(value: v, checked: v == selected, child: Text(itemLabel(v))),
+      ],
+      child: Container(
+        padding: const EdgeInsets.symmetric(horizontal: 12),
+        decoration: BoxDecoration(
+          color: active ? ForgeColors.accentSoft : ForgeColors.surface,
+          borderRadius: BorderRadius.circular(18),
+          border: Border.all(color: active ? ForgeColors.accent : ForgeColors.divider),
+        ),
+        child: Row(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Icon(icon, size: 16, color: color),
+            const SizedBox(width: 6),
+            Text(label, style: GoogleFonts.plusJakartaSans(fontSize: 13, fontWeight: FontWeight.w700, color: color)),
+            Icon(Icons.arrow_drop_down_rounded, size: 18, color: color),
+          ],
+        ),
+      ),
+    );
+  }
 }

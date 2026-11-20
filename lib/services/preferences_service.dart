@@ -19,6 +19,7 @@ class PreferencesService {
   static const String _keyLastSyncAt = 'panelforge_last_sync_at';
   static const String _keyPromoSeenSeries = 'panelforge_promo_seen_series';
   static const String _keyRecentTokens = 'panelforge_recent_tokens';
+  static const String _keyRecentSearches = 'panelforge_recent_searches';
   static const String _keyOfflineChapters = 'panelforge_offline_chapters';
   static const String _keyOfflineChapterMeta = 'panelforge_offline_chapter_meta';
   static const String _keyUnlockedChapters = 'panelforge_unlocked_chapters';
@@ -214,6 +215,22 @@ class PreferencesService {
   static bool getAutoNextChapter() => _prefs?.getBool(_keyAutoNextChapter) ?? true;
 
   static Future<void> setAutoNextChapter(bool value) async => _prefs?.setBool(_keyAutoNextChapter, value);
+
+  // ─── Lịch sử tìm kiếm ────────────────────────────────────────────────────
+  /// Từ khóa đã tìm, mới nhất trước, tối đa 10, không trùng (không phân biệt hoa thường).
+  static List<String> getRecentSearches() => _prefs?.getStringList(_keyRecentSearches) ?? const [];
+
+  static Future<void> addRecentSearch(String query) async {
+    final clean = query.trim();
+    if (clean.isEmpty) return;
+    final rest = getRecentSearches().where((q) => q.toLowerCase() != clean.toLowerCase());
+    await _prefs?.setStringList(_keyRecentSearches, [clean, ...rest].take(10).toList());
+  }
+
+  static Future<void> removeRecentSearch(String query) async =>
+      _prefs?.setStringList(_keyRecentSearches, getRecentSearches().where((q) => q != query).toList());
+
+  static Future<void> clearRecentSearches() async => _prefs?.remove(_keyRecentSearches);
 
   // ─── Recent Review Tokens ─────────────────────────────────────────────────
   static List<String> getRecentReviewTokens() {
