@@ -692,34 +692,6 @@ class _ComicReaderPageState extends ConsumerState<ComicReaderPage> with WidgetsB
               ),
             ),
 
-          // Đếm ngược tự sang chương sau.
-          if (_autoNextTarget != null)
-            Positioned(
-              left: 16,
-              right: 16,
-              bottom: MediaQuery.of(context).padding.bottom + (_showHud ? 230 : 24),
-              child: Material(
-                color: AppColors.darkSurface.withValues(alpha: 0.96),
-                borderRadius: BorderRadius.circular(14),
-                child: Padding(
-                  padding: const EdgeInsets.fromLTRB(14, 6, 6, 6),
-                  child: Row(
-                    children: [
-                      const Icon(Icons.skip_next_rounded, color: AppColors.primary),
-                      const SizedBox(width: 8),
-                      Expanded(
-                        child: Text(
-                          'Sang Chương ${_autoNextTarget!.numberLabel} sau ${autoNextDelay.inSeconds} giây',
-                          style: GoogleFonts.plusJakartaSans(color: Colors.white, fontWeight: FontWeight.w700),
-                        ),
-                      ),
-                      TextButton(onPressed: _cancelAutoNext, child: const Text('Hủy')),
-                    ],
-                  ),
-                ),
-              ),
-            ),
-
           // TOP HUD: Back button, Chapter info, Language selector, TOC Drawer
           Positioned(
             top: 0,
@@ -1207,6 +1179,36 @@ class _ComicReaderPageState extends ConsumerState<ComicReaderPage> with WidgetsB
               ),
             ),
           ),
+
+          // Đếm ngược tự sang chương sau (key để test tìm được).
+          if (_autoNextTarget != null)
+            Positioned(
+              key: const ValueKey('auto-next-banner'),
+              left: 16,
+              right: 16,
+              // Giữa vùng đọc, vẽ sau khung điều khiển nên không bị che (khung cao hơn khi chữ to).
+              top: MediaQuery.of(context).size.height * 0.42,
+              child: Material(
+                color: AppColors.darkSurface.withValues(alpha: 0.96),
+                borderRadius: BorderRadius.circular(14),
+                child: Padding(
+                  padding: const EdgeInsets.fromLTRB(14, 6, 6, 6),
+                  child: Row(
+                    children: [
+                      const Icon(Icons.skip_next_rounded, color: AppColors.primary),
+                      const SizedBox(width: 8),
+                      Expanded(
+                        child: Text(
+                          'Sang Chương ${_autoNextTarget!.numberLabel} sau ${autoNextDelay.inSeconds} giây',
+                          style: GoogleFonts.plusJakartaSans(color: Colors.white, fontWeight: FontWeight.w700),
+                        ),
+                      ),
+                      TextButton(onPressed: _cancelAutoNext, child: const Text('Hủy')),
+                    ],
+                  ),
+                ),
+              ),
+            ),
 
           // FLOATING LOCK PILL: Hiển thị khi đang khóa màn hình (Giữ 2s hoặc nhấn đúp để mở)
           if (_isScreenLocked)
