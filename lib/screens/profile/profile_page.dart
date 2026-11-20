@@ -7,6 +7,7 @@ import '../../models/comic_model.dart';
 import '../../navigation/read_guard.dart';
 import '../../providers/api_providers.dart';
 import '../../providers/catalog_providers.dart';
+import '../../providers/notification_providers.dart';
 import '../../services/preferences_service.dart';
 import '../../theme/app_theme.dart';
 import '../../widgets/forge_ui.dart';
@@ -38,6 +39,7 @@ class _ProfilePageState extends ConsumerState<ProfilePage> {
     final wallet = auth.isAuthenticated ? ref.watch(walletNotifierProvider).asData?.value : null;
     final bookmarks = PreferencesService.getBookmarks();
     final follows = PreferencesService.getFollows();
+    final unreadNotifications = ref.watch(unreadNotificationCountProvider);
     final unlocked = {...?wallet?.unlockedChapterIds, ...PreferencesService.getUnlockedChapterIds()};
 
     return DefaultTabController(
@@ -60,7 +62,12 @@ class _ProfilePageState extends ConsumerState<ProfilePage> {
           actions: [
             IconButton(
               tooltip: 'Thông báo',
-              icon: Icon(Icons.notifications_none_rounded, color: ForgeColors.text),
+              icon: Badge(
+                isLabelVisible: unreadNotifications > 0,
+                backgroundColor: ForgeColors.accent,
+                label: Text(unreadNotifications > 99 ? '99+' : '$unreadNotifications'),
+                child: Icon(Icons.notifications_none_rounded, color: ForgeColors.text),
+              ),
               onPressed: () => context.push('/activity'),
             ),
             IconButton(
