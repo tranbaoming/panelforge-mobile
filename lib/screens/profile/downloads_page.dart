@@ -63,9 +63,11 @@ class DownloadsPage extends ConsumerWidget {
         ],
       ),
       body: ids.isEmpty
-          ? const ForgeEmptyState(
-              icon: Icons.download_for_offline_outlined,
-              message: 'Chưa tải chương nào.\nMở một bộ truyện và chọn tải chương để đọc khi không có mạng.',
+          ? const Center(
+              child: ForgeEmptyState(
+                icon: Icons.download_for_offline_outlined,
+                message: 'Chưa tải chương nào.\nMở một bộ truyện và chọn tải chương để đọc khi không có mạng.',
+              ),
             )
           : ListView(
               padding: const EdgeInsets.fromLTRB(16, 8, 16, 24),

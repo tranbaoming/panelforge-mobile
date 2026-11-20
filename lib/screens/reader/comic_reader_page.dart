@@ -721,96 +721,166 @@ class _ComicReaderPageState extends ConsumerState<ComicReaderPage> with WidgetsB
             ),
 
           // TOP HUD: Back button, Chapter info, Language selector, TOC Drawer
-          AnimatedPositioned(
-            duration: const Duration(milliseconds: 250),
-            curve: Curves.easeOutCubic,
-            top: _showHud ? 0 : -110,
+          Positioned(
+            top: 0,
             left: 0,
             right: 0,
-            child: Container(
-              padding: EdgeInsets.only(top: MediaQuery.of(context).padding.top + 6, bottom: 12, left: 14, right: 14),
-              decoration: BoxDecoration(
-                color: topBarBg,
-                boxShadow: [
-                  BoxShadow(color: Colors.black.withValues(alpha: 0.2), blurRadius: 14, offset: const Offset(0, 4)),
-                ],
-                border: Border(bottom: BorderSide(color: isDarkTheme ? AppColors.darkBorder : AppColors.lightBorder)),
-              ),
-              child: Row(
-                children: [
-                  IconButton(
-                    icon: const Icon(Icons.arrow_back_ios_new_rounded, size: 18),
-                    color: hudTextColor,
-                    onPressed: () => context.pop(),
+            // Trượt ra ngoài đúng bằng chiều cao thật của khung (cao hơn khi phóng to cỡ chữ).
+            child: IgnorePointer(
+              ignoring: !_showHud,
+              child: AnimatedSlide(
+                duration: const Duration(milliseconds: 250),
+                curve: Curves.easeOutCubic,
+                offset: _showHud ? Offset.zero : const Offset(0, -1.05),
+                child: Container(
+                  padding: EdgeInsets.only(
+                    top: MediaQuery.of(context).padding.top + 6,
+                    bottom: 12,
+                    left: 14,
+                    right: 14,
                   ),
-                  const SizedBox(width: 4),
-                  Expanded(
-                    child: Column(
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      mainAxisSize: MainAxisSize.min,
-                      children: [
-                        Row(
+                  decoration: BoxDecoration(
+                    color: topBarBg,
+                    boxShadow: [
+                      BoxShadow(color: Colors.black.withValues(alpha: 0.2), blurRadius: 14, offset: const Offset(0, 4)),
+                    ],
+                    border: Border(
+                      bottom: BorderSide(color: isDarkTheme ? AppColors.darkBorder : AppColors.lightBorder),
+                    ),
+                  ),
+                  child: Row(
+                    children: [
+                      IconButton(
+                        icon: const Icon(Icons.arrow_back_ios_new_rounded, size: 18),
+                        color: hudTextColor,
+                        onPressed: () => context.pop(),
+                      ),
+                      const SizedBox(width: 4),
+                      Expanded(
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          mainAxisSize: MainAxisSize.min,
                           children: [
-                            Flexible(
-                              child: Text(
-                                series.title,
-                                maxLines: 1,
-                                overflow: TextOverflow.ellipsis,
-                                style: GoogleFonts.newsreader(
-                                  fontSize: 16,
-                                  fontWeight: FontWeight.w700,
-                                  color: hudTextColor,
-                                ),
-                              ),
-                            ),
-                            if (_isOfflinePackage) ...[
-                              const SizedBox(width: 6),
-                              Container(
-                                padding: const EdgeInsets.symmetric(horizontal: 5, vertical: 1.5),
-                                decoration: BoxDecoration(
-                                  color: AppColors.mint.withValues(alpha: 0.2),
-                                  borderRadius: BorderRadius.circular(4),
-                                ),
-                                child: Text(
-                                  'OFFLINE',
-                                  style: GoogleFonts.plusJakartaSans(
-                                    fontSize: 8.5,
-                                    fontWeight: FontWeight.w800,
-                                    color: AppColors.mint,
+                            Row(
+                              children: [
+                                Flexible(
+                                  child: Text(
+                                    series.title,
+                                    maxLines: 1,
+                                    overflow: TextOverflow.ellipsis,
+                                    style: GoogleFonts.newsreader(
+                                      fontSize: 16,
+                                      fontWeight: FontWeight.w700,
+                                      color: hudTextColor,
+                                    ),
                                   ),
                                 ),
+                                if (_isOfflinePackage) ...[
+                                  const SizedBox(width: 6),
+                                  Container(
+                                    padding: const EdgeInsets.symmetric(horizontal: 5, vertical: 1.5),
+                                    decoration: BoxDecoration(
+                                      color: AppColors.mint.withValues(alpha: 0.2),
+                                      borderRadius: BorderRadius.circular(4),
+                                    ),
+                                    child: Text(
+                                      'OFFLINE',
+                                      style: GoogleFonts.plusJakartaSans(
+                                        fontSize: 8.5,
+                                        fontWeight: FontWeight.w800,
+                                        color: AppColors.mint,
+                                      ),
+                                    ),
+                                  ),
+                                ],
+                              ],
+                            ),
+                            Text(
+                              currentChapter.title,
+                              maxLines: 1,
+                              overflow: TextOverflow.ellipsis,
+                              style: GoogleFonts.plusJakartaSans(
+                                fontSize: 11,
+                                color: hudTextColor.withValues(alpha: 0.7),
                               ),
-                            ],
+                            ),
                           ],
                         ),
-                        Text(
-                          currentChapter.title,
-                          maxLines: 1,
-                          overflow: TextOverflow.ellipsis,
-                          style: GoogleFonts.plusJakartaSans(fontSize: 11, color: hudTextColor.withValues(alpha: 0.7)),
-                        ),
-                      ],
-                    ),
-                  ),
-
-                  // Bản phát hành theo ngôn ngữ (ảnh trang riêng, mua theo từng ngôn ngữ)
-                  if (_chapterLanguages.length > 1 && !_isOfflinePackage)
-                    Padding(
-                      padding: const EdgeInsets.only(right: 6),
-                      child: EditionLanguageMenu(
-                        current: _activeLanguage,
-                        options: _chapterLanguages,
-                        onSelected: _changeEdition,
                       ),
-                    ),
 
-                  // Language Switcher (Dịch đa ngôn ngữ nếu có trong Comic Package)
-                  if (_loadedPackage != null && _loadedPackage!.availableLanguages.isNotEmpty)
-                    Padding(
-                      padding: const EdgeInsets.only(right: 6),
-                      child: PopupMenuButton<String>(
-                        initialValue: _selectedLanguage,
-                        tooltip: 'Bản dịch ngôn ngữ',
+                      // Bản phát hành theo ngôn ngữ (ảnh trang riêng, mua theo từng ngôn ngữ)
+                      if (_chapterLanguages.length > 1 && !_isOfflinePackage)
+                        Padding(
+                          padding: const EdgeInsets.only(right: 6),
+                          child: EditionLanguageMenu(
+                            current: _activeLanguage,
+                            options: _chapterLanguages,
+                            onSelected: _changeEdition,
+                          ),
+                        ),
+
+                      // Language Switcher (Dịch đa ngôn ngữ nếu có trong Comic Package)
+                      if (_loadedPackage != null && _loadedPackage!.availableLanguages.isNotEmpty)
+                        Padding(
+                          padding: const EdgeInsets.only(right: 6),
+                          child: PopupMenuButton<String>(
+                            initialValue: _selectedLanguage,
+                            tooltip: 'Bản dịch ngôn ngữ',
+                            icon: Container(
+                              padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+                              decoration: BoxDecoration(
+                                color: AppColors.primary.withValues(alpha: 0.15),
+                                borderRadius: BorderRadius.circular(6),
+                              ),
+                              child: Row(
+                                mainAxisSize: MainAxisSize.min,
+                                children: [
+                                  const Icon(Icons.translate_rounded, size: 14, color: AppColors.primary),
+                                  const SizedBox(width: 4),
+                                  Text(
+                                    _selectedLanguage?.toUpperCase() ?? 'GỐC',
+                                    style: GoogleFonts.plusJakartaSans(
+                                      fontSize: 11,
+                                      fontWeight: FontWeight.w800,
+                                      color: AppColors.primary,
+                                    ),
+                                  ),
+                                ],
+                              ),
+                            ),
+                            onSelected: (lang) {
+                              setState(() => _selectedLanguage = lang);
+                            },
+                            itemBuilder: (context) => _loadedPackage!.availableLanguages.map((lang) {
+                              final isSelected = _selectedLanguage == lang;
+                              return PopupMenuItem<String>(
+                                value: lang,
+                                child: Row(
+                                  children: [
+                                    Icon(
+                                      isSelected ? Icons.check_circle_rounded : Icons.circle_outlined,
+                                      size: 16,
+                                      color: isSelected ? AppColors.primary : Colors.grey,
+                                    ),
+                                    const SizedBox(width: 8),
+                                    Text(
+                                      lang.toUpperCase(),
+                                      style: GoogleFonts.plusJakartaSans(
+                                        fontSize: 13,
+                                        fontWeight: isSelected ? FontWeight.w700 : FontWeight.w500,
+                                      ),
+                                    ),
+                                  ],
+                                ),
+                              );
+                            }).toList(),
+                          ),
+                        ),
+
+                      // Reading Mode Popup
+                      PopupMenuButton<ReadingMode>(
+                        initialValue: _readingMode,
+                        tooltip: 'Chế độ đọc',
                         icon: Container(
                           padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
                           decoration: BoxDecoration(
@@ -820,10 +890,14 @@ class _ComicReaderPageState extends ConsumerState<ComicReaderPage> with WidgetsB
                           child: Row(
                             mainAxisSize: MainAxisSize.min,
                             children: [
-                              const Icon(Icons.translate_rounded, size: 14, color: AppColors.primary),
+                              const Icon(Icons.swap_horiz_rounded, size: 14, color: AppColors.primary),
                               const SizedBox(width: 4),
                               Text(
-                                _selectedLanguage?.toUpperCase() ?? 'GỐC',
+                                _readingMode == ReadingMode.ltr
+                                    ? 'LTR'
+                                    : _readingMode == ReadingMode.rtl
+                                    ? 'RTL'
+                                    : 'CUỘN',
                                 style: GoogleFonts.plusJakartaSans(
                                   fontSize: 11,
                                   fontWeight: FontWeight.w800,
@@ -833,345 +907,303 @@ class _ComicReaderPageState extends ConsumerState<ComicReaderPage> with WidgetsB
                             ],
                           ),
                         ),
-                        onSelected: (lang) {
-                          setState(() => _selectedLanguage = lang);
-                        },
-                        itemBuilder: (context) => _loadedPackage!.availableLanguages.map((lang) {
-                          final isSelected = _selectedLanguage == lang;
-                          return PopupMenuItem<String>(
-                            value: lang,
+                        onSelected: _setReadingMode,
+                        itemBuilder: (context) => ReadingMode.values.map((mode) {
+                          return PopupMenuItem<ReadingMode>(
+                            value: mode,
                             child: Row(
                               children: [
                                 Icon(
-                                  isSelected ? Icons.check_circle_rounded : Icons.circle_outlined,
+                                  mode == _readingMode ? Icons.check_circle_rounded : Icons.circle_outlined,
                                   size: 16,
-                                  color: isSelected ? AppColors.primary : Colors.grey,
+                                  color: mode == _readingMode ? AppColors.primary : Colors.grey,
                                 ),
                                 const SizedBox(width: 8),
-                                Text(
-                                  lang.toUpperCase(),
-                                  style: GoogleFonts.plusJakartaSans(
-                                    fontSize: 13,
-                                    fontWeight: isSelected ? FontWeight.w700 : FontWeight.w500,
-                                  ),
-                                ),
+                                Text(mode.title, style: GoogleFonts.plusJakartaSans(fontSize: 13)),
                               ],
                             ),
                           );
                         }).toList(),
                       ),
-                    ),
 
-                  // Reading Mode Popup
-                  PopupMenuButton<ReadingMode>(
-                    initialValue: _readingMode,
-                    tooltip: 'Chế độ đọc',
-                    icon: Container(
-                      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
-                      decoration: BoxDecoration(
-                        color: AppColors.primary.withValues(alpha: 0.15),
-                        borderRadius: BorderRadius.circular(6),
-                      ),
-                      child: Row(
-                        mainAxisSize: MainAxisSize.min,
-                        children: [
-                          const Icon(Icons.swap_horiz_rounded, size: 14, color: AppColors.primary),
-                          const SizedBox(width: 4),
-                          Text(
-                            _readingMode == ReadingMode.ltr
-                                ? 'LTR'
-                                : _readingMode == ReadingMode.rtl
-                                ? 'RTL'
-                                : 'CUỘN',
-                            style: GoogleFonts.plusJakartaSans(
-                              fontSize: 11,
-                              fontWeight: FontWeight.w800,
-                              color: AppColors.primary,
-                            ),
+                      // Guided Panel Mode Toggle Button
+                      if (_readingMode != ReadingMode.webtoon)
+                        IconButton(
+                          icon: Icon(
+                            _isGuidedPanelMode ? Icons.crop_free_rounded : Icons.crop_square_rounded,
+                            size: 20,
+                            color: _isGuidedPanelMode ? AppColors.primary : hudTextColor,
                           ),
-                        ],
-                      ),
-                    ),
-                    onSelected: _setReadingMode,
-                    itemBuilder: (context) => ReadingMode.values.map((mode) {
-                      return PopupMenuItem<ReadingMode>(
-                        value: mode,
-                        child: Row(
-                          children: [
-                            Icon(
-                              mode == _readingMode ? Icons.check_circle_rounded : Icons.circle_outlined,
-                              size: 16,
-                              color: mode == _readingMode ? AppColors.primary : Colors.grey,
-                            ),
-                            const SizedBox(width: 8),
-                            Text(mode.title, style: GoogleFonts.plusJakartaSans(fontSize: 13)),
-                          ],
+                          tooltip: _isGuidedPanelMode
+                              ? 'Tắt đọc từng khung tranh'
+                              : 'Bật đọc từng khung tranh (Guided Panel Mode)',
+                          onPressed: () {
+                            setState(() {
+                              _isGuidedPanelMode = !_isGuidedPanelMode;
+                            });
+                            ScaffoldMessenger.of(context).showSnackBar(
+                              SnackBar(
+                                content: Text(
+                                  _isGuidedPanelMode
+                                      ? 'Đã bật chế độ đọc từng khung tranh (Guided Panel Mode)'
+                                      : 'Đã chuyển về chế độ đọc trang toàn cảnh',
+                                ),
+                                duration: const Duration(seconds: 2),
+                              ),
+                            );
+                          },
                         ),
-                      );
-                    }).toList(),
-                  ),
 
-                  // Guided Panel Mode Toggle Button
-                  if (_readingMode != ReadingMode.webtoon)
-                    IconButton(
-                      icon: Icon(
-                        _isGuidedPanelMode ? Icons.crop_free_rounded : Icons.crop_square_rounded,
-                        size: 20,
-                        color: _isGuidedPanelMode ? AppColors.primary : hudTextColor,
+                      // Lock Screen Button (Chống bấm nhầm & Cố định xoay)
+                      IconButton(
+                        icon: const Icon(Icons.lock_outline_rounded, size: 20),
+                        color: hudTextColor,
+                        tooltip: 'Khóa màn hình (Chống bấm nhầm & Cố định xoay)',
+                        onPressed: _enableScreenLock,
                       ),
-                      tooltip: _isGuidedPanelMode
-                          ? 'Tắt đọc từng khung tranh'
-                          : 'Bật đọc từng khung tranh (Guided Panel Mode)',
-                      onPressed: () {
-                        setState(() {
-                          _isGuidedPanelMode = !_isGuidedPanelMode;
-                        });
-                        ScaffoldMessenger.of(context).showSnackBar(
-                          SnackBar(
-                            content: Text(
-                              _isGuidedPanelMode
-                                  ? 'Đã bật chế độ đọc từng khung tranh (Guided Panel Mode)'
-                                  : 'Đã chuyển về chế độ đọc trang toàn cảnh',
-                            ),
-                            duration: const Duration(seconds: 2),
-                          ),
-                        );
-                      },
-                    ),
 
-                  // Lock Screen Button (Chống bấm nhầm & Cố định xoay)
-                  IconButton(
-                    icon: const Icon(Icons.lock_outline_rounded, size: 20),
-                    color: hudTextColor,
-                    tooltip: 'Khóa màn hình (Chống bấm nhầm & Cố định xoay)',
-                    onPressed: _enableScreenLock,
+                      // Table of Contents Drawer Button
+                      IconButton(
+                        icon: const Icon(Icons.menu_book_rounded),
+                        color: hudTextColor,
+                        tooltip: 'Mục lục chương',
+                        onPressed: () {
+                          _scaffoldKey.currentState?.openEndDrawer();
+                        },
+                      ),
+                    ],
                   ),
-
-                  // Table of Contents Drawer Button
-                  IconButton(
-                    icon: const Icon(Icons.menu_book_rounded),
-                    color: hudTextColor,
-                    tooltip: 'Mục lục chương',
-                    onPressed: () {
-                      _scaffoldKey.currentState?.openEndDrawer();
-                    },
-                  ),
-                ],
+                ),
               ),
             ),
           ),
 
           // BOTTOM HUD: Theme Switcher & Interactive Scrubber
-          AnimatedPositioned(
-            duration: const Duration(milliseconds: 250),
-            curve: Curves.easeOutCubic,
-            bottom: _showHud ? 0 : -180,
+          Positioned(
+            bottom: 0,
             left: 0,
             right: 0,
-            child: Container(
-              padding: EdgeInsets.only(
-                left: 16,
-                right: 16,
-                top: 12,
-                bottom: MediaQuery.of(context).padding.bottom + 14,
-              ),
-              decoration: BoxDecoration(
-                color: topBarBg,
-                boxShadow: [
-                  BoxShadow(color: Colors.black.withValues(alpha: 0.25), blurRadius: 18, offset: const Offset(0, -4)),
-                ],
-                border: Border(top: BorderSide(color: isDarkTheme ? AppColors.darkBorder : AppColors.lightBorder)),
-              ),
-              child: Column(
-                mainAxisSize: MainAxisSize.min,
-                children: [
-                  // Theme switchers: Đêm / Giấy Cổ / Sáng & Nút Khóa màn hình
-                  Row(
-                    mainAxisAlignment: MainAxisAlignment.center,
-                    children: [
-                      ...ReaderThemeMode.values.map((theme) {
-                        final isSelected = _themeMode == theme;
-                        return Padding(
-                          padding: const EdgeInsets.symmetric(horizontal: 4),
-                          child: InkWell(
-                            onTap: () => _setTheme(theme),
-                            borderRadius: BorderRadius.circular(16),
-                            child: Container(
-                              padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 6),
-                              decoration: BoxDecoration(
-                                color: Color(theme.bgColor),
-                                borderRadius: BorderRadius.circular(16),
-                                border: Border.all(
-                                  color: isSelected ? AppColors.primary : AppColors.darkBorder,
-                                  width: isSelected ? 2.0 : 1.0,
-                                ),
-                              ),
-                              child: Row(
-                                children: [
-                                  Container(
-                                    width: 8,
-                                    height: 8,
-                                    decoration: BoxDecoration(
-                                      color: isSelected ? AppColors.primary : Colors.transparent,
-                                      shape: BoxShape.circle,
-                                    ),
-                                  ),
-                                  const SizedBox(width: 6),
-                                  Text(
-                                    theme.label,
-                                    style: GoogleFonts.plusJakartaSans(
-                                      fontSize: 11,
-                                      fontWeight: isSelected ? FontWeight.w800 : FontWeight.w500,
-                                      color: Color(theme.textColor),
-                                    ),
-                                  ),
-                                ],
-                              ),
-                            ),
-                          ),
-                        );
-                      }),
-                      Padding(
-                        padding: const EdgeInsets.symmetric(horizontal: 4),
-                        child: InkWell(
-                          onTap: _enableScreenLock,
-                          borderRadius: BorderRadius.circular(16),
-                          child: Container(
-                            padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
-                            decoration: BoxDecoration(
-                              color: AppColors.primary.withValues(alpha: 0.15),
-                              borderRadius: BorderRadius.circular(16),
-                              border: Border.all(color: AppColors.primary.withValues(alpha: 0.5)),
-                            ),
-                            child: Row(
-                              children: [
-                                const Icon(Icons.lock_outline_rounded, size: 12, color: AppColors.primary),
-                                const SizedBox(width: 4),
-                                Text(
-                                  'Khóa',
-                                  style: GoogleFonts.plusJakartaSans(
-                                    fontSize: 11,
-                                    fontWeight: FontWeight.w700,
-                                    color: AppColors.primary,
-                                  ),
-                                ),
-                              ],
-                            ),
-                          ),
-                        ),
+            // Trượt ra ngoài đúng bằng chiều cao thật của khung (cao hơn khi phóng to cỡ chữ).
+            child: IgnorePointer(
+              ignoring: !_showHud,
+              child: AnimatedSlide(
+                duration: const Duration(milliseconds: 250),
+                curve: Curves.easeOutCubic,
+                offset: _showHud ? Offset.zero : const Offset(0, 1.05),
+                child: Container(
+                  padding: EdgeInsets.only(
+                    left: 16,
+                    right: 16,
+                    top: 12,
+                    bottom: MediaQuery.of(context).padding.bottom + 14,
+                  ),
+                  decoration: BoxDecoration(
+                    color: topBarBg,
+                    boxShadow: [
+                      BoxShadow(
+                        color: Colors.black.withValues(alpha: 0.25),
+                        blurRadius: 18,
+                        offset: const Offset(0, -4),
                       ),
                     ],
+                    border: Border(top: BorderSide(color: isDarkTheme ? AppColors.darkBorder : AppColors.lightBorder)),
                   ),
-
-                  // Cài đặt khoảng cách khung tranh Webtoon (Adaptive Webtoon Spacing)
-                  if (_readingMode == ReadingMode.webtoon) ...[
-                    const SizedBox(height: 8),
-                    Row(
-                      mainAxisAlignment: MainAxisAlignment.center,
-                      children: [
-                        Text(
-                          'Khoảng cách khung:',
-                          style: GoogleFonts.plusJakartaSans(
-                            fontSize: 11,
-                            color: hudTextColor.withValues(alpha: 0.7),
-                            fontWeight: FontWeight.w600,
-                          ),
-                        ),
-                        const SizedBox(width: 8),
-                        ...[0.0, 8.0, 16.0, 24.0].map((spacing) {
-                          final isSelected = _webtoonTileSpacing == spacing;
-                          return Padding(
-                            padding: const EdgeInsets.symmetric(horizontal: 3),
-                            child: InkWell(
-                              onTap: () => setState(() => _webtoonTileSpacing = spacing),
-                              borderRadius: BorderRadius.circular(12),
-                              child: Container(
-                                padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
-                                decoration: BoxDecoration(
-                                  color: isSelected ? AppColors.primary : AppColors.darkCard,
-                                  borderRadius: BorderRadius.circular(12),
-                                  border: Border.all(color: isSelected ? AppColors.primary : AppColors.darkBorder),
-                                ),
-                                child: Text(
-                                  '${spacing.toInt()}px',
-                                  style: GoogleFonts.plusJakartaSans(
-                                    fontSize: 10,
-                                    fontWeight: isSelected ? FontWeight.w800 : FontWeight.w500,
-                                    color: isSelected ? Colors.white : AppColors.darkTextSecondary,
+                  child: Column(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      // Theme switchers: Đêm / Giấy Cổ / Sáng & Nút Khóa màn hình
+                      Row(
+                        mainAxisAlignment: MainAxisAlignment.center,
+                        children: [
+                          ...ReaderThemeMode.values.map((theme) {
+                            final isSelected = _themeMode == theme;
+                            return Padding(
+                              padding: const EdgeInsets.symmetric(horizontal: 4),
+                              child: InkWell(
+                                onTap: () => _setTheme(theme),
+                                borderRadius: BorderRadius.circular(16),
+                                child: Container(
+                                  padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 6),
+                                  decoration: BoxDecoration(
+                                    color: Color(theme.bgColor),
+                                    borderRadius: BorderRadius.circular(16),
+                                    border: Border.all(
+                                      color: isSelected ? AppColors.primary : AppColors.darkBorder,
+                                      width: isSelected ? 2.0 : 1.0,
+                                    ),
+                                  ),
+                                  child: Row(
+                                    children: [
+                                      Container(
+                                        width: 8,
+                                        height: 8,
+                                        decoration: BoxDecoration(
+                                          color: isSelected ? AppColors.primary : Colors.transparent,
+                                          shape: BoxShape.circle,
+                                        ),
+                                      ),
+                                      const SizedBox(width: 6),
+                                      Text(
+                                        theme.label,
+                                        style: GoogleFonts.plusJakartaSans(
+                                          fontSize: 11,
+                                          fontWeight: isSelected ? FontWeight.w800 : FontWeight.w500,
+                                          color: Color(theme.textColor),
+                                        ),
+                                      ),
+                                    ],
                                   ),
                                 ),
                               ),
+                            );
+                          }),
+                          Padding(
+                            padding: const EdgeInsets.symmetric(horizontal: 4),
+                            child: InkWell(
+                              onTap: _enableScreenLock,
+                              borderRadius: BorderRadius.circular(16),
+                              child: Container(
+                                padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
+                                decoration: BoxDecoration(
+                                  color: AppColors.primary.withValues(alpha: 0.15),
+                                  borderRadius: BorderRadius.circular(16),
+                                  border: Border.all(color: AppColors.primary.withValues(alpha: 0.5)),
+                                ),
+                                child: Row(
+                                  children: [
+                                    const Icon(Icons.lock_outline_rounded, size: 12, color: AppColors.primary),
+                                    const SizedBox(width: 4),
+                                    Text(
+                                      'Khóa',
+                                      style: GoogleFonts.plusJakartaSans(
+                                        fontSize: 11,
+                                        fontWeight: FontWeight.w700,
+                                        color: AppColors.primary,
+                                      ),
+                                    ),
+                                  ],
+                                ),
+                              ),
                             ),
-                          );
-                        }),
-                      ],
-                    ),
-                  ],
+                          ),
+                        ],
+                      ),
 
-                  // Độ sáng (riêng cho bộ này) + tự sang chương sau.
-                  Row(
-                    children: [
-                      Icon(Icons.brightness_low_rounded, size: 18, color: hudTextColor.withValues(alpha: 0.7)),
-                      Expanded(
-                        child: Slider(
-                          key: const ValueKey('reader-brightness'),
-                          value: _seriesSettings.brightness,
-                          min: 0.2,
-                          max: 1.0,
-                          activeColor: AppColors.primary,
-                          label: 'Độ sáng',
-                          semanticFormatterCallback: (v) => 'Độ sáng ${(v * 100).round()}%',
-                          onChanged: _setBrightness,
+                      // Cài đặt khoảng cách khung tranh Webtoon (Adaptive Webtoon Spacing)
+                      if (_readingMode == ReadingMode.webtoon) ...[
+                        const SizedBox(height: 8),
+                        Row(
+                          mainAxisAlignment: MainAxisAlignment.center,
+                          children: [
+                            Text(
+                              'Khoảng cách khung:',
+                              style: GoogleFonts.plusJakartaSans(
+                                fontSize: 11,
+                                color: hudTextColor.withValues(alpha: 0.7),
+                                fontWeight: FontWeight.w600,
+                              ),
+                            ),
+                            const SizedBox(width: 8),
+                            ...[0.0, 8.0, 16.0, 24.0].map((spacing) {
+                              final isSelected = _webtoonTileSpacing == spacing;
+                              return Padding(
+                                padding: const EdgeInsets.symmetric(horizontal: 3),
+                                child: InkWell(
+                                  onTap: () => setState(() => _webtoonTileSpacing = spacing),
+                                  borderRadius: BorderRadius.circular(12),
+                                  child: Container(
+                                    padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
+                                    decoration: BoxDecoration(
+                                      color: isSelected ? AppColors.primary : AppColors.darkCard,
+                                      borderRadius: BorderRadius.circular(12),
+                                      border: Border.all(color: isSelected ? AppColors.primary : AppColors.darkBorder),
+                                    ),
+                                    child: Text(
+                                      '${spacing.toInt()}px',
+                                      style: GoogleFonts.plusJakartaSans(
+                                        fontSize: 10,
+                                        fontWeight: isSelected ? FontWeight.w800 : FontWeight.w500,
+                                        color: isSelected ? Colors.white : AppColors.darkTextSecondary,
+                                      ),
+                                    ),
+                                  ),
+                                ),
+                              );
+                            }),
+                          ],
                         ),
+                      ],
+
+                      // Độ sáng (riêng cho bộ này) + tự sang chương sau.
+                      Row(
+                        children: [
+                          Icon(Icons.brightness_low_rounded, size: 18, color: hudTextColor.withValues(alpha: 0.7)),
+                          Expanded(
+                            child: Slider(
+                              key: const ValueKey('reader-brightness'),
+                              value: _seriesSettings.brightness,
+                              min: 0.2,
+                              max: 1.0,
+                              activeColor: AppColors.primary,
+                              label: 'Độ sáng',
+                              semanticFormatterCallback: (v) => 'Độ sáng ${(v * 100).round()}%',
+                              onChanged: _setBrightness,
+                            ),
+                          ),
+                          Icon(Icons.brightness_high_rounded, size: 18, color: hudTextColor.withValues(alpha: 0.7)),
+                          const SizedBox(width: 10),
+                          Text(
+                            'Tự sang chương',
+                            style: GoogleFonts.plusJakartaSans(
+                              fontSize: 11,
+                              fontWeight: FontWeight.w700,
+                              color: hudTextColor,
+                            ),
+                          ),
+                          Switch(
+                            key: const ValueKey('reader-auto-next'),
+                            value: _autoNext,
+                            activeThumbColor: Colors.white,
+                            activeTrackColor: AppColors.primary,
+                            onChanged: (v) {
+                              setState(() => _autoNext = v);
+                              PreferencesService.setAutoNextChapter(v);
+                              if (!v) _cancelAutoNext();
+                            },
+                          ),
+                        ],
                       ),
-                      Icon(Icons.brightness_high_rounded, size: 18, color: hudTextColor.withValues(alpha: 0.7)),
-                      const SizedBox(width: 10),
-                      Text(
-                        'Tự sang chương',
-                        style: GoogleFonts.plusJakartaSans(fontSize: 11, fontWeight: FontWeight.w700, color: hudTextColor),
-                      ),
-                      Switch(
-                        key: const ValueKey('reader-auto-next'),
-                        value: _autoNext,
-                        activeThumbColor: Colors.white,
-                        activeTrackColor: AppColors.primary,
-                        onChanged: (v) {
-                          setState(() => _autoNext = v);
-                          PreferencesService.setAutoNextChapter(v);
-                          if (!v) _cancelAutoNext();
+
+                      const SizedBox(height: 4),
+
+                      // INTERACTIVE SCRUBBER WITH TANGERINE CITRUS THEME
+                      InteractiveScrubber(
+                        currentPage: _currentPage,
+                        totalPages: currentChapter.pages.isEmpty ? 1 : currentChapter.pages.length,
+                        isDark: isDarkTheme,
+                        onPageSelected: (page) {
+                          _readerSwitcherKey.currentState?.jumpToPage(page);
+                        },
+                        onPrevPage: () {
+                          if (_currentPage > 1) {
+                            _readerSwitcherKey.currentState?.jumpToPage(_currentPage - 1);
+                          }
+                        },
+                        onNextPage: () {
+                          if (_currentPage < currentChapter.pages.length) {
+                            _readerSwitcherKey.currentState?.jumpToPage(_currentPage + 1);
+                          }
                         },
                       ),
+
+                      // THANH CHUYỂN CHƯƠNG NHANH (CHƯƠNG TRƯỚC / CHƯƠNG TIẾP)
+                      if (series.chapters.length > 1) ...[
+                        const SizedBox(height: 8),
+                        _buildQuickChapterNav(series, currentChapter, hudTextColor),
+                      ],
                     ],
                   ),
-
-                  const SizedBox(height: 4),
-
-                  // INTERACTIVE SCRUBBER WITH TANGERINE CITRUS THEME
-                  InteractiveScrubber(
-                    currentPage: _currentPage,
-                    totalPages: currentChapter.pages.isEmpty ? 1 : currentChapter.pages.length,
-                    isDark: isDarkTheme,
-                    onPageSelected: (page) {
-                      _readerSwitcherKey.currentState?.jumpToPage(page);
-                    },
-                    onPrevPage: () {
-                      if (_currentPage > 1) {
-                        _readerSwitcherKey.currentState?.jumpToPage(_currentPage - 1);
-                      }
-                    },
-                    onNextPage: () {
-                      if (_currentPage < currentChapter.pages.length) {
-                        _readerSwitcherKey.currentState?.jumpToPage(_currentPage + 1);
-                      }
-                    },
-                  ),
-
-                  // THANH CHUYỂN CHƯƠNG NHANH (CHƯƠNG TRƯỚC / CHƯƠNG TIẾP)
-                  if (series.chapters.length > 1) ...[
-                    const SizedBox(height: 8),
-                    _buildQuickChapterNav(series, currentChapter, hudTextColor),
-                  ],
-                ],
+                ),
               ),
             ),
           ),

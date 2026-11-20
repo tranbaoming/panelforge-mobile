@@ -149,7 +149,7 @@ class _ExplorePageState extends ConsumerState<ExplorePage> {
             children: [
               ForgeBlockTitle(title: 'Thể loại', onMore: () => context.push('/genres')),
               SizedBox(
-                height: 132,
+                height: 132 + textScaleExtra(context, 40),
                 child: ListView.separated(
                   padding: const EdgeInsets.symmetric(horizontal: 12),
                   scrollDirection: Axis.horizontal,
@@ -189,7 +189,7 @@ class _ExplorePageState extends ConsumerState<ExplorePage> {
       children: [
         ForgeBlockTitle(title: title, onMore: onMore),
         SizedBox(
-          height: 268,
+          height: 268 + textScaleExtra(context, 60),
           child: ListView.separated(
             padding: const EdgeInsets.symmetric(horizontal: 16),
             scrollDirection: Axis.horizontal,

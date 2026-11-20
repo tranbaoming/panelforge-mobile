@@ -102,14 +102,14 @@ class AuthInterceptor extends QueuedInterceptor {
           uri.contains('/api/auth/me') ||
           uri.contains('/api/wallet/me');
 
-      if (_authEndpoints.hasMatch(path) || _authEndpoints.hasMatch(uri) || isSelfCheckEndpoint) {
-        // Tuyệt đối không cho phép lỗi 401 từ /api/auth/me hoặc /api/wallet/me xóa phiên Reader
+      if (_authEndpoints.hasMatch(path) || _authEndpoints.hasMatch(uri)) {
         return handler.next(err);
       }
 
-      // Đã thử refresh cho request này rồi mà vẫn 401 -> phiên thực sự hết hạn
+      // Đã thử refresh cho request này rồi mà vẫn 401 -> phiên thực sự hết hạn.
+      // Tuyệt đối không cho phép lỗi 401 từ /api/auth/me hoặc /api/wallet/me xóa phiên Reader.
       if (err.requestOptions.extra['is_retry'] == true) {
-        if (PreferencesService.getAuthUser() == null) {
+        if (!isSelfCheckEndpoint && PreferencesService.getAuthUser() == null) {
           onSessionExpired();
         }
         return handler.next(err);
@@ -127,13 +127,13 @@ class AuthInterceptor extends QueuedInterceptor {
           final retryResponse = await dio.fetch(retryOptions);
           return handler.resolve(retryResponse);
         } else {
-          if (PreferencesService.getAuthUser() == null) {
+          if (!isSelfCheckEndpoint && PreferencesService.getAuthUser() == null) {
             onSessionExpired();
           }
           return handler.next(err);
         }
       } catch (_) {
-        if (PreferencesService.getAuthUser() == null) {
+        if (!isSelfCheckEndpoint && PreferencesService.getAuthUser() == null) {
           onSessionExpired();
         }
         return handler.next(err);
