@@ -39,6 +39,10 @@ class PreferencesService {
 
   static SharedPreferences? _prefs;
 
+  /// Được gọi mỗi khi độc giả đổi thư viện cá nhân trên máy (Đọc sau / Theo dõi / Yêu thích / Lịch sử),
+  /// để `LibrarySyncNotifier` gửi thay đổi lên server khi đã đăng nhập. Ghi dữ liệu tải từ server thì không gọi.
+  static void Function(LibraryChange change)? onLibraryChanged;
+
   static Future<void> init() async {
     _prefs = await SharedPreferences.getInstance();
     // Màn hình cấu hình máy chủ đã bị gỡ: xóa địa chỉ tùy chỉnh còn lưu từ trước để app luôn dùng ApiConfig mặc định.
@@ -62,6 +66,7 @@ class PreferencesService {
       current.add(seriesId);
     }
     await _prefs?.setStringList(_keyBookmarks, current.toList());
+    onLibraryChanged?.call(LibraryChange.list(LibraryListKind.readLater, seriesId, added: !isBookmarked));
     return !isBookmarked;
   }
 
@@ -86,7 +91,10 @@ class PreferencesService {
     if (!added) current.remove(seriesId);
     await _prefs?.setStringList(_keyFollows, current.toList());
     // Bắt đầu theo dõi → chỉ báo các chương phát hành sau thời điểm này.
-    if (added) await setFollowSeenAt(seriesId, DateTime.now());
+    if (added) await _writeFollowSeenAt(seriesId, DateTime.now());
+    onLibraryChanged?.call(
+      LibraryChange.list(LibraryListKind.following, seriesId, added: added, lastSeenAt: added ? DateTime.now() : null),
+    );
     return added;
   }
 
@@ -108,6 +116,13 @@ class PreferencesService {
   }
 
   static Future<void> setFollowSeenAt(String seriesId, DateTime at) async {
+    await _writeFollowSeenAt(seriesId, at);
+    if (isFollowing(seriesId)) {
+      onLibraryChanged?.call(LibraryChange.list(LibraryListKind.following, seriesId, added: true, lastSeenAt: at));
+    }
+  }
+
+  static Future<void> _writeFollowSeenAt(String seriesId, DateTime at) async {
     final map = getFollowSeenAt()..[seriesId] = at;
     await _prefs?.setString(_keyFollowSeenAt, jsonEncode(map.map((k, v) => MapEntry(k, v.toIso8601String()))));
   }
@@ -136,6 +151,7 @@ class PreferencesService {
     final added = current.add(seriesId);
     if (!added) current.remove(seriesId);
     await _prefs?.setStringList(_keyFavorites, current.toList());
+    onLibraryChanged?.call(LibraryChange.list(LibraryListKind.favorites, seriesId, added: added));
     return added;
   }
 
@@ -159,12 +175,36 @@ class PreferencesService {
     return null;
   }
 
-  static Future<void> clearReadingHistory() async => _prefs?.remove(_keyReadingHistory);
+  static Future<void> clearReadingHistory() async {
+    await _prefs?.remove(_keyReadingHistory);
+    onLibraryChanged?.call(const LibraryChange.clearHistory());
+  }
 
   static Future<void> saveReadingProgress(ReadingHistoryEntry entry) async {
     final rest = getReadingHistory().where((e) => e.seriesId != entry.seriesId);
     final next = [entry, ...rest].take(30).map((e) => jsonEncode(e.toJson())).toList();
     await _prefs?.setStringList(_keyReadingHistory, next);
+    onLibraryChanged?.call(LibraryChange.progress(entry));
+  }
+
+  /// Ghi đè thư viện trên máy bằng bản đã gộp từ server (không phát [onLibraryChanged]).
+  static Future<void> replaceLibraryFromServer({
+    required Set<String> readLater,
+    required Map<String, DateTime?> following,
+    required Set<String> favorites,
+    required List<ReadingHistoryEntry> history,
+  }) async {
+    await _prefs?.setStringList(_keyBookmarks, readLater.toList());
+    await _prefs?.setStringList(_keyFollows, following.keys.toList());
+    await _prefs?.setStringList(_keyFavorites, favorites.toList());
+    final seen = getFollowSeenAt();
+    following.forEach((id, at) {
+      if (at != null && (seen[id] == null || at.isAfter(seen[id]!))) seen[id] = at;
+    });
+    seen.removeWhere((id, _) => !following.containsKey(id));
+    await _prefs?.setString(_keyFollowSeenAt, jsonEncode(seen.map((k, v) => MapEntry(k, v.toIso8601String()))));
+    final sorted = [...history]..sort((a, b) => b.readAt.compareTo(a.readAt));
+    await _prefs?.setStringList(_keyReadingHistory, sorted.take(30).map((e) => jsonEncode(e.toJson())).toList());
   }
 
   // ─── Reading Mode & Theme ─────────────────────────────────────────────────
@@ -722,4 +762,43 @@ class CrashLogEntry {
 
   @override
   String toString() => '[${time.toIso8601String()}] $error\n$stack';
+}
+
+enum LibraryListKind {
+  readLater('read-later'),
+  following('following'),
+  favorites('favorites');
+
+  /// Đoạn đường dẫn trong `/api/users/me/library/{list}/{seriesId}`.
+  final String path;
+  const LibraryListKind(this.path);
+}
+
+/// Một thay đổi thư viện cá nhân trên máy, cần gửi lên server.
+class LibraryChange {
+  final LibraryListKind? list;
+  final String? seriesId;
+  final bool added;
+  final DateTime? lastSeenAt;
+  final ReadingHistoryEntry? progress;
+  final bool clearHistory;
+
+  const LibraryChange.list(LibraryListKind this.list, String this.seriesId, {required this.added, this.lastSeenAt})
+    : progress = null,
+      clearHistory = false;
+
+  const LibraryChange.progress(ReadingHistoryEntry this.progress)
+    : list = null,
+      seriesId = null,
+      added = false,
+      lastSeenAt = null,
+      clearHistory = false;
+
+  const LibraryChange.clearHistory()
+    : list = null,
+      seriesId = null,
+      added = false,
+      lastSeenAt = null,
+      progress = null,
+      clearHistory = true;
 }

@@ -35,6 +35,7 @@ lib/
 ├── providers/
 │   ├── api_providers.dart             # Riverpod providers (ApiClient, Auth, Catalog, Review)
 │   ├── notification_providers.dart    # notificationsProvider (GET /api/notifications khi đã đăng nhập), unreadNotificationCountProvider, đánh dấu đã đọc
+│   ├── library_sync_provider.dart     # Đồng bộ Đọc sau / Theo dõi / Yêu thích / Lịch sử với /api/users/me/library: gộp khi đăng nhập & "Đồng bộ ngay", gửi từng thay đổi
 │   └── catalog_providers.dart         # catalogSeriesProvider (toàn bộ catalog) + CatalogSections (Phổ biến, Mới, Thể loại, Đề xuất, badge MỚI/UP)
 ├── services/
 │   ├── api_client.dart                # Dio HTTP client wrapper with JWT interceptor
@@ -43,6 +44,7 @@ lib/
 │   ├── catalog_service.dart           # Public catalog & chapter reader queries (BR-23)
 │   ├── preview_service.dart           # Token inspection & feedback submission (BR-16, BR-17)
 │   ├── cbz_package_service.dart       # Offline CBZ caching & package extraction
+│   ├── library_sync_service.dart      # /api/users/me/library: merge, {read-later|following|favorites}/{id}, history
 │   ├── notification_service.dart      # /api/notifications: danh sách, {id}/read, read-all
 │   ├── monetization_service.dart      # Wallet balance & chapter paywall unlocking
 │   ├── preferences_service.dart       # SharedPreferences: bookmarks (Đọc sau), theo dõi, lịch sử đọc, giao diện, giữ màn hình sáng
