@@ -18,6 +18,7 @@ class PreferencesService {
   static const String _keyPromoSeenSeries = 'panelforge_promo_seen_series';
   static const String _keyRecentTokens = 'panelforge_recent_tokens';
   static const String _keyOfflineChapters = 'panelforge_offline_chapters';
+  static const String _keyOfflineChapterMeta = 'panelforge_offline_chapter_meta';
   static const String _keyUnlockedChapters = 'panelforge_unlocked_chapters';
   static const String _keyChapterEntitlements = 'panelforge_chapter_entitlements';
   static const String _keyWalletBalance = 'panelforge_wallet_balance';
@@ -226,7 +227,29 @@ class PreferencesService {
     final current = getOfflineChapterIds();
     current.remove(clean);
     await _prefs?.setStringList(_keyOfflineChapters, current.toList());
+    final meta = getOfflineChapterMeta()..remove(clean);
+    await _saveOfflineMeta(meta);
   }
+
+  /// Thông tin hiển thị của chương đã tải (tên bộ, số chương...) cho màn "Đã tải".
+  static Map<String, OfflineChapterInfo> getOfflineChapterMeta() {
+    final raw = _prefs?.getString(_keyOfflineChapterMeta);
+    if (raw == null || raw.isEmpty) return {};
+    try {
+      final decoded = jsonDecode(raw) as Map<String, dynamic>;
+      return decoded.map((k, v) => MapEntry(k, OfflineChapterInfo.fromJson(v as Map<String, dynamic>)));
+    } catch (_) {
+      return {};
+    }
+  }
+
+  static Future<void> saveOfflineChapterInfo(OfflineChapterInfo info) async {
+    final meta = getOfflineChapterMeta()..[info.chapterId] = info;
+    await _saveOfflineMeta(meta);
+  }
+
+  static Future<void> _saveOfflineMeta(Map<String, OfflineChapterInfo> meta) async =>
+      _prefs?.setString(_keyOfflineChapterMeta, jsonEncode(meta.map((k, v) => MapEntry(k, v.toJson()))));
 
   static bool isChapterDownloaded(String chapterId) {
     return getOfflineChapterIds().contains(chapterId.trim());
@@ -520,4 +543,45 @@ class ReadingHistoryEntry {
     language: language ?? this.language,
     readAt: readAt ?? this.readAt,
   );
+}
+
+/// Chương đã tải offline: đủ để hiện trong màn "Đã tải" mà không cần mạng.
+class OfflineChapterInfo {
+  final String chapterId;
+  final String seriesId;
+  final String seriesTitle;
+  final double chapterNumber;
+  final String chapterTitle;
+  final DateTime downloadedAt;
+
+  const OfflineChapterInfo({
+    required this.chapterId,
+    required this.seriesId,
+    required this.seriesTitle,
+    required this.chapterNumber,
+    required this.chapterTitle,
+    required this.downloadedAt,
+  });
+
+  String get chapterNumberLabel => chapterNumber == chapterNumber.truncateToDouble()
+      ? chapterNumber.toInt().toString()
+      : chapterNumber.toString();
+
+  factory OfflineChapterInfo.fromJson(Map<String, dynamic> json) => OfflineChapterInfo(
+    chapterId: json['chapterId'] as String? ?? '',
+    seriesId: json['seriesId'] as String? ?? '',
+    seriesTitle: json['seriesTitle'] as String? ?? '',
+    chapterNumber: (json['chapterNumber'] as num?)?.toDouble() ?? 0,
+    chapterTitle: json['chapterTitle'] as String? ?? '',
+    downloadedAt: DateTime.tryParse(json['downloadedAt'] as String? ?? '') ?? DateTime.now(),
+  );
+
+  Map<String, dynamic> toJson() => {
+    'chapterId': chapterId,
+    'seriesId': seriesId,
+    'seriesTitle': seriesTitle,
+    'chapterNumber': chapterNumber,
+    'chapterTitle': chapterTitle,
+    'downloadedAt': downloadedAt.toIso8601String(),
+  };
 }

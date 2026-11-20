@@ -315,7 +315,16 @@ class _SettingsPageState extends ConsumerState<SettingsPage> {
               },
             ),
           ),
-          _Item('Thông báo', subtitle: 'Giao dịch Ví và hoạt động đọc gần đây', onTap: () => context.push('/activity')),
+          _Item(
+            'Thông báo',
+            subtitle: 'Thông báo, chương mới của truyện theo dõi, giao dịch Ví',
+            onTap: () => context.push('/activity'),
+          ),
+          _Item(
+            'Truyện đã tải',
+            subtitle: '${ref.watch(downloadedChaptersProvider).length} chương đọc offline',
+            onTap: () => context.push('/downloads'),
+          ),
           _Item(
             'Xoá lịch sử đọc',
             subtitle: '$historyCount tựa sách',

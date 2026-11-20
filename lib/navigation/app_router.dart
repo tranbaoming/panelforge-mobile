@@ -9,6 +9,7 @@ import '../screens/explore/search_page.dart';
 import '../screens/foryou/for_you_page.dart';
 import '../screens/shop/shop_page.dart';
 import '../screens/profile/activity_page.dart';
+import '../screens/profile/downloads_page.dart';
 import '../screens/profile/profile_page.dart';
 import '../screens/profile/legal_page.dart';
 import '../screens/profile/settings_page.dart';
@@ -112,6 +113,13 @@ final appRouterProvider = Provider<GoRouter>((ref) {
         parentNavigatorKey: _rootNavigatorKey,
         path: '/activity',
         builder: (context, state) => const ActivityPage(),
+      ),
+
+      // Truyện đã tải (offline) — mở từ Cài đặt.
+      GoRoute(
+        parentNavigatorKey: _rootNavigatorKey,
+        path: '/downloads',
+        builder: (context, state) => const DownloadsPage(),
       ),
 
       // Cài đặt — mở từ bánh răng ở tab Cá nhân.

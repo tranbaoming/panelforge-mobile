@@ -247,6 +247,16 @@ class _SeriesDetailPageState extends ConsumerState<SeriesDetailPage> {
           ref.read(downloadStatusProvider.notifier).setStatus(chapter.id, status);
         },
       );
+      await PreferencesService.saveOfflineChapterInfo(
+        OfflineChapterInfo(
+          chapterId: chapter.id,
+          seriesId: series.id,
+          seriesTitle: series.title,
+          chapterNumber: chapter.chapterNumber,
+          chapterTitle: chapter.title,
+          downloadedAt: DateTime.now(),
+        ),
+      );
       ref.read(downloadedChaptersProvider.notifier).add(chapter.id);
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
