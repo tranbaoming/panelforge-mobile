@@ -25,6 +25,8 @@ SeriesItem _series(String id, {int chapters = 12}) => SeriesItem(
 );
 
 void main() {
+  largeTextTests();
+
   setUp(() async {
     SharedPreferences.setMockInitialValues({});
     await PreferencesService.init();
@@ -120,5 +122,53 @@ void main() {
     expect(find.bySemanticsLabel('PANELFORGE'), findsOneWidget);
     expect(find.byIcon(Icons.search), findsOneWidget);
     expect(const ForgeTopBar().preferredSize.height, 58);
+  });
+}
+
+/// Cài đặt → Cỡ chữ "Rất lớn" (1.3×): thẻ truyện trong hàng / lưới cố định chiều cao không được tràn.
+void largeTextTests() {
+  Widget scaled(Widget child, {double scale = 1.3}) => MaterialApp(
+    home: Builder(
+      builder: (context) => MediaQuery(
+        data: MediaQuery.of(context).copyWith(textScaler: TextScaler.linear(scale)),
+        child: Scaffold(body: child),
+      ),
+    ),
+  );
+
+  group('large text', () {
+    testWidgets('textScaleExtra is zero at normal size and grows with the scale', (tester) async {
+      late double normal;
+      late double large;
+      await tester.pumpWidget(scaled(Builder(builder: (c) => Text('${normal = textScaleExtra(c, 60)}')), scale: 1));
+      await tester.pumpWidget(scaled(Builder(builder: (c) => Text('${large = textScaleExtra(c, 60)}'))));
+      expect(normal, 0);
+      expect(large, closeTo(18, 0.01));
+    });
+
+    testWidgets('home row card fits at 1.3x text', (tester) async {
+      await tester.pumpWidget(
+        scaled(
+          Builder(
+            builder: (c) => SizedBox(
+              height: 268 + textScaleExtra(c, 60),
+              child: Align(
+                alignment: Alignment.topLeft,
+                child: CoverTitleCard(series: _series('a'), isNew: true, pillLabel: '12 chương', onTap: () {}),
+              ),
+            ),
+          ),
+        ),
+      );
+      expect(tester.takeException(), isNull);
+    });
+
+    testWidgets('2-column grid fits at 1.3x text on a phone width', (tester) async {
+      tester.view.physicalSize = const Size(375 * 3, 812 * 3);
+      tester.view.devicePixelRatio = 3;
+      addTearDown(tester.view.reset);
+      await tester.pumpWidget(scaled(ComicGrid(series: [_series('a'), _series('b')], onOpen: (_) {})));
+      expect(tester.takeException(), isNull);
+    });
   });
 }

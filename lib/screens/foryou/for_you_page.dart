@@ -123,7 +123,7 @@ class _Block extends StatelessWidget {
         children: [
           ForgeBlockTitle(title: title, onMore: onMore),
           SizedBox(
-            height: rows * ForYouPage._cardHeight + (rows - 1) * 14,
+            height: rows * (ForYouPage._cardHeight + textScaleExtra(context, 60)) + (rows - 1) * 14,
             child: GridView.builder(
               scrollDirection: Axis.horizontal,
               padding: const EdgeInsets.symmetric(horizontal: 16),
