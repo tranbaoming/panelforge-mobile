@@ -146,10 +146,12 @@ SeriesItem _rich(String id, String title, {required List<String> genres, int vie
       isCompleted: completed,
     );
 
+// Như dữ liệu thật: SeriesItem.genres = [thể loại, định dạng].
 final _richCatalog = [
-  _rich('a', 'Alpha', genres: ['Action'], views: 10),
-  _rich('b', 'Bravo', genres: ['Romance'], views: 50, completed: true),
-  _rich('c', 'Charlie', genres: ['Action', 'Romance'], views: 30, completed: true),
+  _rich('a', 'Alpha', genres: ['Action', 'Manga'], views: 10),
+  _rich('b', 'Bravo', genres: ['Romance', 'Comic'], views: 50, completed: true),
+  _rich('c', 'Charlie', genres: ['Action', 'Romance', 'Manga'], views: 30, completed: true),
+  _rich('d', 'Mặc Kiếm Lục: Trảm Long Nhai', genres: ['Kiếm Hiệp', 'Manga'], views: 5),
 ];
 
 Widget _richApp() => MaterialApp.router(
@@ -176,6 +178,31 @@ void filterTests() {
     setUp(() async {
       SharedPreferences.setMockInitialValues({});
       await PreferencesService.init();
+    });
+
+    test('foldVietnamese drops diacritics and case', () {
+      expect(foldVietnamese('Mặc Kiếm Lục: Trảm Long Nhai'), 'mac kiem luc: tram long nhai');
+      expect(foldVietnamese('ĐƯỜNG'), 'duong');
+    });
+
+    testWidgets('typing without diacritics still finds the series', (tester) async {
+      await tester.pumpWidget(_richApp());
+      await tester.pumpAndSettle();
+
+      await tester.enterText(find.byKey(const ValueKey('search-field')), 'tram long');
+      await tester.pumpAndSettle();
+      expect(find.text('Kết quả (1)'), findsOneWidget);
+    });
+
+    testWidgets('genre menu lists real genres only, not formats', (tester) async {
+      await tester.pumpWidget(_richApp());
+      await tester.pumpAndSettle();
+
+      await tester.tap(find.byKey(const ValueKey('filter-genre')));
+      await tester.pumpAndSettle();
+      expect(find.text('Kiếm Hiệp'), findsOneWidget);
+      expect(find.text('Manga'), findsNothing);
+      expect(find.text('Comic'), findsNothing);
     });
 
     testWidgets('genre and status filters narrow the list', (tester) async {

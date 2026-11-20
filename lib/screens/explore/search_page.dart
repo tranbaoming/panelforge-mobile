@@ -76,7 +76,7 @@ class _SearchPageState extends State<SearchPage> {
 
   /// Lọc theo từ khóa (tên / Studio / thể loại), thể loại và trạng thái, rồi sắp xếp theo lựa chọn.
   List<SeriesItem> get _results {
-    final q = _query.trim().toLowerCase();
+    final q = foldVietnamese(_query.trim());
     final sections = _sections;
     final base = switch (_sort) {
       SearchSort.alphabetical => sections.alphabetical,
@@ -85,18 +85,24 @@ class _SearchPageState extends State<SearchPage> {
       SearchSort.newest => sections.newest,
     };
     return base.where((s) {
-      if (_genre != null && !s.genres.contains(_genre)) return false;
+      if (_genre != null && !_realGenres(s).contains(_genre)) return false;
       if (_status == SeriesStatusFilter.ongoing && s.isCompleted) return false;
       if (_status == SeriesStatusFilter.completed && !s.isCompleted) return false;
       if (q.isEmpty) return true;
-      return s.title.toLowerCase().contains(q) ||
-          s.author.toLowerCase().contains(q) ||
-          s.genres.any((g) => g.toLowerCase().contains(q));
+      return foldVietnamese(s.title).contains(q) ||
+          foldVietnamese(s.author).contains(q) ||
+          s.genres.any((g) => foldVietnamese(g).contains(q));
     }).toList();
   }
 
+  /// `SeriesItem.genres` còn chứa cả định dạng (Comic / Manga / Webtoon) — bộ lọc Thể loại chỉ lấy thể loại thật.
+  static final _formatNames = {for (final f in ComicFormat.values) f.label.toLowerCase()};
+
+  static Iterable<String> _realGenres(SeriesItem s) =>
+      s.genres.where((g) => g.trim().isNotEmpty && !_formatNames.contains(g.trim().toLowerCase()));
+
   List<String> get _allGenres {
-    final set = <String>{for (final s in _catalog ?? const <SeriesItem>[]) ...s.genres};
+    final set = <String>{for (final s in _catalog ?? const <SeriesItem>[]) ..._realGenres(s)};
     return set.toList()..sort((a, b) => a.toLowerCase().compareTo(b.toLowerCase()));
   }
 
@@ -513,8 +519,7 @@ class _MenuChip<T> extends StatelessWidget {
       initialValue: selected,
       onSelected: onSelected,
       itemBuilder: (_) => [
-        for (final v in values)
-          CheckedPopupMenuItem<T>(value: v, checked: v == selected, child: Text(itemLabel(v))),
+        for (final v in values) CheckedPopupMenuItem<T>(value: v, checked: v == selected, child: Text(itemLabel(v))),
       ],
       child: Container(
         padding: const EdgeInsets.symmetric(horizontal: 12),
@@ -528,11 +533,28 @@ class _MenuChip<T> extends StatelessWidget {
           children: [
             Icon(icon, size: 16, color: color),
             const SizedBox(width: 6),
-            Text(label, style: GoogleFonts.plusJakartaSans(fontSize: 13, fontWeight: FontWeight.w700, color: color)),
+            Text(
+              label,
+              style: GoogleFonts.plusJakartaSans(fontSize: 13, fontWeight: FontWeight.w700, color: color),
+            ),
             Icon(Icons.arrow_drop_down_rounded, size: 18, color: color),
           ],
         ),
       ),
     );
   }
+}
+
+const _vnFrom = 'àáạảãâầấậẩẫăằắặẳẵèéẹẻẽêềếệểễìíịỉĩòóọỏõôồốộổỗơờớợởỡùúụủũưừứựửữỳýỵỷỹđ';
+const _vnTo = 'aaaaaaaaaaaaaaaaaeeeeeeeeeeeiiiiiooooooooooooooooouuuuuuuuuuuyyyyyd';
+
+/// Chữ thường, bỏ dấu tiếng Việt — để gõ "kiem" vẫn tìm ra "Kiếm".
+String foldVietnamese(String input) {
+  final lower = input.toLowerCase();
+  final out = StringBuffer();
+  for (final ch in lower.split('')) {
+    final i = _vnFrom.indexOf(ch);
+    out.write(i >= 0 ? _vnTo[i] : ch);
+  }
+  return out.toString();
 }
