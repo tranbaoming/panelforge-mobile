@@ -7,6 +7,7 @@ import 'services/api_client.dart';
 import 'services/crash_reporter.dart';
 import 'services/preferences_service.dart';
 import 'theme/app_theme.dart';
+import 'widgets/app_gate_overlay.dart';
 
 void main() async {
   WidgetsFlutterBinding.ensureInitialized();
@@ -40,7 +41,10 @@ class PanelForgeApp extends ConsumerWidget {
         final scale = ref.watch(textScaleProvider);
         return MediaQuery(
           data: media.copyWith(textScaler: _MultipliedTextScaler(media.textScaler, scale)),
-          child: KeyedSubtree(key: ValueKey(brightness), child: child ?? const SizedBox.shrink()),
+          child: KeyedSubtree(
+            key: ValueKey(brightness),
+            child: AppGateOverlay(child: child ?? const SizedBox.shrink()),
+          ),
         );
       },
     );
