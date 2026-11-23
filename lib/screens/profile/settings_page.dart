@@ -391,6 +391,11 @@ class _SettingsPageState extends ConsumerState<SettingsPage> {
             _Item('Hồ sơ của tôi', subtitle: auth.user?.email, onTap: () => ReaderProfileSheet.show(context)),
             _Item('Đổi mật khẩu', onTap: () => showChangePasswordDialog(context, ref)),
             _Item(
+              'Thiết bị đang đăng nhập',
+              subtitle: 'Quản lý tối đa 3 thiết bị & đăng xuất từ xa',
+              onTap: () => context.push('/settings/devices'),
+            ),
+            _Item(
               'Thiết bị tin cậy',
               subtitle: 'Xoá thiết bị này khỏi danh sách bỏ qua xác thực 2 lớp',
               onTap: _forgetDevice,
@@ -398,11 +403,6 @@ class _SettingsPageState extends ConsumerState<SettingsPage> {
             _Item('Lịch sử giao dịch', onTap: () => WalletTopupDialog.show(context, initialTab: 1)),
           ] else
             _Item('Đăng nhập / Đăng ký', onTap: () => context.push('/login')),
-          _Item(
-            'Nhập mã Review',
-            subtitle: 'Mã REV-... do Studio gửi để xem & góp ý bản thảo',
-            onTap: () => context.push('/review'),
-          ),
           if (authed) ...[
             _Item('Đăng xuất', onTap: () => showLogoutConfirmDialog(context, ref)),
             _Item('Xoá tài khoản', danger: true, onTap: _deleteAccount),

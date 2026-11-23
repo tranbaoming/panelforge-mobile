@@ -8,7 +8,6 @@ import '../services/auth_service.dart';
 import '../services/catalog_service.dart';
 import '../services/cbz_package_service.dart';
 import '../services/preferences_service.dart';
-import '../services/preview_service.dart';
 
 export '../models/auth_models.dart';
 export '../services/auth_service.dart';
@@ -38,10 +37,6 @@ final apiClientProvider = Provider<ApiClient>((ref) {
 
 final catalogServiceProvider = Provider<CatalogService>((ref) {
   return CatalogService(client: ref.watch(apiClientProvider));
-});
-
-final previewServiceProvider = Provider<PreviewService>((ref) {
-  return PreviewService(client: ref.watch(apiClientProvider));
 });
 
 class ServerConnectedNotifier extends Notifier<bool> {

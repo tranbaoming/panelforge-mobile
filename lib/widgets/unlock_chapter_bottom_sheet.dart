@@ -1,3 +1,6 @@
+import 'dart:io';
+
+import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
@@ -332,6 +335,16 @@ class _UnlockChapterBottomSheetState extends ConsumerState<UnlockChapterBottomSh
             ),
           ),
         ),
+      );
+    }
+
+    // Trên Android (CH Play) chỉ mở khóa bằng số dư Ví (nạp Ví qua Google Play Billing), không hiện VietQR.
+    final hideVietQrOnAndroid = !kIsWeb && Platform.isAndroid;
+    if (hideVietQrOnAndroid) {
+      return Row(
+        children: [
+          option(_UnlockMethod.wallet, Icons.account_balance_wallet_rounded, 'Trừ số dư Ví', 'Mở khóa tức thì'),
+        ],
       );
     }
 

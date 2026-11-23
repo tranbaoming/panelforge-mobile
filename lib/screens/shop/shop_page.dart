@@ -1,3 +1,6 @@
+import 'dart:io';
+
+import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
@@ -5,6 +8,7 @@ import 'package:google_fonts/google_fonts.dart';
 import '../../models/api_dtos.dart';
 import '../../providers/api_providers.dart';
 import '../../services/api_client.dart';
+import '../../services/google_play_billing_service.dart';
 import '../../theme/app_theme.dart';
 import '../../widgets/vietqr_payment_panel.dart';
 import '../../widgets/wallet_topup_dialog.dart';
@@ -19,14 +23,44 @@ class ShopPage extends ConsumerStatefulWidget {
 }
 
 class _ShopPageState extends ConsumerState<ShopPage> {
+  GooglePlayBillingService? _billing;
+  bool _isPurchasing = false;
+
+  static bool get _useGooglePlayBilling => !kIsWeb && Platform.isAndroid;
+
   @override
   void initState() {
     super.initState();
+    if (_useGooglePlayBilling) {
+      _billing = GooglePlayBillingService(monetization: ref.read(monetizationServiceProvider));
+      _billing!.listenPurchases(
+        onVerified: (result) async {
+          await ref.read(walletNotifierProvider.notifier).refresh(silent: true);
+          if (!mounted) return;
+          setState(() => _isPurchasing = false);
+          showPaymentSuccessSnackBar(
+            context,
+            result.message.isNotEmpty ? result.message : 'Nạp thành công vào Ví qua Google Play!',
+          );
+        },
+        onError: (msg) {
+          if (!mounted) return;
+          setState(() => _isPurchasing = false);
+          showPaymentErrorSnackBar(context, msg);
+        },
+      );
+    }
     Future.microtask(() {
       if (ref.read(authStateProvider).isAuthenticated) {
         ref.read(walletNotifierProvider.notifier).refresh(silent: true);
       }
     });
+  }
+
+  @override
+  void dispose() {
+    _billing?.dispose();
+    super.dispose();
   }
 
   /// Chưa đăng nhập → mở màn Đăng nhập; trả true khi đã đăng nhập.
@@ -41,6 +75,26 @@ class _ShopPageState extends ConsumerState<ShopPage> {
 
   Future<void> _buyTopup(int amount) async {
     if (!await _ensureLoggedIn() || !mounted) return;
+    if (_useGooglePlayBilling && _billing != null) {
+      if (_isPurchasing) return;
+      setState(() => _isPurchasing = true);
+      try {
+        final started = await _billing!.buyTopupAmount(amount);
+        if (!started && mounted) {
+          setState(() => _isPurchasing = false);
+          showPaymentErrorSnackBar(
+            context,
+            'Gói nạp chưa sẵn sàng trên Google Play Store. Vui lòng kiểm tra tài khoản CH Play và thử lại.',
+          );
+        }
+      } catch (e) {
+        if (mounted) {
+          setState(() => _isPurchasing = false);
+          showPaymentErrorSnackBar(context, 'Không thể khởi tạo thanh toán Google Play: $e');
+        }
+      }
+      return;
+    }
     await showModalBottomSheet<void>(
       context: context,
       isScrollControlled: true,
@@ -213,8 +267,11 @@ class _TopupTab extends StatelessWidget {
         Padding(
           padding: const EdgeInsets.fromLTRB(16, 12, 16, 8),
           child: Text(
-            'Số dư Ví dùng để mở khóa vĩnh viễn từng ấn bản ngôn ngữ trả phí. '
-            'Mỗi lần nạp tạo một mã VietQR; tiền vào Ví ngay sau khi giao dịch được xác nhận.',
+            !kIsWeb && Platform.isAndroid
+                ? 'Số dư Ví dùng để mở khóa vĩnh viễn từng ấn bản ngôn ngữ trả phí. '
+                    'Thanh toán an toàn qua Google Play Billing; tiền vào Ví ngay sau khi xác nhận.'
+                : 'Số dư Ví dùng để mở khóa vĩnh viễn từng ấn bản ngôn ngữ trả phí. '
+                    'Tiền vào Ví ngay sau khi giao dịch được xác nhận.',
             style: GoogleFonts.plusJakartaSans(fontSize: 13.5, color: ForgeColors.textSoft, height: 1.4),
           ),
         ),
@@ -314,7 +371,7 @@ class _ShopLinks extends StatelessWidget {
             ),
             const SizedBox(height: 12),
             for (final line in const [
-              'Nạp Ví bằng VietQR là chuyển khoản trực tiếp vào tài khoản nền tảng; giao dịch hoàn tất khi thanh toán được xác nhận.',
+              'Giao dịch nạp Ví trên Android được xử lý an toàn qua Google Play Billing và cộng số dư tự động sau khi máy chủ xác thực.',
               'Số dư Ví dùng để mở khóa vĩnh viễn từng ấn bản ngôn ngữ trả phí (mua ngôn ngữ nào đọc ngôn ngữ đó).',
               'Giá ấn bản do Publisher quy định trên web; máy chủ luôn tính lại giá khi thanh toán.',
             ])

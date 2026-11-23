@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:google_fonts/google_fonts.dart';
 import '../models/api_dtos.dart';
+import '../services/monetization_service.dart';
 import '../theme/app_theme.dart';
 
 String _two(int v) => v.toString().padLeft(2, '0');
@@ -228,7 +229,7 @@ Future<void> showTransactionReceipt(BuildContext context, WalletTransactionDto t
               line('Số dư sau GD', formatVnd(tx.balanceAfter)),
               line('Mã giao dịch', tx.id.isEmpty ? '—' : tx.id),
               const SizedBox(height: 12),
-              if (tx.id.isNotEmpty)
+              if (tx.id.isNotEmpty) ...[
                 OutlinedButton.icon(
                   onPressed: () async {
                     await Clipboard.setData(ClipboardData(text: tx.id));
@@ -241,10 +242,111 @@ Future<void> showTransactionReceipt(BuildContext context, WalletTransactionDto t
                   icon: const Icon(Icons.copy_rounded, size: 18),
                   label: const Text('Sao chép mã giao dịch'),
                 ),
+                const SizedBox(height: 8),
+                TextButton.icon(
+                  style: TextButton.styleFrom(foregroundColor: AppColors.rose),
+                  onPressed: () async {
+                    Navigator.of(ctx).pop();
+                    if (context.mounted) {
+                      await showTransactionDisputeDialog(context, tx.id);
+                    }
+                  },
+                  icon: const Icon(Icons.report_problem_outlined, size: 18),
+                  label: const Text('Báo lỗi / Đối soát giao dịch'),
+                ),
+              ],
             ],
           ),
         ),
       );
     },
   );
+}
+
+/// Hộp thoại gửi báo cáo lỗi giao dịch (`POST /api/wallet/transactions/{orderCode}/dispute`).
+Future<void> showTransactionDisputeDialog(BuildContext context, String orderCode) async {
+  final controller = TextEditingController();
+  var submitting = false;
+
+  await showDialog<void>(
+    context: context,
+    builder: (ctx) => StatefulBuilder(
+      builder: (ctx, setState) => AlertDialog(
+        backgroundColor: AppColors.darkSurface,
+        shape: RoundedRectangleBorder(
+          borderRadius: BorderRadius.circular(16),
+          side: const BorderSide(color: AppColors.darkBorder),
+        ),
+        title: Text(
+          'Báo lỗi giao dịch',
+          style: GoogleFonts.plusJakartaSans(fontWeight: FontWeight.w700, color: Colors.white),
+        ),
+        content: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Text(
+              'Mã đơn: $orderCode',
+              style: GoogleFonts.plusJakartaSans(fontSize: 12.5, color: AppColors.primary, fontWeight: FontWeight.w700),
+            ),
+            const SizedBox(height: 10),
+            TextField(
+              controller: controller,
+              maxLines: 3,
+              style: const TextStyle(color: Colors.white, fontSize: 13.5),
+              decoration: InputDecoration(
+                hintText: 'Mô tả vấn đề bạn gặp phải (vd: đã trừ tiền nhưng chưa cộng Ví)...',
+                hintStyle: const TextStyle(color: Colors.white38, fontSize: 13),
+                filled: true,
+                fillColor: AppColors.darkCard,
+                border: OutlineInputBorder(borderRadius: BorderRadius.circular(10)),
+              ),
+            ),
+          ],
+        ),
+        actions: [
+          TextButton(
+            onPressed: submitting ? null : () => Navigator.of(ctx).pop(),
+            child: const Text('Huỷ'),
+          ),
+          FilledButton(
+            style: FilledButton.styleFrom(backgroundColor: AppColors.primary),
+            onPressed: submitting
+                ? null
+                : () async {
+                    final reason = controller.text.trim();
+                    if (reason.length < 5) {
+                      ScaffoldMessenger.of(ctx).showSnackBar(
+                        const SnackBar(content: Text('Vui lòng nhập mô tả tối thiểu 5 ký tự.')),
+                      );
+                      return;
+                    }
+                    setState(() => submitting = true);
+                    try {
+                      final msg = await MonetizationService().reportTransactionIssue(
+                        orderCode: orderCode,
+                        reason: reason,
+                      );
+                      if (ctx.mounted) Navigator.of(ctx).pop();
+                      if (context.mounted) {
+                        ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(msg)));
+                      }
+                    } catch (e) {
+                      setState(() => submitting = false);
+                      if (ctx.mounted) {
+                        ScaffoldMessenger.of(ctx).showSnackBar(
+                          SnackBar(content: Text('Gửi báo lỗi thất bại: $e')),
+                        );
+                      }
+                    }
+                  },
+            child: submitting
+                ? const SizedBox(width: 16, height: 16, child: CircularProgressIndicator(strokeWidth: 2))
+                : const Text('Gửi yêu cầu'),
+          ),
+        ],
+      ),
+    ),
+  );
+  controller.dispose();
 }

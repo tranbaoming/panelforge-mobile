@@ -1,9 +1,13 @@
+import 'dart:io';
+
+import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:google_fonts/google_fonts.dart';
 import '../models/api_dtos.dart';
 import '../providers/api_providers.dart';
 import '../services/api_client.dart';
+import '../services/google_play_billing_service.dart';
 import '../services/preferences_service.dart';
 import '../theme/app_theme.dart';
 import 'auth_modal_sheet.dart';
@@ -53,6 +57,9 @@ class _WalletTopupDialogState extends ConsumerState<WalletTopupDialog> with Sing
   int _selectedAmountVnd = 50000;
   bool _isLoadingQr = false;
   TopupResponse? _topupData;
+  GooglePlayBillingService? _billing;
+
+  static bool get _useGooglePlayBilling => !kIsWeb && Platform.isAndroid;
 
   List<({int amount, String tag})> get _vndPackages => kTopupPackages;
 
@@ -60,12 +67,55 @@ class _WalletTopupDialogState extends ConsumerState<WalletTopupDialog> with Sing
   void initState() {
     super.initState();
     _tabController = TabController(length: 2, vsync: this, initialIndex: widget.initialTab.clamp(0, 1));
+    if (_useGooglePlayBilling) {
+      _billing = GooglePlayBillingService(monetization: ref.read(monetizationServiceProvider));
+      _billing!.listenPurchases(
+        onVerified: (result) async {
+          await ref.read(walletNotifierProvider.notifier).refresh(silent: true);
+          if (!mounted) return;
+          setState(() => _isLoadingQr = false);
+          showPaymentSuccessSnackBar(
+            context,
+            result.message.isNotEmpty ? result.message : 'Nạp thành công vào Ví qua Google Play!',
+          );
+        },
+        onError: (msg) {
+          if (!mounted) return;
+          setState(() => _isLoadingQr = false);
+          showPaymentErrorSnackBar(context, msg);
+        },
+      );
+    }
   }
 
   @override
   void dispose() {
+    _billing?.dispose();
     _tabController.dispose();
     super.dispose();
+  }
+
+  Future<void> _startTopup() async {
+    if (_useGooglePlayBilling && _billing != null) {
+      setState(() => _isLoadingQr = true);
+      try {
+        final started = await _billing!.buyTopupAmount(_selectedAmountVnd);
+        if (!started && mounted) {
+          setState(() => _isLoadingQr = false);
+          showPaymentErrorSnackBar(
+            context,
+            'Gói nạp chưa sẵn sàng trên Google Play Store. Vui lòng kiểm tra tài khoản CH Play và thử lại.',
+          );
+        }
+      } catch (e) {
+        if (mounted) {
+          setState(() => _isLoadingQr = false);
+          showPaymentErrorSnackBar(context, 'Không thể khởi tạo thanh toán Google Play: $e');
+        }
+      }
+      return;
+    }
+    await _generateVietQR();
   }
 
   Future<void> _generateVietQR() async {
@@ -316,9 +366,9 @@ class _WalletTopupDialogState extends ConsumerState<WalletTopupDialog> with Sing
 
           const SizedBox(height: 14),
 
-          // Nút tạo mã VietQR
+          // Nút nạp tiền (Google Play Billing trên Android CH Play; fallback VietQR trên Desktop/Dev)
           ElevatedButton(
-            onPressed: _isLoadingQr ? null : _generateVietQR,
+            onPressed: _isLoadingQr ? null : _startTopup,
             style: ElevatedButton.styleFrom(
               backgroundColor: AppColors.primary,
               foregroundColor: Colors.white,
@@ -332,13 +382,15 @@ class _WalletTopupDialogState extends ConsumerState<WalletTopupDialog> with Sing
                     child: CircularProgressIndicator(strokeWidth: 2, color: Colors.white),
                   )
                 : Text(
-                    'Tạo Mã VietQR Thanh Toán',
+                    _useGooglePlayBilling ? 'Thanh Toán Qua Google Play' : 'Tạo Mã VietQR Thanh Toán',
                     style: GoogleFonts.plusJakartaSans(fontSize: 15, fontWeight: FontWeight.w700),
                   ),
           ),
           const SizedBox(height: 12),
           Text(
-            'Số dư được cộng ngay khi Studio xác nhận đã nhận tiền.',
+            _useGooglePlayBilling
+                ? 'Thanh toán an toàn qua Google Play Billing. Số dư được cộng ngay khi xác thực.'
+                : 'Số dư được cộng ngay khi Studio xác nhận đã nhận tiền.',
             textAlign: TextAlign.center,
             style: GoogleFonts.plusJakartaSans(fontSize: 11.5, color: AppColors.darkTextSecondary),
           ),

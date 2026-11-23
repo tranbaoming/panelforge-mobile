@@ -92,6 +92,44 @@ class MonetizationService {
     return TransactionStatusDto.fromJson(response.data as Map<String, dynamic>);
   }
 
+  /// `POST /api/wallet/google-play/verify` — xác thực giao dịch Google Play Billing (CH Play) và cộng Ví.
+  Future<GooglePlayVerifyResult> verifyGooglePlayPurchase({
+    required String productId,
+    required String purchaseToken,
+    String packageName = 'com.panelforge.reader',
+  }) async {
+    final response = await _client.post(
+      '/api/wallet/google-play/verify',
+      data: {
+        'productId': productId,
+        'purchaseToken': purchaseToken,
+        'packageName': packageName,
+      },
+    );
+    final data = response.data;
+    if (data is! Map<String, dynamic>) {
+      throw ApiException('Máy chủ phản hồi không hợp lệ.', statusCode: response.statusCode);
+    }
+    final result = GooglePlayVerifyResult.fromJson(data);
+    await PreferencesService.setLocalBalanceVnd(result.balanceVnd);
+    return result;
+  }
+
+  /// `POST /api/wallet/transactions/{orderCode}/dispute` — gửi báo cáo lỗi giao dịch để Admin đối soát.
+  Future<String> reportTransactionIssue({
+    required String orderCode,
+    required String reason,
+  }) async {
+    final response = await _client.post(
+      '/api/wallet/transactions/${Uri.encodeComponent(orderCode)}/dispute',
+      data: {'reason': reason.trim()},
+    );
+    if (response.data is Map<String, dynamic>) {
+      return response.data['message']?.toString() ?? 'Đã gửi yêu cầu đối soát giao dịch.';
+    }
+    return 'Đã gửi yêu cầu đối soát giao dịch.';
+  }
+
   /// Backend chỉ hỗ trợ mở khóa vĩnh viễn: không còn trừ lượt xem phía client.
   Future<ConsumeViewResult> consumeChapterView(String chapterId) async {
     return const ConsumeViewResult(didConsume: false, isPermanent: true);
@@ -106,6 +144,36 @@ class MonetizationService {
   Future<void> _cacheWallet(UserWalletDto wallet) async {
     await PreferencesService.setLocalBalanceVnd(wallet.balanceVnd);
     await PreferencesService.replaceUnlockedChapterIds(wallet.unlockedChapterIds);
+  }
+}
+
+/// Kết quả xác thực nạp tiền qua Google Play Billing (`POST /api/wallet/google-play/verify`).
+class GooglePlayVerifyResult {
+  final bool success;
+  final int balanceVnd;
+  final int creditedVnd;
+  final String orderCode;
+  final bool alreadyProcessed;
+  final String message;
+
+  const GooglePlayVerifyResult({
+    required this.success,
+    required this.balanceVnd,
+    required this.creditedVnd,
+    required this.orderCode,
+    required this.alreadyProcessed,
+    required this.message,
+  });
+
+  factory GooglePlayVerifyResult.fromJson(Map<String, dynamic> json) {
+    return GooglePlayVerifyResult(
+      success: json['success'] == true,
+      balanceVnd: (json['balanceVnd'] as num?)?.toInt() ?? 0,
+      creditedVnd: (json['creditedVnd'] as num?)?.toInt() ?? 0,
+      orderCode: json['orderCode']?.toString() ?? '',
+      alreadyProcessed: json['alreadyProcessed'] == true,
+      message: json['message']?.toString() ?? '',
+    );
   }
 }
 

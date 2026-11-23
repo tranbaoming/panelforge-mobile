@@ -6,6 +6,7 @@ import 'package:flutter/foundation.dart';
 import 'package:google_sign_in/google_sign_in.dart';
 import '../models/auth_models.dart';
 import 'api_client.dart';
+import 'cbz_package_service.dart';
 import 'google_webview_auth_stub.dart' if (dart.library.ffi) 'google_webview_auth_io.dart';
 import 'preferences_service.dart';
 
@@ -634,11 +635,42 @@ class AuthService {
     // Xóa thông tin xác thực trong SharedPreferences
     await PreferencesService.clearAuthSession();
 
+    // Xóa toàn bộ gói truyện tải offline để bảo vệ bản quyền & tránh lộ chương trả phí khi đổi tài khoản
+    try {
+      await CbzPackageService(client: _client).clearAllOfflinePackages();
+    } catch (e) {
+      // Môi trường test không có path_provider: vẫn xóa metadata danh sách chương offline
+      for (final id in PreferencesService.getOfflineChapterIds()) {
+        await PreferencesService.removeOfflineChapterId(id);
+      }
+      debugPrint('[AuthService] Xóa thư mục offline thất bại (đã dọn metadata): $e');
+    }
+
     // Chuyển người dùng về trạng thái unauthenticated để quay lại màn hình Login
     final unauthenticatedState = AuthState.unauthenticated();
     onAuthStateChanged?.call(unauthenticatedState);
 
     return 'Bạn đã đăng xuất khỏi PanelForge';
+  }
+
+  /// 12a. Lấy danh sách thiết bị đang đăng nhập và giới hạn thiết bị tối đa
+  /// GET /api/auth/sessions
+  Future<ActiveSessionsResponse> getActiveSessions() async {
+    final response = await _client.get('/api/auth/sessions');
+    if (response.data is Map<String, dynamic>) {
+      return ActiveSessionsResponse.fromJson(response.data as Map<String, dynamic>);
+    }
+    throw ApiException('Không thể tải danh sách thiết bị đang đăng nhập.');
+  }
+
+  /// 12b. Đăng xuất từ xa một thiết bị cụ thể
+  /// DELETE /api/auth/sessions/{sessionId}
+  Future<String> revokeSession(String sessionId) async {
+    final response = await _client.delete('/api/auth/sessions/$sessionId');
+    if (response.data is Map<String, dynamic>) {
+      return response.data['message']?.toString() ?? 'Đã đăng xuất thiết bị.';
+    }
+    return 'Đã đăng xuất thiết bị.';
   }
 
   /// 12b. Cho phép người dùng chủ động tiếp tục ở chế độ Khách (Guest)
