@@ -6,6 +6,7 @@ import 'package:flutter/foundation.dart';
 import 'package:google_sign_in/google_sign_in.dart';
 import '../models/auth_models.dart';
 import 'api_client.dart';
+import 'cbz_package_service.dart';
 import 'google_webview_auth_stub.dart' if (dart.library.ffi) 'google_webview_auth_io.dart';
 import 'preferences_service.dart';
 
@@ -633,6 +634,17 @@ class AuthService {
 
     // Xóa thông tin xác thực trong SharedPreferences
     await PreferencesService.clearAuthSession();
+
+    // Xóa toàn bộ gói truyện tải offline để bảo vệ bản quyền & tránh lộ chương trả phí khi đổi tài khoản
+    try {
+      await CbzPackageService(client: _client).clearAllOfflinePackages();
+    } catch (e) {
+      // Môi trường test không có path_provider: vẫn xóa metadata danh sách chương offline
+      for (final id in PreferencesService.getOfflineChapterIds()) {
+        await PreferencesService.removeOfflineChapterId(id);
+      }
+      debugPrint('[AuthService] Xóa thư mục offline thất bại (đã dọn metadata): $e');
+    }
 
     // Chuyển người dùng về trạng thái unauthenticated để quay lại màn hình Login
     final unauthenticatedState = AuthState.unauthenticated();

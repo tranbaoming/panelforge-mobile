@@ -1,11 +1,14 @@
 import 'package:flutter/material.dart';
+import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 import 'package:google_fonts/google_fonts.dart';
+import '../providers/connectivity_provider.dart';
 import '../theme/app_theme.dart';
 
 /// Thanh điều hướng dưới cùng: 5 tab biểu tượng + nhãn, tab đang mở có nền "viên thuốc" cam nhạt.
 /// Thứ tự tab khớp thứ tự `StatefulShellBranch` trong `app_router.dart`.
-class ScaffoldWithNavBar extends StatelessWidget {
+/// Khi mất kết nối mạng, hiển thị banner ngoại tuyến cho phép nhảy thẳng tới `/downloads`.
+class ScaffoldWithNavBar extends ConsumerWidget {
   final StatefulNavigationShell navigationShell;
 
   const ScaffoldWithNavBar({super.key, required this.navigationShell});
@@ -23,11 +26,18 @@ class ScaffoldWithNavBar extends StatelessWidget {
   }
 
   @override
-  Widget build(BuildContext context) {
+  Widget build(BuildContext context, WidgetRef ref) {
     final current = navigationShell.currentIndex;
+    final isOffline = ref.watch(isOfflineProvider).asData?.value ?? false;
+
     return Scaffold(
       backgroundColor: ForgeColors.bg,
-      body: navigationShell,
+      body: Column(
+        children: [
+          if (isOffline) const _OfflineBanner(),
+          Expanded(child: navigationShell),
+        ],
+      ),
       bottomNavigationBar: Container(
         decoration: BoxDecoration(
           color: ForgeColors.navBar,
@@ -59,6 +69,56 @@ class ScaffoldWithNavBar extends StatelessWidget {
                   ),
               ],
             ),
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+class _OfflineBanner extends StatelessWidget {
+  const _OfflineBanner();
+
+  @override
+  Widget build(BuildContext context) {
+    return Material(
+      color: AppColors.darkSurface,
+      child: SafeArea(
+        bottom: false,
+        child: Container(
+          width: double.infinity,
+          padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 8),
+          decoration: const BoxDecoration(
+            border: Border(bottom: BorderSide(color: AppColors.darkBorder)),
+          ),
+          child: Row(
+            children: [
+              const Icon(Icons.wifi_off_rounded, color: AppColors.primary, size: 18),
+              const SizedBox(width: 8),
+              Expanded(
+                child: Text(
+                  'Bạn đang ngoại tuyến',
+                  style: GoogleFonts.plusJakartaSans(
+                    fontSize: 12.5,
+                    fontWeight: FontWeight.w600,
+                    color: Colors.white,
+                  ),
+                ),
+              ),
+              TextButton(
+                style: TextButton.styleFrom(
+                  foregroundColor: AppColors.primary,
+                  padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
+                  minimumSize: Size.zero,
+                  tapTargetSize: MaterialTapTargetSize.shrinkWrap,
+                ),
+                onPressed: () => context.push('/downloads'),
+                child: Text(
+                  'Truyện đã tải',
+                  style: GoogleFonts.plusJakartaSans(fontSize: 12.5, fontWeight: FontWeight.w700),
+                ),
+              ),
+            ],
           ),
         ),
       ),
