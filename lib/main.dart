@@ -25,7 +25,7 @@ class PanelForgeApp extends ConsumerWidget {
     // Giữ đồng bộ thư viện cá nhân chạy suốt vòng đời app (không dựng lại MaterialApp khi trạng thái đổi).
     ref.listen(librarySyncProvider, (_, _) {});
     return MaterialApp.router(
-      title: 'PanelForge • Comic & Manga Review',
+      title: 'PanelForge',
       debugShowCheckedModeBanner: false,
       theme: AppTheme.lightTheme,
       darkTheme: AppTheme.darkTheme,

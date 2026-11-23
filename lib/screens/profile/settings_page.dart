@@ -398,11 +398,6 @@ class _SettingsPageState extends ConsumerState<SettingsPage> {
             _Item('Lịch sử giao dịch', onTap: () => WalletTopupDialog.show(context, initialTab: 1)),
           ] else
             _Item('Đăng nhập / Đăng ký', onTap: () => context.push('/login')),
-          _Item(
-            'Nhập mã Review',
-            subtitle: 'Mã REV-... do Studio gửi để xem & góp ý bản thảo',
-            onTap: () => context.push('/review'),
-          ),
           if (authed) ...[
             _Item('Đăng xuất', onTap: () => showLogoutConfirmDialog(context, ref)),
             _Item('Xoá tài khoản', danger: true, onTap: _deleteAccount),

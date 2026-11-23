@@ -115,25 +115,6 @@ class ActivityPage extends ConsumerWidget {
                         ),
                       ),
               ),
-            const SizedBox(height: 16),
-            _card(
-              child: ListTile(
-                onTap: () => context.push('/review'),
-                leading: const CircleAvatar(
-                  backgroundColor: ForgeColors.accent,
-                  child: Icon(Icons.verified_user_rounded, color: Colors.white),
-                ),
-                title: Text(
-                  'Trung tâm Review bản thảo',
-                  style: GoogleFonts.plusJakartaSans(fontWeight: FontWeight.w700, color: ForgeColors.text),
-                ),
-                subtitle: Text(
-                  'Nhập mã REV-... hoặc quét QR để xem & góp ý bản thảo',
-                  style: GoogleFonts.plusJakartaSans(fontSize: 12, color: ForgeColors.muted),
-                ),
-                trailing: const Icon(Icons.chevron_right_rounded, color: ForgeColors.muted),
-              ),
-            ),
             const ForgeSectionHeader(title: 'GIAO DỊCH VÍ'),
             if (transactions.isEmpty)
               _empty(!auth.isAuthenticated ? 'Đăng nhập để xem giao dịch Ví.' : 'Chưa có giao dịch nào.')

@@ -249,13 +249,6 @@ const faqDocument = LegalDocument(
       ],
     ),
     (
-      heading: 'Mã Review (REV-...) là gì?',
-      body: [
-        'Mã do Studio gửi để mời bạn xem và góp ý bản thảo chưa phát hành. Nhập mã trong Cài đặt › Nhập mã Review. '
-            'Bản thảo có hình mờ mang tên bạn và hết hạn theo lời mời.',
-      ],
-    ),
-    (
       heading: 'Dữ liệu Đọc sau / Yêu thích có mất khi đổi máy không?',
       body: [
         'Có. Các danh sách này hiện chỉ lưu trên thiết bị. Ví, giao dịch và chương đã mua thì gắn với tài khoản nên vẫn còn.',
