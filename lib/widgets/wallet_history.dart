@@ -176,6 +176,8 @@ class _TxRow extends StatelessWidget {
 Future<void> showTransactionReceipt(BuildContext context, WalletTransactionDto tx) {
   final isPositive = tx.amountVnd > 0;
   final kind = isPositive ? 'Nạp vào Ví' : 'Thanh toán từ Ví';
+  // Ưu tiên mã đơn (OrderCode) — đúng mã Backend dùng để đối soát; dữ liệu cũ không có thì dùng Id.
+  final code = tx.orderCode.isNotEmpty ? tx.orderCode : tx.id;
   return showModalBottomSheet<void>(
     context: context,
     isScrollControlled: true,
@@ -227,12 +229,12 @@ Future<void> showTransactionReceipt(BuildContext context, WalletTransactionDto t
               line('Loại', kind),
               line('Thời gian', formatTxTime(tx.createdAt)),
               line('Số dư sau GD', formatVnd(tx.balanceAfter)),
-              line('Mã giao dịch', tx.id.isEmpty ? '—' : tx.id),
+              line('Mã giao dịch', code.isEmpty ? '—' : code),
               const SizedBox(height: 12),
-              if (tx.id.isNotEmpty) ...[
+              if (code.isNotEmpty) ...[
                 OutlinedButton.icon(
                   onPressed: () async {
-                    await Clipboard.setData(ClipboardData(text: tx.id));
+                    await Clipboard.setData(ClipboardData(text: code));
                     if (ctx.mounted) {
                       ScaffoldMessenger.of(
                         ctx,
@@ -248,7 +250,7 @@ Future<void> showTransactionReceipt(BuildContext context, WalletTransactionDto t
                   onPressed: () async {
                     Navigator.of(ctx).pop();
                     if (context.mounted) {
-                      await showTransactionDisputeDialog(context, tx.id);
+                      await showTransactionDisputeDialog(context, code);
                     }
                   },
                   icon: const Icon(Icons.report_problem_outlined, size: 18),

@@ -53,6 +53,7 @@ dependencies:
   wakelock_plus: ^1.8.2
   connectivity_plus: ^7.3.2
   in_app_purchase: ^3.2.1
+  in_app_purchase_android: ^0.5.5
 
 dev_dependencies:
   flutter_test:

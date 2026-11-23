@@ -901,12 +901,16 @@ class WalletTransactionDto {
   final DateTime createdAt;
   final int balanceAfter;
 
+  /// Mã đơn (`OrderCode`) — dùng để báo lỗi / đối soát giao dịch; rỗng với dữ liệu cũ.
+  final String orderCode;
+
   const WalletTransactionDto({
     required this.id,
     required this.title,
     required this.amountVnd,
     required this.createdAt,
     required this.balanceAfter,
+    this.orderCode = '',
   });
 
   factory WalletTransactionDto.fromJson(Map<String, dynamic> json) {
@@ -918,11 +922,13 @@ class WalletTransactionDto {
           ? DateTime.tryParse(json['createdAt'].toString()) ?? DateTime.now()
           : DateTime.now(),
       balanceAfter: (json['balanceAfter'] as num?)?.toInt() ?? 0,
+      orderCode: json['orderCode']?.toString() ?? '',
     );
   }
 
   Map<String, dynamic> toJson() => {
     'id': id,
+    'orderCode': orderCode,
     'title': title,
     'amountVnd': amountVnd,
     'createdAt': createdAt.toIso8601String(),

@@ -1,6 +1,5 @@
-import 'dart:io';
+import 'dart:async';
 
-import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
@@ -23,32 +22,19 @@ class ShopPage extends ConsumerStatefulWidget {
 }
 
 class _ShopPageState extends ConsumerState<ShopPage> {
-  GooglePlayBillingService? _billing;
+  StreamSubscription<BillingEvent>? _billingSub;
   bool _isPurchasing = false;
 
-  static bool get _useGooglePlayBilling => !kIsWeb && Platform.isAndroid;
+  static bool get _useGooglePlayBilling => GooglePlayBillingService.isSupportedPlatform;
 
   @override
   void initState() {
     super.initState();
     if (_useGooglePlayBilling) {
-      _billing = GooglePlayBillingService(monetization: ref.read(monetizationServiceProvider));
-      _billing!.listenPurchases(
-        onVerified: (result) async {
-          await ref.read(walletNotifierProvider.notifier).refresh(silent: true);
-          if (!mounted) return;
-          setState(() => _isPurchasing = false);
-          showPaymentSuccessSnackBar(
-            context,
-            result.message.isNotEmpty ? result.message : 'Nạp thành công vào Ví qua Google Play!',
-          );
-        },
-        onError: (msg) {
-          if (!mounted) return;
-          setState(() => _isPurchasing = false);
-          showPaymentErrorSnackBar(context, msg);
-        },
-      );
+      // Thông báo kết quả do PanelForgeApp hiển thị; màn này chỉ tắt trạng thái đang mua.
+      _billingSub = ref.read(googlePlayBillingProvider).events.listen((_) {
+        if (mounted && _isPurchasing) setState(() => _isPurchasing = false);
+      });
     }
     Future.microtask(() {
       if (ref.read(authStateProvider).isAuthenticated) {
@@ -59,7 +45,7 @@ class _ShopPageState extends ConsumerState<ShopPage> {
 
   @override
   void dispose() {
-    _billing?.dispose();
+    _billingSub?.cancel();
     super.dispose();
   }
 
@@ -75,11 +61,11 @@ class _ShopPageState extends ConsumerState<ShopPage> {
 
   Future<void> _buyTopup(int amount) async {
     if (!await _ensureLoggedIn() || !mounted) return;
-    if (_useGooglePlayBilling && _billing != null) {
+    if (_useGooglePlayBilling) {
       if (_isPurchasing) return;
       setState(() => _isPurchasing = true);
       try {
-        final started = await _billing!.buyTopupAmount(amount);
+        final started = await ref.read(googlePlayBillingProvider).buyTopupAmount(amount);
         if (!started && mounted) {
           setState(() => _isPurchasing = false);
           showPaymentErrorSnackBar(
@@ -267,7 +253,7 @@ class _TopupTab extends StatelessWidget {
         Padding(
           padding: const EdgeInsets.fromLTRB(16, 12, 16, 8),
           child: Text(
-            !kIsWeb && Platform.isAndroid
+            GooglePlayBillingService.isSupportedPlatform
                 ? 'Số dư Ví dùng để mở khóa vĩnh viễn từng ấn bản ngôn ngữ trả phí. '
                     'Thanh toán an toàn qua Google Play Billing; tiền vào Ví ngay sau khi xác nhận.'
                 : 'Số dư Ví dùng để mở khóa vĩnh viễn từng ấn bản ngôn ngữ trả phí. '
