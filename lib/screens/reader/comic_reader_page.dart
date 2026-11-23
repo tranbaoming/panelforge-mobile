@@ -22,6 +22,7 @@ import '../../widgets/text_region_detail_sheet.dart';
 import '../../widgets/unlock_chapter_bottom_sheet.dart';
 import '../../widgets/vertical_page_slider.dart';
 import '../../widgets/wallet_topup_dialog.dart';
+import '../../widgets/watermark_overlay.dart';
 
 class ComicReaderPage extends ConsumerStatefulWidget {
   final String seriesId;
@@ -63,6 +64,7 @@ class _ComicReaderPageState extends ConsumerState<ComicReaderPage> with WidgetsB
 
   bool _isScreenLocked = false;
   bool _isPrivacyShieldActive = false;
+  StreamSubscription<ScreenSecurityEvent>? _securityEventsSub;
 
   /// Cài đặt riêng của bộ truyện này (chế độ đọc, nền, độ sáng) — lưu ngay khi độc giả đổi.
   late ReaderSeriesSettings _seriesSettings = PreferencesService.getReaderSeriesSettings(widget.seriesId);
@@ -80,6 +82,23 @@ class _ComicReaderPageState extends ConsumerState<ComicReaderPage> with WidgetsB
     HardwareKeyboard.instance.addHandler(_handleKeyEvent);
     // Cài đặt "Giữ màn hình sáng khi đọc" ở màn Cá nhân.
     ScreenSecurityService.keepScreenAwake(PreferencesService.getKeepScreenOn());
+    // Bảo vệ bản quyền cấp Native (Android FLAG_SECURE / iOS capture shield) cho TẤT CẢ các chương.
+    ScreenSecurityService.enableNativeProtection();
+    _securityEventsSub = ScreenSecurityService.securityEvents.listen((event) {
+      if (!mounted) return;
+      if (event.type == 'capturedChanged') {
+        setState(() => _isPrivacyShieldActive = event.isCaptured);
+      } else if (event.type == 'screenshotTaken') {
+        setState(() => _isPrivacyShieldActive = true);
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+            content: Text('🔒 Bảo mật: Không được phép chụp màn hình nội dung bản quyền PanelForge.'),
+            backgroundColor: AppColors.rose,
+            behavior: SnackBarBehavior.floating,
+          ),
+        );
+      }
+    });
     final savedTheme = ReaderThemeMode.values.where((t) => t.name == _seriesSettings.theme).firstOrNull;
     if (savedTheme != null) _themeMode = savedTheme;
     _loadData();
@@ -144,8 +163,10 @@ class _ComicReaderPageState extends ConsumerState<ComicReaderPage> with WidgetsB
   @override
   void dispose() {
     _autoNextTimer?.cancel();
+    _securityEventsSub?.cancel();
     WidgetsBinding.instance.removeObserver(this);
     HardwareKeyboard.instance.removeHandler(_handleKeyEvent);
+    ScreenSecurityService.disableNativeProtection();
     ScreenSecurityService.keepScreenAwake(false);
     ScreenSecurityService.unlockOrientation();
     super.dispose();
@@ -1246,6 +1267,16 @@ class _ComicReaderPageState extends ConsumerState<ComicReaderPage> with WidgetsB
                 ),
               ),
             ),
+
+          // Watermark bản quyền nhẹ mang danh tính độc giả trên mọi chương (cả miễn phí lẫn trả phí)
+          Positioned.fill(
+            child: IgnorePointer(
+              child: WatermarkOverlay(
+                text: ref.watch(authStateProvider).user?.email ?? 'PanelForge Reader',
+                opacity: 0.06,
+              ),
+            ),
+          ),
 
           // Lớp bảo mật chống chụp màn hình / chuyển tác vụ
           if (_isPrivacyShieldActive)

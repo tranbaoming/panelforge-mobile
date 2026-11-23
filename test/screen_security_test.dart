@@ -88,6 +88,33 @@ void main() {
       await ScreenSecurityService.lockOrientation(Orientation.landscape);
       await ScreenSecurityService.unlockOrientation();
     });
+
+    test('enableNativeProtection and disableNativeProtection invoke platform channel', () async {
+      final calls = <MethodCall>[];
+      const channel = MethodChannel('com.panelforge/screen_security');
+      TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger.setMockMethodCallHandler(
+        channel,
+        (call) async {
+          calls.add(call);
+          return true;
+        },
+      );
+      addTearDown(() {
+        TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger.setMockMethodCallHandler(channel, null);
+      });
+
+      await ScreenSecurityService.enableNativeProtection();
+      expect(ScreenSecurityService.isNativeProtected, isTrue);
+
+      await ScreenSecurityService.disableNativeProtection();
+      expect(ScreenSecurityService.isNativeProtected, isFalse);
+
+      expect(calls.length, 2);
+      expect(calls[0].method, 'setSecureFlag');
+      expect(calls[0].arguments, {'enable': true});
+      expect(calls[1].method, 'setSecureFlag');
+      expect(calls[1].arguments, {'enable': false});
+    });
   });
 
   group('NoPrintSecurityOverlay Widget Tests', () {
