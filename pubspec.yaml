@@ -52,6 +52,7 @@ dependencies:
   path: ^1.9.1
   wakelock_plus: ^1.8.2
   connectivity_plus: ^7.3.2
+  in_app_purchase: ^3.2.1
 
 dev_dependencies:
   flutter_test:
