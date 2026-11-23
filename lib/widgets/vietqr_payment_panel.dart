@@ -46,6 +46,11 @@ void showPaymentErrorSnackBar(BuildContext context, String message) {
   ).showSnackBar(_paymentSnackBar(message, icon: Icons.cloud_off_rounded, color: AppColors.rose));
 }
 
+/// SnackBar thanh toán dùng được khi không có BuildContext (vd. qua `ScaffoldMessengerState` gốc).
+SnackBar paymentResultSnackBar(String message, {required bool success}) => success
+    ? _paymentSnackBar(message, icon: Icons.check_circle_rounded, color: AppColors.mint)
+    : _paymentSnackBar(message, icon: Icons.cloud_off_rounded, color: AppColors.rose);
+
 void showPaymentSuccessSnackBar(BuildContext context, String message) {
   ScaffoldMessenger.of(
     context,

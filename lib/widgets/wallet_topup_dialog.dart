@@ -1,6 +1,5 @@
-import 'dart:io';
+import 'dart:async';
 
-import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:google_fonts/google_fonts.dart';
@@ -57,9 +56,9 @@ class _WalletTopupDialogState extends ConsumerState<WalletTopupDialog> with Sing
   int _selectedAmountVnd = 50000;
   bool _isLoadingQr = false;
   TopupResponse? _topupData;
-  GooglePlayBillingService? _billing;
+  StreamSubscription<BillingEvent>? _billingSub;
 
-  static bool get _useGooglePlayBilling => !kIsWeb && Platform.isAndroid;
+  static bool get _useGooglePlayBilling => GooglePlayBillingService.isSupportedPlatform;
 
   List<({int amount, String tag})> get _vndPackages => kTopupPackages;
 
@@ -68,38 +67,26 @@ class _WalletTopupDialogState extends ConsumerState<WalletTopupDialog> with Sing
     super.initState();
     _tabController = TabController(length: 2, vsync: this, initialIndex: widget.initialTab.clamp(0, 1));
     if (_useGooglePlayBilling) {
-      _billing = GooglePlayBillingService(monetization: ref.read(monetizationServiceProvider));
-      _billing!.listenPurchases(
-        onVerified: (result) async {
-          await ref.read(walletNotifierProvider.notifier).refresh(silent: true);
-          if (!mounted) return;
-          setState(() => _isLoadingQr = false);
-          showPaymentSuccessSnackBar(
-            context,
-            result.message.isNotEmpty ? result.message : 'Nạp thành công vào Ví qua Google Play!',
-          );
-        },
-        onError: (msg) {
-          if (!mounted) return;
-          setState(() => _isLoadingQr = false);
-          showPaymentErrorSnackBar(context, msg);
-        },
-      );
+      // Thông báo kết quả do PanelForgeApp hiển thị; hộp thoại chỉ tắt trạng thái đang mua.
+      _billingSub = ref.read(googlePlayBillingProvider).events.listen((event) {
+        if (!mounted) return;
+        if (_isLoadingQr) setState(() => _isLoadingQr = false);
+      });
     }
   }
 
   @override
   void dispose() {
-    _billing?.dispose();
+    _billingSub?.cancel();
     _tabController.dispose();
     super.dispose();
   }
 
   Future<void> _startTopup() async {
-    if (_useGooglePlayBilling && _billing != null) {
+    if (_useGooglePlayBilling) {
       setState(() => _isLoadingQr = true);
       try {
-        final started = await _billing!.buyTopupAmount(_selectedAmountVnd);
+        final started = await ref.read(googlePlayBillingProvider).buyTopupAmount(_selectedAmountVnd);
         if (!started && mounted) {
           setState(() => _isLoadingQr = false);
           showPaymentErrorSnackBar(
