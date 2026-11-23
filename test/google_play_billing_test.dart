@@ -5,6 +5,7 @@ import 'package:panelforge/services/monetization_service.dart';
 void main() {
   group('GooglePlayBillingService SKU Catalog & DTOs', () {
     test('maps supported VND topup amounts to Google Play product IDs', () {
+      expect(GooglePlayBillingService.productIdForAmount(10000), 'panelforge_topup_10k');
       expect(GooglePlayBillingService.productIdForAmount(20000), 'panelforge_topup_20k');
       expect(GooglePlayBillingService.productIdForAmount(50000), 'panelforge_topup_50k');
       expect(GooglePlayBillingService.productIdForAmount(100000), 'panelforge_topup_100k');

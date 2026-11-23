@@ -14,6 +14,7 @@ class GooglePlayBillingService {
 
   /// Bảng ánh xạ Mệnh giá (VNĐ) ↔ SKU trên Google Play Console.
   static const Map<int, String> amountToProductId = {
+    10000: 'panelforge_topup_10k',
     20000: 'panelforge_topup_20k',
     50000: 'panelforge_topup_50k',
     100000: 'panelforge_topup_100k',
