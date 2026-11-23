@@ -653,6 +653,26 @@ class AuthService {
     return 'Bạn đã đăng xuất khỏi PanelForge';
   }
 
+  /// 12a. Lấy danh sách thiết bị đang đăng nhập và giới hạn thiết bị tối đa
+  /// GET /api/auth/sessions
+  Future<ActiveSessionsResponse> getActiveSessions() async {
+    final response = await _client.get('/api/auth/sessions');
+    if (response.data is Map<String, dynamic>) {
+      return ActiveSessionsResponse.fromJson(response.data as Map<String, dynamic>);
+    }
+    throw ApiException('Không thể tải danh sách thiết bị đang đăng nhập.');
+  }
+
+  /// 12b. Đăng xuất từ xa một thiết bị cụ thể
+  /// DELETE /api/auth/sessions/{sessionId}
+  Future<String> revokeSession(String sessionId) async {
+    final response = await _client.delete('/api/auth/sessions/$sessionId');
+    if (response.data is Map<String, dynamic>) {
+      return response.data['message']?.toString() ?? 'Đã đăng xuất thiết bị.';
+    }
+    return 'Đã đăng xuất thiết bị.';
+  }
+
   /// 12b. Cho phép người dùng chủ động tiếp tục ở chế độ Khách (Guest)
   void continueAsGuest() {
     onAuthStateChanged?.call(AuthState.guest());

@@ -8,6 +8,7 @@ import '../screens/explore/explore_page.dart';
 import '../screens/explore/search_page.dart';
 import '../screens/foryou/for_you_page.dart';
 import '../screens/shop/shop_page.dart';
+import '../screens/profile/active_devices_page.dart';
 import '../screens/profile/activity_page.dart';
 import '../screens/profile/downloads_page.dart';
 import '../screens/profile/profile_page.dart';
@@ -123,6 +124,13 @@ final appRouterProvider = Provider<GoRouter>((ref) {
         parentNavigatorKey: _rootNavigatorKey,
         path: '/settings',
         builder: (context, state) => const SettingsPage(),
+      ),
+
+      // Quản lý thiết bị đang đăng nhập (giới hạn tối đa 3 thiết bị).
+      GoRoute(
+        parentNavigatorKey: _rootNavigatorKey,
+        path: '/settings/devices',
+        builder: (context, state) => const ActiveDevicesPage(),
       ),
 
       // Văn bản: terms | privacy | copyright | faq.
