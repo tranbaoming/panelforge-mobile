@@ -1,0 +1,13 @@
+# Sao chép thành android/key.properties (file đó đã .gitignore — KHÔNG commit) rồi điền giá trị thật.
+#
+# Tạo upload keystore một lần (giữ file .jks và mật khẩu ở nơi an toàn, mất là không cập nhật được app):
+#   keytool -genkey -v -keystore %USERPROFILE%\panelforge-upload.jks -keyalg RSA -keysize 2048 -validity 10000 -alias upload
+#
+# Lấy SHA-1 để đăng ký Android OAuth client (Google Sign-In) — cùng với SHA-1 "App signing key" trên Play Console:
+#   keytool -list -v -keystore %USERPROFILE%\panelforge-upload.jks -alias upload
+#
+# storeFile: đường dẫn tuyệt đối, hoặc tương đối so với thư mục android/app.
+storePassword=
+keyPassword=
+keyAlias=upload
+storeFile=C:/Users/<you>/panelforge-upload.jks

@@ -5,6 +5,22 @@ import 'package:flutter/foundation.dart';
 class ApiConfig {
   static const int defaultPort = 5044;
 
+  /// Máy chủ production, truyền lúc build: `--dart-define=API_BASE_URL=https://api.example.com`.
+  /// Bỏ trống (chạy dev) → tự chọn localhost / 10.0.2.2 như bên dưới.
+  static const String _buildBaseUrl = String.fromEnvironment('API_BASE_URL');
+
+  /// true khi bản build không có `API_BASE_URL` → đang trỏ vào máy chủ dev (localhost / emulator).
+  static bool get usesDevServer =>
+      (_customBaseUrl == null || _customBaseUrl!.isEmpty) && _normalize(_buildBaseUrl).isEmpty;
+
+  static String _normalize(String url) {
+    var trimmed = url.trim();
+    while (trimmed.endsWith('/')) {
+      trimmed = trimmed.substring(0, trimmed.length - 1);
+    }
+    return trimmed;
+  }
+
   static String? _customBaseUrl;
 
   static void setCustomBaseUrl(String? url) {
@@ -23,6 +39,8 @@ class ApiConfig {
     if (_customBaseUrl != null && _customBaseUrl!.isNotEmpty) {
       return _customBaseUrl!;
     }
+    final fromBuild = _normalize(_buildBaseUrl);
+    if (fromBuild.isNotEmpty) return fromBuild;
     if (kIsWeb) {
       return 'http://localhost:$defaultPort';
     }
