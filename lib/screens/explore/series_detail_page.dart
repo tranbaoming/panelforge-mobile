@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
+import '../../navigation/back_navigation.dart';
 import 'package:google_fonts/google_fonts.dart';
 import '../../models/api_dtos.dart';
 import '../../models/comic_model.dart';
@@ -368,7 +369,7 @@ class _SeriesDetailPageState extends ConsumerState<SeriesDetailPage> {
     leading: IconButton(
       tooltip: 'Quay lại',
       icon: Icon(Icons.arrow_back_rounded, color: ForgeColors.text),
-      onPressed: () => context.pop(),
+      onPressed: () => context.popOrGo('/'),
     ),
     title: Text(
       series?.title ?? '',

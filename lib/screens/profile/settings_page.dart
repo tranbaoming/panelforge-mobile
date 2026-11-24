@@ -4,6 +4,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
+import '../../navigation/back_navigation.dart';
 import 'package:google_fonts/google_fonts.dart';
 import 'package:path_provider/path_provider.dart';
 import 'package:url_launcher/url_launcher.dart';
@@ -376,7 +377,7 @@ class _SettingsPageState extends ConsumerState<SettingsPage> {
         leading: IconButton(
           tooltip: 'Quay lại',
           icon: Icon(Icons.arrow_back_rounded, color: ForgeColors.text),
-          onPressed: () => context.pop(),
+          onPressed: () => context.popOrGo('/profile'),
         ),
         title: Text(
           'Cài đặt',

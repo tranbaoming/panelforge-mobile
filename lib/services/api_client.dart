@@ -15,8 +15,10 @@ class ApiException implements Exception {
 
   ApiException(this.message, {this.statusCode, this.data});
 
+  /// Chỉ trả về thông điệp thân thiện: nhiều màn hình hiển thị thẳng `'$e'` cho người dùng,
+  /// nên không kèm tiền tố "ApiException:" hay "(code: 401)" (mã lỗi đã được interceptor ghi log).
   @override
-  String toString() => 'ApiException: $message (code: $statusCode)';
+  String toString() => message;
 }
 
 /// Interceptor phụ trách CSRF, User-Agent, Rate Limit (429) và Silent Refresh (401)
