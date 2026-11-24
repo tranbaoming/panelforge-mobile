@@ -1,13 +1,17 @@
+import 'dart:async';
+
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:google_fonts/google_fonts.dart';
 import '../models/api_dtos.dart';
 import '../providers/api_providers.dart';
 import '../services/api_client.dart';
+import '../services/google_play_billing_service.dart';
 import '../services/preferences_service.dart';
 import '../theme/app_theme.dart';
 import 'auth_modal_sheet.dart';
 import 'vietqr_payment_panel.dart';
+import 'wallet_history.dart';
 
 /// Mệnh giá nạp Ví VietQR (dùng chung cho hộp thoại Ví và tab Cửa hàng). Không có thưởng thêm — Backend không hỗ trợ.
 const List<({int amount, String tag})> kTopupPackages = [
@@ -52,6 +56,9 @@ class _WalletTopupDialogState extends ConsumerState<WalletTopupDialog> with Sing
   int _selectedAmountVnd = 50000;
   bool _isLoadingQr = false;
   TopupResponse? _topupData;
+  StreamSubscription<BillingEvent>? _billingSub;
+
+  static bool get _useGooglePlayBilling => GooglePlayBillingService.isSupportedPlatform;
 
   List<({int amount, String tag})> get _vndPackages => kTopupPackages;
 
@@ -59,12 +66,43 @@ class _WalletTopupDialogState extends ConsumerState<WalletTopupDialog> with Sing
   void initState() {
     super.initState();
     _tabController = TabController(length: 2, vsync: this, initialIndex: widget.initialTab.clamp(0, 1));
+    if (_useGooglePlayBilling) {
+      // Thông báo kết quả do PanelForgeApp hiển thị; hộp thoại chỉ tắt trạng thái đang mua.
+      _billingSub = ref.read(googlePlayBillingProvider).events.listen((event) {
+        if (!mounted) return;
+        if (_isLoadingQr) setState(() => _isLoadingQr = false);
+      });
+    }
   }
 
   @override
   void dispose() {
+    _billingSub?.cancel();
     _tabController.dispose();
     super.dispose();
+  }
+
+  Future<void> _startTopup() async {
+    if (_useGooglePlayBilling) {
+      setState(() => _isLoadingQr = true);
+      try {
+        final started = await ref.read(googlePlayBillingProvider).buyTopupAmount(_selectedAmountVnd);
+        if (!started && mounted) {
+          setState(() => _isLoadingQr = false);
+          showPaymentErrorSnackBar(
+            context,
+            'Gói nạp chưa sẵn sàng trên Google Play Store. Vui lòng kiểm tra tài khoản CH Play và thử lại.',
+          );
+        }
+      } catch (e) {
+        if (mounted) {
+          setState(() => _isLoadingQr = false);
+          showPaymentErrorSnackBar(context, 'Không thể khởi tạo thanh toán Google Play: $e');
+        }
+      }
+      return;
+    }
+    await _generateVietQR();
   }
 
   Future<void> _generateVietQR() async {
@@ -114,7 +152,6 @@ class _WalletTopupDialogState extends ConsumerState<WalletTopupDialog> with Sing
     final wallet = walletState.asData?.value;
     final cachedVnd = PreferencesService.getLocalBalanceVnd();
     final currentVnd = wallet?.balanceVnd ?? cachedVnd;
-    final isVip = wallet?.isVip ?? PreferencesService.getLocalIsVip();
 
     return Dialog(
       backgroundColor: AppColors.darkSurface,
@@ -166,25 +203,6 @@ class _WalletTopupDialogState extends ConsumerState<WalletTopupDialog> with Sing
                                 ],
                               ),
                             ),
-                            if (isVip) ...[
-                              const SizedBox(width: 8),
-                              Container(
-                                padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
-                                decoration: BoxDecoration(
-                                  color: AppColors.mint.withValues(alpha: 0.15),
-                                  borderRadius: BorderRadius.circular(8),
-                                  border: Border.all(color: AppColors.mint.withValues(alpha: 0.3)),
-                                ),
-                                child: Text(
-                                  'VIP ACTIVE',
-                                  style: GoogleFonts.plusJakartaSans(
-                                    fontSize: 10,
-                                    fontWeight: FontWeight.w800,
-                                    color: AppColors.mint,
-                                  ),
-                                ),
-                              ),
-                            ],
                           ],
                         ),
                       ],
@@ -335,9 +353,9 @@ class _WalletTopupDialogState extends ConsumerState<WalletTopupDialog> with Sing
 
           const SizedBox(height: 14),
 
-          // Nút tạo mã VietQR
+          // Nút nạp tiền (Google Play Billing trên Android CH Play; fallback VietQR trên Desktop/Dev)
           ElevatedButton(
-            onPressed: _isLoadingQr ? null : _generateVietQR,
+            onPressed: _isLoadingQr ? null : _startTopup,
             style: ElevatedButton.styleFrom(
               backgroundColor: AppColors.primary,
               foregroundColor: Colors.white,
@@ -351,13 +369,15 @@ class _WalletTopupDialogState extends ConsumerState<WalletTopupDialog> with Sing
                     child: CircularProgressIndicator(strokeWidth: 2, color: Colors.white),
                   )
                 : Text(
-                    'Tạo Mã VietQR Thanh Toán',
+                    _useGooglePlayBilling ? 'Thanh Toán Qua Google Play' : 'Tạo Mã VietQR Thanh Toán',
                     style: GoogleFonts.plusJakartaSans(fontSize: 15, fontWeight: FontWeight.w700),
                   ),
           ),
           const SizedBox(height: 12),
           Text(
-            'Số dư được cộng ngay khi Studio xác nhận đã nhận tiền.',
+            _useGooglePlayBilling
+                ? 'Thanh toán an toàn qua Google Play Billing. Số dư được cộng ngay khi xác thực.'
+                : 'Số dư được cộng ngay khi Studio xác nhận đã nhận tiền.',
             textAlign: TextAlign.center,
             style: GoogleFonts.plusJakartaSans(fontSize: 11.5, color: AppColors.darkTextSecondary),
           ),
@@ -403,70 +423,6 @@ class _WalletTopupDialogState extends ConsumerState<WalletTopupDialog> with Sing
       );
     }
 
-    return ListView.separated(
-      padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
-      itemCount: transactions.length,
-      separatorBuilder: (context, index) => const Divider(color: AppColors.darkBorder, height: 1),
-      itemBuilder: (context, index) {
-        final tx = transactions[index];
-        final isPositive = tx.amountVnd > 0;
-        final dateStr =
-            '${tx.createdAt.day.toString().padLeft(2, '0')}/${tx.createdAt.month.toString().padLeft(2, '0')}/${tx.createdAt.year} ${tx.createdAt.hour.toString().padLeft(2, '0')}:${tx.createdAt.minute.toString().padLeft(2, '0')}';
-
-        return Padding(
-          padding: const EdgeInsets.symmetric(vertical: 10),
-          child: Row(
-            children: [
-              Container(
-                padding: const EdgeInsets.all(8),
-                decoration: BoxDecoration(
-                  color: isPositive
-                      ? AppColors.mint.withValues(alpha: 0.15)
-                      : AppColors.primary.withValues(alpha: 0.15),
-                  shape: BoxShape.circle,
-                ),
-                child: Icon(
-                  isPositive ? Icons.add_circle_outline_rounded : Icons.remove_circle_outline_rounded,
-                  color: isPositive ? AppColors.mint : AppColors.primary,
-                  size: 20,
-                ),
-              ),
-              const SizedBox(width: 12),
-              Expanded(
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    Text(
-                      tx.title,
-                      style: GoogleFonts.plusJakartaSans(
-                        fontSize: 13,
-                        fontWeight: FontWeight.w700,
-                        color: Colors.white,
-                      ),
-                      maxLines: 1,
-                      overflow: TextOverflow.ellipsis,
-                    ),
-                    const SizedBox(height: 2),
-                    Text(
-                      '$dateStr • Sau GD: ${formatVnd(tx.balanceAfter)}',
-                      style: GoogleFonts.plusJakartaSans(fontSize: 11, color: AppColors.darkTextSecondary),
-                    ),
-                  ],
-                ),
-              ),
-              const SizedBox(width: 8),
-              Text(
-                formatVnd(tx.amountVnd, showSign: true),
-                style: GoogleFonts.plusJakartaSans(
-                  fontSize: 13.5,
-                  fontWeight: FontWeight.w800,
-                  color: isPositive ? AppColors.mint : AppColors.primary,
-                ),
-              ),
-            ],
-          ),
-        );
-      },
-    );
+    return WalletHistoryList(transactions: transactions);
   }
 }

@@ -239,3 +239,62 @@ class AuthState {
   }
 }
 
+/// Phiên thiết bị đang đăng nhập (từ `GET /api/auth/sessions`).
+@immutable
+class ActiveSessionModel {
+  final String sessionId;
+  final String deviceName;
+  final String? ipAddress;
+  final DateTime? sessionStartedAt;
+  final DateTime? lastActiveAt;
+  final bool isCurrent;
+
+  const ActiveSessionModel({
+    required this.sessionId,
+    required this.deviceName,
+    this.ipAddress,
+    this.sessionStartedAt,
+    this.lastActiveAt,
+    this.isCurrent = false,
+  });
+
+  factory ActiveSessionModel.fromJson(Map<String, dynamic> json) {
+    return ActiveSessionModel(
+      sessionId: json['sessionId']?.toString() ?? '',
+      deviceName: json['deviceName']?.toString() ?? 'Thiết bị không xác định',
+      ipAddress: json['ipAddress']?.toString(),
+      sessionStartedAt: DateTime.tryParse(json['sessionStartedAt']?.toString() ?? ''),
+      lastActiveAt: DateTime.tryParse(json['lastActiveAt']?.toString() ?? ''),
+      isCurrent: json['isCurrent'] == true,
+    );
+  }
+}
+
+@immutable
+class ActiveSessionsResponse {
+  final int maxConcurrentSessions;
+  final List<ActiveSessionModel> sessions;
+
+  const ActiveSessionsResponse({
+    required this.maxConcurrentSessions,
+    required this.sessions,
+  });
+
+  factory ActiveSessionsResponse.fromJson(Map<String, dynamic> json) {
+    final raw = json['sessions'];
+    final list = <ActiveSessionModel>[];
+    if (raw is List) {
+      for (final item in raw) {
+        if (item is Map<String, dynamic>) {
+          list.add(ActiveSessionModel.fromJson(item));
+        }
+      }
+    }
+    return ActiveSessionsResponse(
+      maxConcurrentSessions: (json['maxConcurrentSessions'] as num?)?.toInt() ?? 3,
+      sessions: list,
+    );
+  }
+}
+
+

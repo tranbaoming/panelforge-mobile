@@ -298,7 +298,7 @@ void main() {
 
       // Verify Header and Title
       expect(find.text('Đăng Nhập Độc Giả'), findsOneWidget);
-      expect(find.text('Mở khóa truyện & đồng bộ ForgeCoins'), findsOneWidget);
+      expect(find.text('Mở khóa truyện & đồng bộ Ví VNĐ'), findsOneWidget);
 
       // Verify Inputs
       expect(find.text('Email tài khoản:'), findsOneWidget);

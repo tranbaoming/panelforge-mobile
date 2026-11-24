@@ -34,7 +34,7 @@ class EditionLanguageMenu extends StatelessWidget {
             const SizedBox(width: 4),
             Text(
               current.toUpperCase(),
-              style: GoogleFonts.plusJakartaSans(fontSize: 11, fontWeight: FontWeight.w800, color: AppColors.mint),
+              style: GoogleFonts.plusJakartaSans(fontSize: 12, fontWeight: FontWeight.w800, color: AppColors.mint),
             ),
           ],
         ),
@@ -63,7 +63,7 @@ class EditionLanguageMenu extends StatelessWidget {
               if (!o.isUnlocked) ...[
                 const Icon(Icons.lock_rounded, size: 14, color: AppColors.primary),
                 const SizedBox(width: 4),
-                Text(formatVnd(o.priceVnd), style: GoogleFonts.plusJakartaSans(fontSize: 11.5)),
+                Text(formatVnd(o.priceVnd), style: GoogleFonts.plusJakartaSans(fontSize: 12)),
               ],
             ],
           ),

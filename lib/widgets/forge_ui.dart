@@ -13,6 +13,11 @@ String formatViews(int views) {
   return '$views';
 }
 
+/// Chiều cao cần thêm cho [textHeight] px chữ khi người đọc phóng to cỡ chữ (Cài đặt → Cỡ chữ / cỡ chữ hệ thống).
+/// Dùng cho các hàng / lưới có chiều cao cố định để thẻ không bị tràn.
+double textScaleExtra(BuildContext context, double textHeight) =>
+    (MediaQuery.textScalerOf(context).scale(100) / 100 - 1).clamp(0.0, 2.0) * textHeight;
+
 String timeAgo(DateTime? time) {
   if (time == null) return 'Mới';
   final diff = DateTime.now().difference(time);
@@ -337,24 +342,30 @@ class ComicGrid extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return GridView.builder(
-      shrinkWrap: shrinkWrap,
-      physics: shrinkWrap ? const NeverScrollableScrollPhysics() : const BouncingScrollPhysics(),
-      padding: const EdgeInsets.fromLTRB(16, 8, 16, 24),
-      gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
-        crossAxisCount: 2,
-        crossAxisSpacing: 12,
-        mainAxisSpacing: 14,
-        childAspectRatio: 0.56,
-      ),
-      itemCount: series.length,
-      itemBuilder: (context, i) {
-        final s = series[i];
-        return ComicCard(
-          series: s,
-          isHot: hotIds.contains(s.id),
-          timeBadge: showTimeBadge ? timeAgo(updatedAt?.call(s)) : null,
-          onTap: () => onOpen(s),
+    return LayoutBuilder(
+      builder: (context, constraints) {
+        // Ô 2 cột tỉ lệ 0.56, cộng thêm chỗ cho chữ khi phóng to cỡ chữ.
+        final cellWidth = (constraints.maxWidth - 32 - 12) / 2;
+        return GridView.builder(
+          shrinkWrap: shrinkWrap,
+          physics: shrinkWrap ? const NeverScrollableScrollPhysics() : const BouncingScrollPhysics(),
+          padding: const EdgeInsets.fromLTRB(16, 8, 16, 24),
+          gridDelegate: SliverGridDelegateWithFixedCrossAxisCount(
+            crossAxisCount: 2,
+            crossAxisSpacing: 12,
+            mainAxisSpacing: 14,
+            mainAxisExtent: cellWidth / 0.56 + textScaleExtra(context, 60),
+          ),
+          itemCount: series.length,
+          itemBuilder: (context, i) {
+            final s = series[i];
+            return ComicCard(
+              series: s,
+              isHot: hotIds.contains(s.id),
+              timeBadge: showTimeBadge ? timeAgo(updatedAt?.call(s)) : null,
+              onTap: () => onOpen(s),
+            );
+          },
         );
       },
     );
@@ -515,7 +526,7 @@ class StudioStrip extends StatelessWidget {
   }
 }
 
-/// Thanh vàng full-width dưới thẻ: số chương ("13 chương") hoặc "Tất cả chương" (VIP).
+/// Thanh vàng full-width dưới thẻ: số chương ("13 chương") hoặc nhãn bộ sưu tập.
 class ChapterCountBar extends StatelessWidget {
   final String label;
   final IconData icon;

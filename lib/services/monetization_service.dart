@@ -7,7 +7,7 @@ import '../models/api_dtos.dart';
 import 'api_client.dart';
 import 'preferences_service.dart';
 
-/// Dịch vụ Ví độc giả, mở khóa chương, gói VIP và thanh toán VietQR — kết nối trực tiếp `WalletController`.
+/// Dịch vụ Ví độc giả, mở khóa chương và thanh toán VietQR — kết nối trực tiếp `WalletController`.
 ///
 /// Mọi số dư, giá và quyền sở hữu đều do Backend quyết định. Cache trong [PreferencesService]
 /// chỉ dùng để hiển thị nhanh và luôn được ghi đè bằng dữ liệu `GET /api/wallet/me`.
@@ -17,7 +17,7 @@ class MonetizationService {
   MonetizationService({ApiClient? client, Dio? dio})
     : _client = client ?? (dio != null ? ApiClient(customDio: dio) : ApiClient());
 
-  /// `GET /api/wallet/me` — số dư, VIP, chương đã mở khóa và lịch sử giao dịch.
+  /// `GET /api/wallet/me` — số dư, chương đã mở khóa và lịch sử giao dịch.
   Future<UserWalletDto> getMyWallet() async {
     final response = await _client.get('/api/wallet/me');
     final data = response.data;
@@ -29,8 +29,8 @@ class MonetizationService {
     return wallet;
   }
 
-  /// `POST /api/wallet/unlock-chapter` — mở khóa vĩnh viễn bằng số dư Ví (hoặc miễn phí nếu VIP).
-  /// Giá trừ do server lấy từ cấu hình chương trên web.
+  /// `POST /api/wallet/unlock-chapter` — mở khóa vĩnh viễn ấn bản bằng số dư Ví.
+  /// Giá trừ do server lấy từ cấu hình ấn bản ngôn ngữ của chương trên web.
   Future<UnlockChapterResponse> unlockChapterWithWallet({
     required String chapterId,
     String? seriesId,
@@ -46,32 +46,26 @@ class MonetizationService {
     }
     await PreferencesService.setLocalBalanceVnd(resp.remainingBalanceVnd);
     await PreferencesService.saveChapterEntitlement(
-      ChapterEntitlement(chapterId: chapterId, isPermanent: true, unlockedAt: DateTime.now()),
+      ChapterEntitlement(
+        chapterId: chapterId,
+        language: language,
+        isPermanent: true,
+        unlockedAt: DateTime.now(),
+      ),
     );
     return resp;
   }
 
-  /// `POST /api/wallet/subscribe-vip` — kích hoạt VIP bằng số dư Ví.
-  Future<SubscribeVipResponse> subscribeVipWithWallet({required String plan}) async {
-    final response = await _client.post('/api/wallet/subscribe-vip', data: SubscribeVipRequest(plan: plan).toJson());
-    final resp = SubscribeVipResponse.fromJson(response.data as Map<String, dynamic>);
-    await PreferencesService.setLocalVip(isVip: resp.isVip, expiresAt: resp.vipExpiresAt);
-    await PreferencesService.setLocalBalanceVnd(resp.remainingCoins * 100);
-    return resp;
-  }
-
-  /// `POST /api/wallet/topup` — tạo đơn VietQR (Pending) kèm ngữ cảnh để bên duyệt trên web thấy đúng Studio.
+  /// `POST /api/wallet/topup` — tạo đơn VietQR (Pending) để nạp Ví hoặc mở khóa ấn bản.
   ///
   /// - [PaymentPurpose.topup]: nạp [amountVnd] vào Ví.
-  /// - [PaymentPurpose.chapterUnlock]: trả trực tiếp để mở [chapterId] (giá do server lấy từ chương).
-  /// - [PaymentPurpose.vipSubscription]: trả trực tiếp gói [vipPlan] (`monthly` | `yearly`).
+  /// - [PaymentPurpose.chapterUnlock]: trả trực tiếp để mở [chapterId] (giá do server lấy từ ấn bản).
   Future<TopupResponse> createVietQrOrder({
     PaymentPurpose purpose = PaymentPurpose.topup,
     int? amountVnd,
     String? workspaceId,
     String? seriesId,
     String? chapterId,
-    String? vipPlan,
     String? language,
   }) async {
     final response = await _client.post(
@@ -82,7 +76,6 @@ class MonetizationService {
         workspaceId: workspaceId,
         seriesId: seriesId,
         chapterId: chapterId,
-        vipPlan: vipPlan,
         language: language,
       ).toJson(),
     );
@@ -99,6 +92,44 @@ class MonetizationService {
     return TransactionStatusDto.fromJson(response.data as Map<String, dynamic>);
   }
 
+  /// `POST /api/wallet/google-play/verify` — xác thực giao dịch Google Play Billing (CH Play) và cộng Ví.
+  Future<GooglePlayVerifyResult> verifyGooglePlayPurchase({
+    required String productId,
+    required String purchaseToken,
+    String packageName = 'com.panelforge.reader',
+  }) async {
+    final response = await _client.post(
+      '/api/wallet/google-play/verify',
+      data: {
+        'productId': productId,
+        'purchaseToken': purchaseToken,
+        'packageName': packageName,
+      },
+    );
+    final data = response.data;
+    if (data is! Map<String, dynamic>) {
+      throw ApiException('Máy chủ phản hồi không hợp lệ.', statusCode: response.statusCode);
+    }
+    final result = GooglePlayVerifyResult.fromJson(data);
+    await PreferencesService.setLocalBalanceVnd(result.balanceVnd);
+    return result;
+  }
+
+  /// `POST /api/wallet/transactions/{orderCode}/dispute` — gửi báo cáo lỗi giao dịch để Admin đối soát.
+  Future<String> reportTransactionIssue({
+    required String orderCode,
+    required String reason,
+  }) async {
+    final response = await _client.post(
+      '/api/wallet/transactions/${Uri.encodeComponent(orderCode)}/dispute',
+      data: {'reason': reason.trim()},
+    );
+    if (response.data is Map<String, dynamic>) {
+      return response.data['message']?.toString() ?? 'Đã gửi yêu cầu đối soát giao dịch.';
+    }
+    return 'Đã gửi yêu cầu đối soát giao dịch.';
+  }
+
   /// Backend chỉ hỗ trợ mở khóa vĩnh viễn: không còn trừ lượt xem phía client.
   Future<ConsumeViewResult> consumeChapterView(String chapterId) async {
     return const ConsumeViewResult(didConsume: false, isPermanent: true);
@@ -107,14 +138,42 @@ class MonetizationService {
   /// Xóa cache Ví khi phiên đăng nhập không còn hợp lệ (Guest / đăng xuất / 401).
   Future<void> clearLocalCache() async {
     await PreferencesService.setLocalBalanceVnd(0);
-    await PreferencesService.setLocalVip(isVip: false, expiresAt: null);
     await PreferencesService.replaceUnlockedChapterIds(const {});
   }
 
   Future<void> _cacheWallet(UserWalletDto wallet) async {
     await PreferencesService.setLocalBalanceVnd(wallet.balanceVnd);
-    await PreferencesService.setLocalVip(isVip: wallet.hasActiveVip, expiresAt: wallet.vipExpiresAt);
     await PreferencesService.replaceUnlockedChapterIds(wallet.unlockedChapterIds);
+  }
+}
+
+/// Kết quả xác thực nạp tiền qua Google Play Billing (`POST /api/wallet/google-play/verify`).
+class GooglePlayVerifyResult {
+  final bool success;
+  final int balanceVnd;
+  final int creditedVnd;
+  final String orderCode;
+  final bool alreadyProcessed;
+  final String message;
+
+  const GooglePlayVerifyResult({
+    required this.success,
+    required this.balanceVnd,
+    required this.creditedVnd,
+    required this.orderCode,
+    required this.alreadyProcessed,
+    required this.message,
+  });
+
+  factory GooglePlayVerifyResult.fromJson(Map<String, dynamic> json) {
+    return GooglePlayVerifyResult(
+      success: json['success'] == true,
+      balanceVnd: (json['balanceVnd'] as num?)?.toInt() ?? 0,
+      creditedVnd: (json['creditedVnd'] as num?)?.toInt() ?? 0,
+      orderCode: json['orderCode']?.toString() ?? '',
+      alreadyProcessed: json['alreadyProcessed'] == true,
+      message: json['message']?.toString() ?? '',
+    );
   }
 }
 
@@ -166,16 +225,17 @@ class WalletNotifier extends Notifier<AsyncValue<UserWalletDto>> {
       seriesId: seriesId,
       language: language,
     );
+    final editionKey = ChapterEntitlement.editionKey(chapterId, language);
     final current = state.asData?.value;
     if (current != null) {
       state = AsyncData(
         current.copyWith(
           balanceVnd: response.remainingBalanceVnd,
-          unlockedChapterIds: {...current.unlockedChapterIds, chapterId},
+          unlockedChapterIds: {...current.unlockedChapterIds, chapterId, editionKey},
         ),
       );
     }
-    ref.read(unlockedChaptersProvider.notifier).add(chapterId);
+    ref.read(unlockedChaptersProvider.notifier).add(chapterId, language: language);
     ref.read(chapterEntitlementsProvider.notifier).refresh();
     // Lấy lại lịch sử giao dịch thật từ server mà không làm nháy UI.
     unawaited(refresh(silent: true));
@@ -185,13 +245,6 @@ class WalletNotifier extends Notifier<AsyncValue<UserWalletDto>> {
   /// Tiêu hao lượt xem — giữ API cho Reader; Backend chỉ có quyền đọc vĩnh viễn.
   Future<ConsumeViewResult> consumeChapterView(String chapterId) => _service.consumeChapterView(chapterId);
 
-  /// Kích hoạt VIP bằng số dư Ví.
-  Future<SubscribeVipResponse> subscribeVip(String plan) async {
-    final response = await _service.subscribeVipWithWallet(plan: plan);
-    await refresh(silent: true);
-    return response;
-  }
-
   void _syncEntitlementProviders() {
     ref.read(unlockedChaptersProvider.notifier).refresh();
     ref.read(chapterEntitlementsProvider.notifier).refresh();
@@ -200,7 +253,7 @@ class WalletNotifier extends Notifier<AsyncValue<UserWalletDto>> {
 
 final walletNotifierProvider = NotifierProvider<WalletNotifier, AsyncValue<UserWalletDto>>(WalletNotifier.new);
 
-/// Notifier quản lý danh sách các chapterId đã mở khóa (cache của `UnlockedChapterIds` trên server).
+/// Notifier quản lý danh sách các chapterId / editionKey đã mở khóa (cache của `UnlockedChapterIds` trên server).
 class UnlockedChaptersNotifier extends Notifier<Set<String>> {
   @override
   Set<String> build() {
@@ -211,19 +264,26 @@ class UnlockedChaptersNotifier extends Notifier<Set<String>> {
     state = PreferencesService.getUnlockedChapterIds();
   }
 
-  void add(String chapterId) {
-    PreferencesService.addUnlockedChapterId(chapterId);
-    state = {...state, chapterId};
+  void add(String chapterId, {String? language}) {
+    PreferencesService.addUnlockedChapterId(chapterId, language: language);
+    final editionKey = ChapterEntitlement.editionKey(chapterId, language);
+    state = {...state, chapterId, editionKey};
   }
 
-  void remove(String chapterId) {
-    PreferencesService.removeUnlockedChapterId(chapterId);
-    state = state.where((id) => id != chapterId).toSet();
+  void remove(String chapterId, {String? language}) {
+    PreferencesService.removeUnlockedChapterId(chapterId, language: language);
+    final editionKey = ChapterEntitlement.editionKey(chapterId, language);
+    state = state.where((id) => id != chapterId && id != editionKey).toSet();
   }
 
-  bool isUnlocked(String chapterId) {
-    if (PreferencesService.getLocalIsVip()) return true;
-    return state.contains(chapterId);
+  bool isUnlocked(String chapterId, {String? language}) {
+    final clean = chapterId.trim();
+    if (language != null && language.trim().isNotEmpty) {
+      final key = ChapterEntitlement.editionKey(clean, language);
+      if (state.contains(key)) return true;
+      if (state.any((id) => id.startsWith('$clean:'))) return false;
+    }
+    return state.contains(clean);
   }
 }
 

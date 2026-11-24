@@ -70,9 +70,10 @@ enum ChapterAccessPolicy {
   }
 }
 
-/// Trạng thái sở hữu của Reader cho từng chapter
+  /// Trạng thái sở hữu của Reader cho từng chapter (hoặc từng ấn bản ngôn ngữ)
 class ChapterEntitlement {
   final String chapterId;
+  final String? language;
   final bool isPermanent;
   final int? remainingViews;
   final DateTime? lastOpenedAt;
@@ -80,11 +81,20 @@ class ChapterEntitlement {
 
   const ChapterEntitlement({
     required this.chapterId,
+    this.language,
     this.isPermanent = false,
     this.remainingViews,
     this.lastOpenedAt,
     this.unlockedAt,
   });
+
+  /// Khóa chuẩn cho ấn bản ngôn ngữ (`chapterId:lang`).
+  static String editionKey(String chapterId, [String? language]) {
+    final cleanId = chapterId.trim();
+    if (cleanId.contains(':')) return cleanId;
+    final cleanLang = (language == null || language.trim().isEmpty) ? 'vi' : language.trim().toLowerCase();
+    return '$cleanId:$cleanLang';
+  }
 
   bool get isValid {
     if (isPermanent) return true;
@@ -94,6 +104,7 @@ class ChapterEntitlement {
   factory ChapterEntitlement.fromJson(Map<String, dynamic> json) {
     return ChapterEntitlement(
       chapterId: json['chapterId']?.toString() ?? '',
+      language: json['language']?.toString(),
       isPermanent: json['isPermanent'] as bool? ?? false,
       remainingViews: (json['remainingViews'] as num?)?.toInt(),
       lastOpenedAt: json['lastOpenedAt'] != null ? DateTime.tryParse(json['lastOpenedAt'].toString()) : null,
@@ -103,6 +114,7 @@ class ChapterEntitlement {
 
   Map<String, dynamic> toJson() => {
     'chapterId': chapterId,
+    if (language != null) 'language': language,
     'isPermanent': isPermanent,
     if (remainingViews != null) 'remainingViews': remainingViews,
     if (lastOpenedAt != null) 'lastOpenedAt': lastOpenedAt!.toIso8601String(),
@@ -111,6 +123,7 @@ class ChapterEntitlement {
 
   ChapterEntitlement copyWith({
     String? chapterId,
+    String? language,
     bool? isPermanent,
     int? remainingViews,
     DateTime? lastOpenedAt,
@@ -118,6 +131,7 @@ class ChapterEntitlement {
   }) {
     return ChapterEntitlement(
       chapterId: chapterId ?? this.chapterId,
+      language: language ?? this.language,
       isPermanent: isPermanent ?? this.isPermanent,
       remainingViews: remainingViews ?? this.remainingViews,
       lastOpenedAt: lastOpenedAt ?? this.lastOpenedAt,
@@ -144,6 +158,9 @@ class PublicSeriesDto {
   final String id;
   final String title;
   final String? synopsis;
+  final String? logline;
+  final String? teaser;
+  final String? ageRating;
   final String genre;
   final String format;
   final ApiReadingDirection readingDirection;
@@ -167,6 +184,9 @@ class PublicSeriesDto {
     required this.id,
     required this.title,
     this.synopsis,
+    this.logline,
+    this.teaser,
+    this.ageRating,
     required this.genre,
     required this.format,
     required this.readingDirection,
@@ -194,6 +214,9 @@ class PublicSeriesDto {
       id: json['id']?.toString() ?? '',
       title: json['title']?.toString() ?? '',
       synopsis: json['synopsis']?.toString(),
+      logline: json['logline']?.toString(),
+      teaser: json['teaser']?.toString(),
+      ageRating: json['ageRating']?.toString(),
       genre: json['genre']?.toString() ?? 'Khác',
       format: json['format']?.toString() ?? 'Manga',
       readingDirection: ApiReadingDirection.fromDynamic(json['readingDirection']),
@@ -215,13 +238,12 @@ class PublicSeriesDto {
   }
 }
 
-/// Ngôn ngữ bản phát hành: vi = bản gốc Studio; en/ja = bản dịch (Publisher upload ảnh từng trang).
-/// Mua chương/trang theo từng ngôn ngữ.
-const List<String> kContentLanguages = ['vi', 'en', 'ja'];
+/// Ngôn ngữ bản phát hành: vi = bản gốc Studio; en = bản dịch tiếng Anh (BR-34).
+/// Mua chương/trang theo từng ấn bản ngôn ngữ.
+const List<String> kContentLanguages = ['vi', 'en'];
 
 String contentLanguageLabel(String code) => switch (code) {
   'en' => 'English',
-  'ja' => '日本語',
   _ => 'Tiếng Việt',
 };
 
@@ -359,6 +381,9 @@ class PublicSeriesDetailDto {
   final String id;
   final String title;
   final String? synopsis;
+  final String? logline;
+  final String? teaser;
+  final String? ageRating;
   final String genre;
   final String format;
   final ApiReadingDirection readingDirection;
@@ -381,10 +406,16 @@ class PublicSeriesDetailDto {
   /// Đánh giá của người đang đăng nhập (null nếu chưa đánh giá).
   final int? myRating;
 
+  /// Ngôn ngữ hiện tại dùng để tính giá và trạng thái mở khóa các chương.
+  final String language;
+
   PublicSeriesDetailDto({
     required this.id,
     required this.title,
     this.synopsis,
+    this.logline,
+    this.teaser,
+    this.ageRating,
     required this.genre,
     required this.format,
     required this.readingDirection,
@@ -399,6 +430,7 @@ class PublicSeriesDetailDto {
     this.ratingAverage = 0,
     this.ratingCount = 0,
     this.myRating,
+    this.language = 'vi',
   });
 
   String? get fullCoverUrl => coverUrl != null && coverUrl!.isNotEmpty ? ApiConfig.resolveUrl(coverUrl!) : null;
@@ -412,6 +444,9 @@ class PublicSeriesDetailDto {
       id: json['id']?.toString() ?? '',
       title: json['title']?.toString() ?? '',
       synopsis: json['synopsis']?.toString(),
+      logline: json['logline']?.toString(),
+      teaser: json['teaser']?.toString(),
+      ageRating: json['ageRating']?.toString(),
       genre: json['genre']?.toString() ?? 'Khác',
       format: json['format']?.toString() ?? 'Manga',
       readingDirection: ApiReadingDirection.fromDynamic(json['readingDirection']),
@@ -426,6 +461,7 @@ class PublicSeriesDetailDto {
       ratingCount: (json['ratingCount'] as num?)?.toInt() ?? 0,
       myRating: (json['myRating'] as num?)?.toInt(),
       viewCount: (json['viewCount'] as num?)?.toInt() ?? 0,
+      language: json['language']?.toString() ?? 'vi',
     );
   }
 }
@@ -865,12 +901,16 @@ class WalletTransactionDto {
   final DateTime createdAt;
   final int balanceAfter;
 
+  /// Mã đơn (`OrderCode`) — dùng để báo lỗi / đối soát giao dịch; rỗng với dữ liệu cũ.
+  final String orderCode;
+
   const WalletTransactionDto({
     required this.id,
     required this.title,
     required this.amountVnd,
     required this.createdAt,
     required this.balanceAfter,
+    this.orderCode = '',
   });
 
   factory WalletTransactionDto.fromJson(Map<String, dynamic> json) {
@@ -882,11 +922,13 @@ class WalletTransactionDto {
           ? DateTime.tryParse(json['createdAt'].toString()) ?? DateTime.now()
           : DateTime.now(),
       balanceAfter: (json['balanceAfter'] as num?)?.toInt() ?? 0,
+      orderCode: json['orderCode']?.toString() ?? '',
     );
   }
 
   Map<String, dynamic> toJson() => {
     'id': id,
+    'orderCode': orderCode,
     'title': title,
     'amountVnd': amountVnd,
     'createdAt': createdAt.toIso8601String(),
@@ -896,17 +938,13 @@ class WalletTransactionDto {
 
 class UserWalletDto {
   final int balanceVnd;
-  final bool isVip;
-  final DateTime? vipExpiresAt;
   final List<WalletTransactionDto> transactions;
 
-  /// Chương đã mở khóa vĩnh viễn trên server (ChapterEntitlement).
+  /// Chương đã mở khóa vĩnh viễn trên server (ChapterEntitlement / EditionEntitlement).
   final Set<String> unlockedChapterIds;
 
   const UserWalletDto({
     required this.balanceVnd,
-    this.isVip = false,
-    this.vipExpiresAt,
     this.transactions = const [],
     this.unlockedChapterIds = const {},
   });
@@ -914,10 +952,7 @@ class UserWalletDto {
   /// Getter tương thích ngược cho ForgeCoins
   int get balanceCoins => balanceVnd ~/ 100;
 
-  /// VIP còn hiệu lực (server có thể chưa kịp tắt cờ khi hết hạn).
-  bool get hasActiveVip => isVip && (vipExpiresAt == null || vipExpiresAt!.isAfter(DateTime.now()));
-
-  /// `GET /api/wallet/me` → UserWalletDto(BalanceVnd, BalanceCoins, IsVip, VipExpiresAt, UnlockedChapterIds, Transactions)
+  /// `GET /api/wallet/me` → UserWalletDto(BalanceVnd, BalanceCoins, UnlockedChapterIds, Transactions)
   factory UserWalletDto.fromJson(Map<String, dynamic> json) {
     final balance = (json['balanceVnd'] as num?)?.toInt() ?? (((json['balanceCoins'] as num?)?.toInt() ?? 0) * 100);
 
@@ -926,8 +961,6 @@ class UserWalletDto {
 
     return UserWalletDto(
       balanceVnd: balance,
-      isVip: json['isVip'] as bool? ?? false,
-      vipExpiresAt: json['vipExpiresAt'] != null ? DateTime.tryParse(json['vipExpiresAt'].toString()) : null,
       transactions: rawTx.map((e) => WalletTransactionDto.fromJson(e as Map<String, dynamic>)).toList(),
       unlockedChapterIds: rawUnlocked.map((e) => e.toString()).toSet(),
     );
@@ -935,15 +968,11 @@ class UserWalletDto {
 
   UserWalletDto copyWith({
     int? balanceVnd,
-    bool? isVip,
-    DateTime? vipExpiresAt,
     List<WalletTransactionDto>? transactions,
     Set<String>? unlockedChapterIds,
   }) {
     return UserWalletDto(
       balanceVnd: balanceVnd ?? this.balanceVnd,
-      isVip: isVip ?? this.isVip,
-      vipExpiresAt: vipExpiresAt ?? this.vipExpiresAt,
       transactions: transactions ?? this.transactions,
       unlockedChapterIds: unlockedChapterIds ?? this.unlockedChapterIds,
     );
@@ -952,8 +981,6 @@ class UserWalletDto {
   Map<String, dynamic> toJson() => {
     'balanceVnd': balanceVnd,
     'balanceCoins': balanceCoins,
-    'isVip': isVip,
-    if (vipExpiresAt != null) 'vipExpiresAt': vipExpiresAt!.toIso8601String(),
     'transactions': transactions.map((t) => t.toJson()).toList(),
     'unlockedChapterIds': unlockedChapterIds.toList(),
   };
@@ -1051,57 +1078,10 @@ class UnlockChapterResponse {
   String? get fullCbzDownloadUrl => cbzDownloadUrl != null ? ApiConfig.resolveUrl(cbzDownloadUrl!) : null;
 }
 
-class SubscribeVipRequest {
-  final String plan; // 'monthly' | 'yearly'
-
-  const SubscribeVipRequest({required this.plan});
-
-  factory SubscribeVipRequest.fromJson(Map<String, dynamic> json) {
-    return SubscribeVipRequest(plan: json['plan']?.toString() ?? 'monthly');
-  }
-
-  Map<String, dynamic> toJson() => {'plan': plan};
-}
-
-class SubscribeVipResponse {
-  final bool success;
-  final bool isVip;
-  final DateTime? vipExpiresAt;
-  final int remainingCoins;
-  final String? message;
-
-  const SubscribeVipResponse({
-    required this.success,
-    required this.isVip,
-    this.vipExpiresAt,
-    required this.remainingCoins,
-    this.message,
-  });
-
-  factory SubscribeVipResponse.fromJson(Map<String, dynamic> json) {
-    return SubscribeVipResponse(
-      success: json['success'] as bool? ?? false,
-      isVip: json['isVip'] as bool? ?? false,
-      vipExpiresAt: json['vipExpiresAt'] != null ? DateTime.tryParse(json['vipExpiresAt'].toString()) : null,
-      remainingCoins: (json['remainingCoins'] as num?)?.toInt() ?? 0,
-      message: json['message']?.toString(),
-    );
-  }
-
-  Map<String, dynamic> toJson() => {
-    'success': success,
-    'isVip': isVip,
-    if (vipExpiresAt != null) 'vipExpiresAt': vipExpiresAt!.toIso8601String(),
-    'remainingCoins': remainingCoins,
-    if (message != null) 'message': message,
-  };
-}
-
 /// Mục đích của đơn VietQR — khớp `TopupRequest.Purpose` / `PaymentTransactionType` trên Backend.
 enum PaymentPurpose {
   topup('Topup'),
-  chapterUnlock('ChapterUnlock'),
-  vipSubscription('VipSubscription');
+  chapterUnlock('ChapterUnlock');
 
   final String value;
   const PaymentPurpose(this.value);
@@ -1109,7 +1089,7 @@ enum PaymentPurpose {
 
 /// `POST /api/wallet/topup` — tạo đơn chuyển khoản VietQR ở trạng thái Pending.
 /// Ngữ cảnh (series/chapter/workspace) giúp đơn hiển thị đúng Studio trên màn hình Thanh toán của Producer.
-/// Với [PaymentPurpose.chapterUnlock] / [PaymentPurpose.vipSubscription], số tiền do server quyết định.
+/// Với [PaymentPurpose.chapterUnlock], số tiền do server quyết định.
 class TopupRequest {
   final int? amountVnd;
   final String paymentMethod;
@@ -1117,7 +1097,6 @@ class TopupRequest {
   final String? workspaceId;
   final String? seriesId;
   final String? chapterId;
-  final String? vipPlan;
 
   /// Bản ngôn ngữ mua khi trả VietQR trực tiếp để mở chương.
   final String? language;
@@ -1130,7 +1109,6 @@ class TopupRequest {
     this.seriesId,
     this.chapterId,
     this.language,
-    this.vipPlan,
   });
 
   Map<String, dynamic> toJson() => {
@@ -1141,7 +1119,6 @@ class TopupRequest {
     if (seriesId != null) 'seriesId': seriesId,
     if (chapterId != null) 'chapterId': chapterId,
     if (language != null) 'language': language,
-    if (vipPlan != null) 'vipPlan': vipPlan,
   };
 }
 

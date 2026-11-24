@@ -63,7 +63,7 @@ class ComicPageData {
   /// Trang nằm sau paywall của chương trả phí (không phải trang xem trước).
   final bool isLocked;
 
-  /// Người đọc đã có quyền xem trang (xem trước / đã mua chương / VIP). Khi false [imageUrl] luôn null.
+  /// Người đọc đã có quyền xem trang (xem trước / đã mua ấn bản). Khi false [imageUrl] luôn null.
   final bool isUnlocked;
 
   /// Trang xem trước của chương trả phí.
@@ -97,9 +97,16 @@ class ComicPageData {
   }
 }
 
+/// Định dạng số chương thập phân (D9a: 1.0 → "1", 1.5 → "1.5").
+String formatChapterNumber(num n) {
+  final d = n.toDouble();
+  if (d == d.truncateToDouble()) return d.toInt().toString();
+  return d.toString().replaceAll(RegExp(r'\.?0+$'), '');
+}
+
 class ChapterItem {
   final String id;
-  final int number;
+  final double chapterNumber;
   final String title;
   final String releaseDate;
   final int pageCount;
@@ -113,11 +120,14 @@ class ChapterItem {
   final bool isWeeklyHot;
   final String? cbzPackageUrl;
   final String? manifestUrl;
+  final String? coverUrl;
+  final List<ChapterLanguageOption> languages;
   final List<ComicPageData> pages;
 
   const ChapterItem({
     required this.id,
-    required this.number,
+    num? number,
+    double? chapterNumber,
     required this.title,
     required this.releaseDate,
     required this.pageCount,
@@ -131,16 +141,60 @@ class ChapterItem {
     this.isWeeklyHot = false,
     this.cbzPackageUrl,
     this.manifestUrl,
+    this.coverUrl,
+    this.languages = const [],
     required this.pages,
-  });
+  }) : chapterNumber = chapterNumber ?? (number is double ? number : (number is int ? number * 1.0 : 1.0));
 
-  /// Chương trả phí do Producer khóa (Backend `isLocked`).
+  /// Tương thích ngược: số nguyên của chương.
+  int get number => chapterNumber.toInt();
+
+  /// Nhãn số chương chuẩn hỗ trợ số thập phân (D9a: "1", "1.5").
+  String get numberLabel => formatChapterNumber(chapterNumber);
+
+  /// Chương trả phí do Publisher khóa (Backend `isLocked`).
   bool get isLocked => !isFree;
+
+  /// Tìm tùy chọn ngôn ngữ tương ứng cho chương này.
+  ChapterLanguageOption? optionFor(String languageCode) {
+    final norm = languageCode.trim().toLowerCase();
+    for (final opt in languages) {
+      if (opt.language.toLowerCase() == norm) return opt;
+    }
+    return null;
+  }
+
+  /// Giá mở khóa theo ấn bản ngôn ngữ [languageCode] (BR-33).
+  int priceVndFor([String? languageCode]) {
+    if (languageCode != null) {
+      final opt = optionFor(languageCode);
+      if (opt != null) return opt.priceVnd;
+    }
+    return priceVnd;
+  }
+
+  /// Chương ở ngôn ngữ [languageCode] có phải trả phí không.
+  bool isLockedFor([String? languageCode]) {
+    if (languageCode != null) {
+      final opt = optionFor(languageCode);
+      if (opt != null) return opt.priceVnd > 0 || !opt.isUnlocked;
+    }
+    return isLocked;
+  }
+
+  /// Server báo người dùng đã mở khóa ấn bản ngôn ngữ [languageCode] chưa.
+  bool isServerUnlockedFor([String? languageCode]) {
+    if (languageCode != null) {
+      final opt = optionFor(languageCode);
+      if (opt != null) return opt.isUnlocked;
+    }
+    return !isLocked || isUnlocked;
+  }
 
   factory ChapterItem.fromPublicDto(PublicChapterSummaryDto dto) {
     return ChapterItem(
       id: dto.id,
-      number: dto.chapterNumber.toInt(),
+      chapterNumber: dto.chapterNumber,
       title: dto.displayTitle,
       releaseDate: dto.publishedAt != null
           ? '${dto.publishedAt!.day.toString().padLeft(2, '0')}/${dto.publishedAt!.month.toString().padLeft(2, '0')}/${dto.publishedAt!.year}'
@@ -156,6 +210,7 @@ class ChapterItem {
       isWeeklyHot: dto.isWeeklyHot,
       cbzPackageUrl: dto.cbzPackageUrl,
       manifestUrl: dto.manifestUrl,
+      languages: dto.languages,
       pages: const [],
     );
   }
@@ -163,7 +218,7 @@ class ChapterItem {
   factory ChapterItem.fromPublicReadDto(PublicChapterReadDto dto) {
     return ChapterItem(
       id: dto.id,
-      number: dto.chapterNumber.toInt(),
+      chapterNumber: dto.chapterNumber,
       title: dto.displayTitle,
       releaseDate: dto.publishedAt != null
           ? '${dto.publishedAt!.day.toString().padLeft(2, '0')}/${dto.publishedAt!.month.toString().padLeft(2, '0')}/${dto.publishedAt!.year}'
@@ -179,13 +234,15 @@ class ChapterItem {
       isWeeklyHot: dto.isWeeklyHot,
       cbzPackageUrl: dto.cbzPackageUrl,
       manifestUrl: dto.manifestUrl,
+      languages: dto.languages,
       pages: dto.pages.map((p) => ComicPageData.fromPublicPage(p)).toList(),
     );
   }
 
   ChapterItem copyWith({
     String? id,
-    int? number,
+    num? number,
+    double? chapterNumber,
     String? title,
     String? releaseDate,
     int? pageCount,
@@ -199,11 +256,13 @@ class ChapterItem {
     bool? isWeeklyHot,
     String? cbzPackageUrl,
     String? manifestUrl,
+    String? coverUrl,
+    List<ChapterLanguageOption>? languages,
     List<ComicPageData>? pages,
   }) {
     return ChapterItem(
       id: id ?? this.id,
-      number: number ?? this.number,
+      chapterNumber: chapterNumber ?? number?.toDouble() ?? this.chapterNumber,
       title: title ?? this.title,
       releaseDate: releaseDate ?? this.releaseDate,
       pageCount: pageCount ?? this.pageCount,
@@ -217,6 +276,8 @@ class ChapterItem {
       isWeeklyHot: isWeeklyHot ?? this.isWeeklyHot,
       cbzPackageUrl: cbzPackageUrl ?? this.cbzPackageUrl,
       manifestUrl: manifestUrl ?? this.manifestUrl,
+      coverUrl: coverUrl ?? this.coverUrl,
+      languages: languages ?? this.languages,
       pages: pages ?? this.pages,
     );
   }
@@ -232,6 +293,9 @@ class SeriesItem {
   final String coverGradientEnd;
   final String synopsisQuote;
   final String fullSynopsis;
+  final String? logline;
+  final String? teaser;
+  final String? ageRating;
   /// Lượt đọc thật từ Backend (tổng / 1 ngày / 7 ngày / 30 ngày).
   final int views;
   final int viewsLast1Day;
@@ -264,6 +328,9 @@ class SeriesItem {
     required this.coverGradientEnd,
     required this.synopsisQuote,
     required this.fullSynopsis,
+    this.logline,
+    this.teaser,
+    this.ageRating,
     required this.views,
     this.viewsLast1Day = 0,
     this.viewsLast7Days = 0,
@@ -291,6 +358,13 @@ class SeriesItem {
       fmt = ComicFormat.comic;
     }
 
+    final hasLogline = dto.logline != null && dto.logline!.trim().isNotEmpty;
+    final quote = hasLogline
+        ? dto.logline!.trim()
+        : (dto.synopsis != null && dto.synopsis!.isNotEmpty
+              ? '“${dto.synopsis!.length > 80 ? dto.synopsis!.substring(0, 80) : dto.synopsis}...„'
+              : '“Tác phẩm chính thức được phát hành bởi ${dto.studioName}.„');
+
     return SeriesItem(
       id: dto.id,
       title: dto.title,
@@ -299,10 +373,11 @@ class SeriesItem {
       format: fmt,
       coverGradientStart: '0xFF1B2A4A',
       coverGradientEnd: '0xFF0E1424',
-      synopsisQuote: dto.synopsis != null && dto.synopsis!.isNotEmpty
-          ? '“${dto.synopsis!.length > 80 ? dto.synopsis!.substring(0, 80) : dto.synopsis}...„'
-          : '“Tác phẩm chính thức được phát hành bởi ${dto.studioName}.„',
+      synopsisQuote: quote,
       fullSynopsis: dto.synopsis ?? 'Nội dung bộ truyện đang được cập nhật.',
+      logline: dto.logline,
+      teaser: dto.teaser,
+      ageRating: dto.ageRating,
       views: dto.viewCount,
       viewsLast1Day: dto.viewsLast1Day,
       viewsLast7Days: dto.viewsLast7Days,
@@ -331,6 +406,13 @@ class SeriesItem {
       fmt = ComicFormat.comic;
     }
 
+    final hasLogline = dto.logline != null && dto.logline!.trim().isNotEmpty;
+    final quote = hasLogline
+        ? dto.logline!.trim()
+        : (dto.synopsis != null && dto.synopsis!.isNotEmpty
+              ? '“${dto.synopsis!.length > 80 ? dto.synopsis!.substring(0, 80) : dto.synopsis}...„'
+              : '“Tác phẩm độc quyền bởi ${dto.studioName}.„');
+
     return SeriesItem(
       id: dto.id,
       title: dto.title,
@@ -339,10 +421,11 @@ class SeriesItem {
       format: fmt,
       coverGradientStart: '0xFF1B2A4A',
       coverGradientEnd: '0xFF0E1424',
-      synopsisQuote: dto.synopsis != null && dto.synopsis!.isNotEmpty
-          ? '“${dto.synopsis!.length > 80 ? dto.synopsis!.substring(0, 80) : dto.synopsis}...„'
-          : '“Tác phẩm độc quyền bởi ${dto.studioName}.„',
+      synopsisQuote: quote,
       fullSynopsis: dto.synopsis ?? 'Nội dung bộ truyện đang được cập nhật.',
+      logline: dto.logline,
+      teaser: dto.teaser,
+      ageRating: dto.ageRating,
       views: dto.viewCount,
       readProgressChapter: 0,
       totalChapters: dto.chapters.length,
@@ -364,6 +447,9 @@ class SeriesItem {
     List<ChapterItem>? chapters,
     int? baseChapterPriceVnd,
     int? hotChapterPriceVnd,
+    String? logline,
+    String? teaser,
+    String? ageRating,
   }) {
     return SeriesItem(
       id: id,
@@ -375,6 +461,9 @@ class SeriesItem {
       coverGradientEnd: coverGradientEnd,
       synopsisQuote: synopsisQuote,
       fullSynopsis: fullSynopsis,
+      logline: logline ?? this.logline,
+      teaser: teaser ?? this.teaser,
+      ageRating: ageRating ?? this.ageRating,
       views: views,
       viewsLast1Day: viewsLast1Day,
       viewsLast7Days: viewsLast7Days,

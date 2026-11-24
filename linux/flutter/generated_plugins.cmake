@@ -5,7 +5,6 @@
 list(APPEND FLUTTER_PLUGIN_LIST
   audioplayers_linux
   desktop_webview_window
-  record_linux
   url_launcher_linux
 )
 

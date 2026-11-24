@@ -105,18 +105,13 @@ void main() {
       expect(find.text('Thử lại'), findsOneWidget);
     });
 
-    testWidgets('For You tab shows the VIP banner and links to the Shop VIP plans', (WidgetTester tester) async {
+    testWidgets('For You tab renders without VIP banner', (WidgetTester tester) async {
       await openApp(tester);
 
       await tester.tap(find.byTooltip('Dành cho bạn'));
       await tester.pumpAndSettle();
-      expect(find.text('VIP PANELFORGE'), findsOneWidget);
+      expect(find.text('VIP PANELFORGE'), findsNothing);
       expect(find.text('Không thể kết nối đến máy chủ'), findsOneWidget);
-
-      await tester.tap(find.text('VIP PANELFORGE'));
-      await tester.pumpAndSettle();
-      expect(find.text('NẠP VÍ'), findsOneWidget);
-      expect(find.text('Đăng ký gói tháng'), findsOneWidget);
     });
 
     testWidgets('Shop tab shows the balance card and the top-up packages', (WidgetTester tester) async {
@@ -124,9 +119,9 @@ void main() {
 
       await tester.tap(find.byTooltip('Cửa hàng'));
       await tester.pumpAndSettle();
-      expect(find.text('Đăng nhập để xem số dư Ví và gói VIP.'), findsOneWidget);
+      expect(find.text('Đăng nhập để xem số dư Ví và nạp tiền.'), findsOneWidget);
       expect(find.text('NẠP VÍ'), findsOneWidget);
-      expect(find.text('GÓI VIP'), findsOneWidget);
+      expect(find.text('GÓI VIP'), findsNothing);
       expect(find.text('+10.000đ'), findsOneWidget);
     });
 
@@ -224,7 +219,6 @@ void main() {
       for (final label in [
         'Tài khoản',
         'Đăng nhập / Đăng ký',
-        'Nhập mã Review',
         'Cài đặt ứng dụng',
         'Ngôn ngữ',
         'Giao diện',
@@ -247,7 +241,8 @@ void main() {
         await scrollTo(tester, row);
         expect(row, findsOneWidget, reason: label);
       }
-      // Chưa đăng nhập: không có Đổi mật khẩu / Đăng xuất / Xoá tài khoản.
+      // Chưa đăng nhập: không có Đổi mật khẩu / Đăng xuất / Xoá tài khoản / Review.
+      expect(find.text('Nhập mã Review'), findsNothing);
       expect(find.text('Đổi mật khẩu'), findsNothing);
       expect(find.text('Xoá tài khoản'), findsNothing);
       expect(find.text('Đăng xuất'), findsNothing);
@@ -312,7 +307,7 @@ void main() {
       expect(PreferencesService.getKeepScreenOn(), isTrue);
     });
 
-    testWidgets('Notifications page (from Profile) lists activity and links to Review center', (
+    testWidgets('Notifications page (from Profile) lists activity without Review center', (
       WidgetTester tester,
     ) async {
       await openApp(tester);
@@ -323,39 +318,7 @@ void main() {
 
       expect(find.text('GIAO DỊCH VÍ'), findsOneWidget);
       expect(find.text('ĐỌC GẦN ĐÂY'), findsOneWidget);
-      expect(find.text('Trung tâm Review bản thảo'), findsOneWidget);
-    });
-
-    testWidgets('Navigates smoothly to Review Hub tab and verifies Dark Obsidian UI elements', (
-      WidgetTester tester,
-    ) async {
-      await openApp(tester);
-
-      // Review Hub mở từ dòng "Nhập mã Review" trong Cài đặt.
-      await openSettings(tester);
-      final reviewRow = find.text('Nhập mã Review');
-      await tester.ensureVisible(reviewRow);
-      await tester.pumpAndSettle();
-      await tester.tap(reviewRow);
-      await tester.pumpAndSettle();
-
-      // Verify Review Hub title and security badge
-      expect(find.text('BẢO MẬT & ĐỘC QUYỀN'), findsOneWidget);
-      expect(find.text('Trung Tâm Review & Duyệt Bản Thảo'), findsOneWidget);
-      expect(find.text('XÁC THỰC & MỞ LỜI MỜI REVIEW'), findsOneWidget);
-      expect(find.text('Bản Thảo Đã Mở Gần Đây'), findsOneWidget);
-
-      // Verify Dark Obsidian Color Constants
-      expect(AppColors.darkBg, const Color(0xFF13161F));
-      expect(AppColors.darkSurface, const Color(0xFF1E2330));
-      expect(AppColors.darkBorder, const Color(0xFF282E3E));
-      expect(AppColors.primary, const Color(0xFFF97316));
-
-      // Quay lại màn hình Cài đặt
-      expect(find.byTooltip('Quay lại'), findsOneWidget);
-      await tester.tap(find.byTooltip('Quay lại'));
-      await tester.pumpAndSettle();
-      expect(find.byType(SettingsPage), findsOneWidget);
+      expect(find.text('Trung tâm Review bản thảo'), findsNothing);
     });
   });
 }

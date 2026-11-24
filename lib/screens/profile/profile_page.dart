@@ -7,6 +7,8 @@ import '../../models/comic_model.dart';
 import '../../navigation/read_guard.dart';
 import '../../providers/api_providers.dart';
 import '../../providers/catalog_providers.dart';
+import '../../providers/library_sync_provider.dart';
+import '../../providers/notification_providers.dart';
 import '../../services/preferences_service.dart';
 import '../../theme/app_theme.dart';
 import '../../widgets/forge_ui.dart';
@@ -34,10 +36,13 @@ class _ProfilePageState extends ConsumerState<ProfilePage> {
   @override
   Widget build(BuildContext context) {
     final auth = ref.watch(authStateProvider);
+    // Vẽ lại khi thư viện trên máy được cập nhật từ server.
+    ref.watch(librarySyncProvider.select((s) => s.version));
     final catalog = ref.watch(catalogSeriesProvider).asData?.value ?? const <SeriesItem>[];
     final wallet = auth.isAuthenticated ? ref.watch(walletNotifierProvider).asData?.value : null;
     final bookmarks = PreferencesService.getBookmarks();
     final follows = PreferencesService.getFollows();
+    final unreadNotifications = ref.watch(bellBadgeCountProvider);
     final unlocked = {...?wallet?.unlockedChapterIds, ...PreferencesService.getUnlockedChapterIds()};
 
     return DefaultTabController(
@@ -60,7 +65,12 @@ class _ProfilePageState extends ConsumerState<ProfilePage> {
           actions: [
             IconButton(
               tooltip: 'Thông báo',
-              icon: Icon(Icons.notifications_none_rounded, color: ForgeColors.text),
+              icon: Badge(
+                isLabelVisible: unreadNotifications > 0,
+                backgroundColor: ForgeColors.accent,
+                label: Text(unreadNotifications > 99 ? '99+' : '$unreadNotifications'),
+                child: Icon(Icons.notifications_none_rounded, color: ForgeColors.text),
+              ),
               onPressed: () => context.push('/activity'),
             ),
             IconButton(
@@ -163,7 +173,7 @@ class _CreateAccountCard extends StatelessWidget {
           ),
           const SizedBox(height: 6),
           Text(
-            'Tài khoản giúp bạn đọc trọn chương, nạp Ví, mua VIP và giữ các chương đã mua khi đổi máy hay cài lại ứng dụng.',
+            'Tài khoản giúp bạn đọc trọn chương, nạp Ví và giữ các ấn bản đã mua khi đổi máy hay cài lại ứng dụng.',
             style: GoogleFonts.plusJakartaSans(fontSize: 14.5, color: ForgeColors.textSoft, height: 1.45),
           ),
           const SizedBox(height: 16),
@@ -186,7 +196,7 @@ class _CreateAccountCard extends StatelessWidget {
   }
 }
 
-/// Đã đăng nhập: hồ sơ + số dư Ví / VIP và lối tắt tới Cửa hàng.
+/// Đã đăng nhập: hồ sơ + số dư Ví và lối tắt tới Cửa hàng.
 class _AccountCard extends StatelessWidget {
   final AuthUser user;
   final UserWalletDto? wallet;
@@ -196,14 +206,6 @@ class _AccountCard extends StatelessWidget {
   Widget build(BuildContext context) {
     final name = user.fullName.isNotEmpty ? user.fullName : user.email.split('@').first;
     final hasAvatar = user.avatarUrl?.isNotEmpty ?? false;
-    final isVip = wallet?.hasActiveVip ?? false;
-    final expires = wallet?.vipExpiresAt;
-    String two(int v) => v.toString().padLeft(2, '0');
-    final vipText = !isVip
-        ? 'Chưa có VIP'
-        : expires == null
-        ? 'VIP đang hoạt động'
-        : 'VIP đến ${two(expires.day)}/${two(expires.month)}/${expires.year}';
 
     return Container(
       margin: const EdgeInsets.fromLTRB(16, 16, 16, 14),
@@ -274,17 +276,7 @@ class _AccountCard extends StatelessWidget {
                   wallet == null ? '—' : formatVnd(wallet!.balanceVnd),
                   style: ForgeText.tabular(fontSize: 18, color: ForgeColors.gold),
                 ),
-                const SizedBox(width: 12),
-                Icon(Icons.workspace_premium_rounded, size: 18, color: isVip ? ForgeColors.gold : ForgeColors.muted),
-                const SizedBox(width: 4),
-                Expanded(
-                  child: Text(
-                    vipText,
-                    maxLines: 1,
-                    overflow: TextOverflow.ellipsis,
-                    style: GoogleFonts.plusJakartaSans(fontSize: 12.5, color: ForgeColors.textSoft),
-                  ),
-                ),
+                const Spacer(),
                 TextButton(
                   onPressed: () => context.go('/shop'),
                   style: TextButton.styleFrom(foregroundColor: ForgeColors.accent),
@@ -393,7 +385,9 @@ class _HistoryTab extends ConsumerWidget {
             catalog.where((s) => s.id == h.seriesId).firstOrNull ?? _fallbackSeries(h.seriesId, h.seriesTitle);
         return _SeriesListRow(
           series: series,
-          line: 'Chương ${h.chapterNumber} • ${timeAgo(h.readAt)}',
+          line: h.lastPageNumber > 1
+              ? 'Chương ${h.chapterNumberLabel} (Trang ${h.lastPageNumber}) • ${timeAgo(h.readAt)}'
+              : 'Chương ${h.chapterNumberLabel} • ${timeAgo(h.readAt)}',
           date: _date(h.readAt),
           onTap: () => openReaderGuarded(context, ref, h.seriesId, h.chapterId, series: series),
         );
@@ -453,19 +447,8 @@ class _SeriesListRow extends StatelessWidget {
         ),
         child: Row(
           children: [
-            SizedBox(
-              width: 132,
-              height: 84,
-              child: ClipRRect(
-                borderRadius: BorderRadius.circular(4),
-                child: FittedBox(
-                  fit: BoxFit.cover,
-                  alignment: Alignment.topCenter,
-                  clipBehavior: Clip.hardEdge,
-                  child: SizedBox(width: 132, height: 176, child: SeriesCover(series: series, radius: 0)),
-                ),
-              ),
-            ),
+            // Bìa dọc 3:4 hiển thị trọn vẹn (không cắt).
+            SizedBox(width: 72, height: 96, child: SeriesCover(series: series, radius: 6)),
             const SizedBox(width: 14),
             Expanded(
               child: Column(

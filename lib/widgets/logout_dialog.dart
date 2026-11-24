@@ -57,6 +57,7 @@ Future<void> showLogoutConfirmDialog(BuildContext context, WidgetRef ref) async 
   if (shouldLogout == true) {
     final auth = ref.read(authServiceProvider);
     await auth.logout();
+    ref.invalidate(downloadedChaptersProvider);
     ref.read(authStateProvider.notifier).setUnauthenticated();
     if (context.mounted) {
       context.go('/login');

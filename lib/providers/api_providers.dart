@@ -8,7 +8,6 @@ import '../services/auth_service.dart';
 import '../services/catalog_service.dart';
 import '../services/cbz_package_service.dart';
 import '../services/preferences_service.dart';
-import '../services/preview_service.dart';
 
 export '../models/auth_models.dart';
 export '../services/auth_service.dart';
@@ -40,10 +39,6 @@ final catalogServiceProvider = Provider<CatalogService>((ref) {
   return CatalogService(client: ref.watch(apiClientProvider));
 });
 
-final previewServiceProvider = Provider<PreviewService>((ref) {
-  return PreviewService(client: ref.watch(apiClientProvider));
-});
-
 class ServerConnectedNotifier extends Notifier<bool> {
   @override
   bool build() => false;
@@ -68,6 +63,19 @@ class AppThemeModeNotifier extends Notifier<ThemeMode> {
   Future<void> setMode(ThemeMode mode) async {
     state = mode;
     await PreferencesService.setAppThemeMode(mode.name);
+  }
+}
+
+/// Hệ số cỡ chữ của app (Cài đặt → Cỡ chữ).
+final textScaleProvider = NotifierProvider<TextScaleNotifier, double>(TextScaleNotifier.new);
+
+class TextScaleNotifier extends Notifier<double> {
+  @override
+  double build() => PreferencesService.getTextScale();
+
+  Future<void> set(double value) async {
+    state = value;
+    await PreferencesService.setTextScale(value);
   }
 }
 

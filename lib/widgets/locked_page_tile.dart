@@ -8,7 +8,7 @@ import '../theme/app_theme.dart';
 /// Trang của chương trả phí nằm ngoài phần xem trước (Publisher chọn trang xem trước trên web).
 ///
 /// Server không trả ảnh thật cho trang này (ImageUrl = null, endpoint ảnh 403) nên ô chỉ vẽ một nền
-/// giả làm mờ + ổ khóa và một nút "Mở khóa chương" — mua chương mở toàn bộ trang (Ví / VietQR / VIP).
+/// giả làm mờ + ổ khóa và một nút "Mở khóa chương" — mua ấn bản mở toàn bộ trang (Ví / VietQR).
 /// Giữ tỷ lệ trang truyện để bố cục đọc không nhảy.
 class LockedPageTile extends StatelessWidget {
   final ComicPageData page;
@@ -77,7 +77,7 @@ class LockedPageTile extends StatelessWidget {
                   ),
                   const SizedBox(height: 4),
                   Text(
-                    'Mở khóa chương để đọc toàn bộ • VIP đọc miễn phí',
+                    'Mở khóa ấn bản này để đọc toàn bộ trang',
                     textAlign: TextAlign.center,
                     style: GoogleFonts.plusJakartaSans(fontSize: 11.5, color: Colors.white70),
                   ),

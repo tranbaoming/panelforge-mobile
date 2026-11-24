@@ -77,8 +77,11 @@ class _ExplorePageState extends ConsumerState<ExplorePage> {
     final catalog = ref.watch(catalogSeriesProvider);
     final items = catalog.asData?.value;
 
+    final fromCache = ref.watch(catalogFromCacheProvider) && items != null;
+
     return Scaffold(
       backgroundColor: ForgeColors.bg,
+      bottomNavigationBar: fromCache ? const _OfflineBanner() : null,
       body: RefreshIndicator(
         onRefresh: _refresh,
         color: ForgeColors.accent,
@@ -146,7 +149,7 @@ class _ExplorePageState extends ConsumerState<ExplorePage> {
             children: [
               ForgeBlockTitle(title: 'Thể loại', onMore: () => context.push('/genres')),
               SizedBox(
-                height: 132,
+                height: 132 + textScaleExtra(context, 40),
                 child: ListView.separated(
                   padding: const EdgeInsets.symmetric(horizontal: 12),
                   scrollDirection: Axis.horizontal,
@@ -186,7 +189,7 @@ class _ExplorePageState extends ConsumerState<ExplorePage> {
       children: [
         ForgeBlockTitle(title: title, onMore: onMore),
         SizedBox(
-          height: 268,
+          height: 268 + textScaleExtra(context, 60),
           child: ListView.separated(
             padding: const EdgeInsets.symmetric(horizontal: 16),
             scrollDirection: Axis.horizontal,
@@ -403,7 +406,9 @@ class _ContinueReading extends ConsumerWidget {
                         ),
                       ),
                       Text(
-                        'Chương ${e.chapterNumber} • ${timeAgo(e.readAt)}',
+                        e.lastPageNumber > 1
+                            ? 'Chương ${e.chapterNumberLabel} • Trang ${e.lastPageNumber} • ${timeAgo(e.readAt)}'
+                            : 'Chương ${e.chapterNumberLabel} • ${timeAgo(e.readAt)}',
                         style: GoogleFonts.plusJakartaSans(fontSize: 12, color: ForgeColors.muted),
                       ),
                     ],
@@ -612,6 +617,32 @@ class _NewSeriesPromoDialog extends StatelessWidget {
             ],
           ),
         ),
+      ),
+    );
+  }
+}
+
+/// Đang xem catalog đã lưu vì không kết nối được máy chủ.
+class _OfflineBanner extends StatelessWidget {
+  const _OfflineBanner();
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      key: const ValueKey('offline-banner'),
+      color: ForgeColors.surface,
+      padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+      child: Row(
+        children: [
+          const Icon(Icons.cloud_off_rounded, size: 18, color: ForgeColors.muted),
+          const SizedBox(width: 8),
+          Expanded(
+            child: Text(
+              'Không có kết nối — đang hiển thị danh sách đã lưu. Kéo xuống để thử lại.',
+              style: GoogleFonts.plusJakartaSans(fontSize: 12.5, color: ForgeColors.textSoft),
+            ),
+          ),
+        ],
       ),
     );
   }

@@ -8,16 +8,14 @@ import '../screens/explore/explore_page.dart';
 import '../screens/explore/search_page.dart';
 import '../screens/foryou/for_you_page.dart';
 import '../screens/shop/shop_page.dart';
+import '../screens/profile/active_devices_page.dart';
 import '../screens/profile/activity_page.dart';
+import '../screens/profile/downloads_page.dart';
 import '../screens/profile/profile_page.dart';
 import '../screens/profile/legal_page.dart';
 import '../screens/profile/settings_page.dart';
 import '../screens/explore/series_detail_page.dart';
 import '../screens/reader/comic_reader_page.dart';
-import '../screens/review/review_canvas_page.dart';
-import '../screens/review/review_expired_page.dart';
-import '../screens/review/review_hub_page.dart';
-import '../screens/review/review_invite_page.dart';
 import 'read_guard.dart';
 import 'scaffold_with_nav_bar.dart';
 
@@ -88,13 +86,13 @@ final appRouterProvider = Provider<GoRouter>((ref) {
             routes: [GoRoute(path: '/search', builder: (context, state) => const SearchPage())],
           ),
 
-          // Tab 4: Cửa hàng (Ví & VIP). `?tab=vip` mở thẳng thẻ Gói VIP.
+          // Tab 4: Cửa hàng (Nạp Ví).
           StatefulShellBranch(
             navigatorKey: _shopNavigatorKey,
             routes: [
               GoRoute(
                 path: '/shop',
-                builder: (context, state) => ShopPage(initialTab: state.uri.queryParameters['tab'] == 'vip' ? 1 : 0),
+                builder: (context, state) => const ShopPage(),
               ),
             ],
           ),
@@ -114,11 +112,25 @@ final appRouterProvider = Provider<GoRouter>((ref) {
         builder: (context, state) => const ActivityPage(),
       ),
 
+      // Truyện đã tải (offline) — mở từ Cài đặt.
+      GoRoute(
+        parentNavigatorKey: _rootNavigatorKey,
+        path: '/downloads',
+        builder: (context, state) => const DownloadsPage(),
+      ),
+
       // Cài đặt — mở từ bánh răng ở tab Cá nhân.
       GoRoute(
         parentNavigatorKey: _rootNavigatorKey,
         path: '/settings',
         builder: (context, state) => const SettingsPage(),
+      ),
+
+      // Quản lý thiết bị đang đăng nhập (giới hạn tối đa 3 thiết bị).
+      GoRoute(
+        parentNavigatorKey: _rootNavigatorKey,
+        path: '/settings/devices',
+        builder: (context, state) => const ActiveDevicesPage(),
       ),
 
       // Văn bản: terms | privacy | copyright | faq.
@@ -130,13 +142,6 @@ final appRouterProvider = Provider<GoRouter>((ref) {
 
       // Tất cả thể loại (lưới 2 cột) — mở từ khối Thể loại ở Trang chủ.
       GoRoute(parentNavigatorKey: _rootNavigatorKey, path: '/genres', builder: (context, state) => const BrowsePage()),
-
-      // Trung tâm Review bản thảo (mã REV-...) — mở từ màn Cá nhân / Thông báo.
-      GoRoute(
-        parentNavigatorKey: _rootNavigatorKey,
-        path: '/review',
-        builder: (context, state) => const ReviewHubPage(),
-      ),
 
       // Pushable Sub-routes on Root Navigator:
       // 1. Series Detail Page: /series/:id
@@ -157,36 +162,6 @@ final appRouterProvider = Provider<GoRouter>((ref) {
           final seriesId = state.pathParameters['id'] ?? '';
           final chapterId = state.uri.queryParameters['chapterId'];
           return ComicReaderPage(seriesId: seriesId, chapterId: chapterId);
-        },
-      ),
-
-      // 3. Review Invite Page: /review/invite/:token
-      GoRoute(
-        parentNavigatorKey: _rootNavigatorKey,
-        path: '/review/invite/:token',
-        builder: (context, state) {
-          final token = state.pathParameters['token'] ?? '';
-          return ReviewInvitePage(token: token);
-        },
-      ),
-
-      // 4. Review Canvas Page: /review/canvas/:token
-      GoRoute(
-        parentNavigatorKey: _rootNavigatorKey,
-        path: '/review/canvas/:token',
-        builder: (context, state) {
-          final token = state.pathParameters['token'] ?? '';
-          return ReviewCanvasPage(token: token);
-        },
-      ),
-
-      // 5. Review Expired Page: /review/expired/:token
-      GoRoute(
-        parentNavigatorKey: _rootNavigatorKey,
-        path: '/review/expired/:token',
-        builder: (context, state) {
-          final token = state.pathParameters['token'] ?? '';
-          return ReviewExpiredPage(token: token);
         },
       ),
     ],

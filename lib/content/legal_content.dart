@@ -32,7 +32,7 @@ const termsOfService = LegalDocument(
   updated: _updated,
   intro:
       'Khi tạo tài khoản hoặc sử dụng ứng dụng đọc truyện PanelForge, bạn đồng ý với các điều khoản dưới đây. '
-      'Vui lòng đọc kỹ trước khi nạp Ví, mở khóa chương hoặc đăng ký VIP.',
+      'Vui lòng đọc kỹ trước khi nạp Ví hoặc mở khóa ấn bản chương.',
   sections: [
     (
       heading: '1. Dịch vụ',
@@ -46,7 +46,7 @@ const termsOfService = LegalDocument(
       heading: '2. Tài khoản',
       body: [
         'Bạn có thể xem danh sách truyện, chi tiết và danh sách chương mà không cần đăng nhập. '
-            'Đọc nội dung chương, tải chương để đọc ngoại tuyến, nạp Ví và mua VIP cần tài khoản đã xác thực email.',
+            'Đọc nội dung chương, tải chương để đọc ngoại tuyến và nạp Ví cần tài khoản đã xác thực email.',
         'Bạn chịu trách nhiệm giữ bí mật mật khẩu và mã xác thực 2 lớp. Thiết bị được đánh dấu tin cậy có thể bỏ qua '
             'bước 2FA trong 30 ngày; bạn có thể xoá thiết bị khỏi danh sách tin cậy bất kỳ lúc nào trong Cài đặt.',
         'Không chia sẻ, mua bán hoặc cho thuê tài khoản. Tài khoản vi phạm có thể bị giới hạn quyền đọc hoặc vô hiệu hóa.',
@@ -55,7 +55,7 @@ const termsOfService = LegalDocument(
     (
       heading: '3. Chương miễn phí, trả phí và trang xem trước',
       body: [
-        'Mỗi chương được phát hành theo từng ấn bản ngôn ngữ (ví dụ Tiếng Việt, English, 日本語). '
+        'Mỗi chương được phát hành theo từng ấn bản ngôn ngữ (ví dụ Tiếng Việt, English). '
             'Loại Miễn phí / Trả phí, giá và số trang xem trước của từng ấn bản do Nhà phát hành (Publisher) quy định.',
         'Với ấn bản trả phí mà bạn chưa mở khóa, bạn được đọc các trang xem trước; các trang còn lại bị làm mờ cho tới khi mở khóa cả chương.',
         'Giá có thể thay đổi theo thời gian. Giá áp dụng là giá hiển thị tại thời điểm bạn xác nhận thanh toán; '
@@ -68,7 +68,7 @@ const termsOfService = LegalDocument(
         'Mọi giá, số dư Ví và giao dịch tính bằng Việt Nam Đồng (VNĐ). Không có xu, điểm hay đơn vị tiền ảo; không quy đổi ngoại tệ.',
         'Nạp Ví bằng chuyển khoản VietQR vào tài khoản ngân hàng của nền tảng. Tiền chỉ được cộng vào Ví sau khi giao dịch được xác nhận đã nhận; '
             'trong lúc chờ, đơn ở trạng thái Đang chờ và có thể xem trong Lịch sử giao dịch.',
-        'Bạn cũng có thể chuyển khoản VietQR trực tiếp để mở khóa một chương hoặc mua VIP mà không cần nạp Ví trước.',
+        'Bạn cũng có thể chuyển khoản VietQR trực tiếp để mở khóa một ấn bản chương mà không cần nạp Ví trước.',
         'Mọi giao dịch được ghi vào sổ giao dịch chỉ-ghi-thêm (không sửa, không xoá) để bảo đảm minh bạch.',
       ],
     ),
@@ -82,23 +82,15 @@ const termsOfService = LegalDocument(
       ],
     ),
     (
-      heading: '6. Gói VIP',
+      heading: '6. Hoàn tiền',
       body: [
-        'Gói VIP (tháng hoặc năm) cho phép đọc mọi chương trả phí trong thời hạn gói. Hết hạn, các chương bạn chưa mua riêng trở lại trạng thái khóa.',
-        'VIP được kích hoạt ngay khi trả bằng số dư Ví, hoặc khi chuyển khoản VietQR được xác nhận. Gói không tự gia hạn; '
-            'bạn chủ động gia hạn trong tab Cửa hàng.',
-      ],
-    ),
-    (
-      heading: '7. Hoàn tiền',
-      body: [
-        'Do nội dung số được cung cấp ngay sau khi mở khóa, các giao dịch mở khóa chương và mua VIP đã hoàn tất không được hoàn tiền, '
+        'Do nội dung số được cung cấp ngay sau khi mở khóa, các giao dịch mở khóa ấn bản đã hoàn tất không được hoàn tiền, '
             'trừ trường hợp lỗi hệ thống (ví dụ bị trừ tiền nhưng không mở được chương).',
         'Nếu chuyển khoản VietQR nhưng Ví chưa được cộng sau thời gian hợp lý, hoặc gặp lỗi thanh toán, hãy liên hệ hỗ trợ kèm mã đơn trong Lịch sử giao dịch.',
       ],
     ),
     (
-      heading: '8. Bản quyền và sử dụng nội dung',
+      heading: '7. Bản quyền và sử dụng nội dung',
       body: [
         'Truyện và hình ảnh thuộc bản quyền của Studio sáng tác. Bạn chỉ được đọc cho mục đích cá nhân, phi thương mại trong ứng dụng.',
         'Nghiêm cấm sao chép, chụp/quay màn hình để phát tán, tải lại lên nơi khác, bán lại hoặc dùng nội dung để huấn luyện mô hình AI '
@@ -251,22 +243,9 @@ const faqDocument = LegalDocument(
       body: ['Không. Mỗi ấn bản ngôn ngữ được mua riêng: mua ngôn ngữ nào đọc ngôn ngữ đó.'],
     ),
     (
-      heading: 'VIP khác gì mua lẻ từng chương?',
-      body: [
-        'VIP cho đọc mọi chương trả phí khi gói còn hạn. Mua lẻ thì chương đó thuộc về bạn vĩnh viễn, kể cả khi không có VIP.',
-      ],
-    ),
-    (
       heading: 'Đọc ngoại tuyến thế nào?',
       body: [
         'Trong danh sách chương, chạm biểu tượng tải về ở chương miễn phí hoặc chương đã mở khóa vĩnh viễn. Chương đã tải đọc được khi không có mạng.',
-      ],
-    ),
-    (
-      heading: 'Mã Review (REV-...) là gì?',
-      body: [
-        'Mã do Studio gửi để mời bạn xem và góp ý bản thảo chưa phát hành. Nhập mã trong Cài đặt › Nhập mã Review. '
-            'Bản thảo có hình mờ mang tên bạn và hết hạn theo lời mời.',
       ],
     ),
     (
