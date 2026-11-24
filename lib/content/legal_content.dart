@@ -251,7 +251,9 @@ const faqDocument = LegalDocument(
     (
       heading: 'Dữ liệu Đọc sau / Yêu thích có mất khi đổi máy không?',
       body: [
-        'Có. Các danh sách này hiện chỉ lưu trên thiết bị. Ví, giao dịch và chương đã mua thì gắn với tài khoản nên vẫn còn.',
+        'Không, nếu bạn đăng nhập: Đọc sau, Theo dõi, Yêu thích và Lịch sử đọc được đồng bộ với tài khoản '
+            '(Cài đặt › Đồng bộ ngay để cập nhật tức thì). Khi chưa đăng nhập, các danh sách này chỉ lưu trên thiết bị. '
+            'Ví, giao dịch và chương đã mua luôn gắn với tài khoản.',
       ],
     ),
   ],
@@ -263,3 +265,76 @@ const legalDocuments = <String, LegalDocument>{
   'copyright': copyrightNotice,
   'faq': faqDocument,
 };
+
+// ─── Bản Android (Google Play) ────────────────────────────────────────────────
+// Chính sách thanh toán Google Play: nội dung số bán trong app phải qua Google Play Billing và app không được
+// hướng người dùng sang cách trả tiền khác (VietQR / chuyển khoản). Trên Android các mục nói về thanh toán
+// được thay bằng nội dung Google Play; phần còn lại giữ nguyên.
+
+LegalDocument _replaceSections(LegalDocument doc, Map<String, LegalSection> replacements) => LegalDocument(
+  id: doc.id,
+  title: doc.title,
+  updated: doc.updated,
+  intro: doc.intro,
+  sections: [for (final s in doc.sections) replacements[s.heading] ?? s],
+);
+
+final _termsGooglePlay = _replaceSections(termsOfService, {
+  '4. Ví PanelForge và thanh toán': (
+    heading: '4. Ví PanelForge và thanh toán',
+    body: [
+      'Mọi giá, số dư Ví và giao dịch tính bằng Việt Nam Đồng (VNĐ). Không có xu, điểm hay đơn vị tiền ảo; không quy đổi ngoại tệ.',
+      'Trên ứng dụng Android, bạn nạp Ví qua Google Play. Số tiền của gói được cộng vào Ví ngay sau khi giao dịch '
+          'được Google Play và PanelForge xác nhận.',
+      'Thanh toán, hoá đơn và yêu cầu hoàn tiền của giao dịch Google Play tuân theo chính sách của Google Play.',
+      'Mọi giao dịch được ghi vào sổ giao dịch chỉ-ghi-thêm (không sửa, không xoá) để bảo đảm minh bạch.',
+    ],
+  ),
+  '6. Hoàn tiền': (
+    heading: '6. Hoàn tiền',
+    body: [
+      'Do nội dung số được cung cấp ngay sau khi mở khóa, các giao dịch mở khóa ấn bản đã hoàn tất không được hoàn tiền, '
+          'trừ trường hợp lỗi hệ thống (ví dụ bị trừ tiền nhưng không mở được chương).',
+      'Nếu đã thanh toán qua Google Play nhưng Ví chưa được cộng, hãy mở lại ứng dụng để giao dịch được xác nhận lại; '
+          'nếu vẫn chưa có, hãy liên hệ hỗ trợ kèm mã đơn hàng Google Play.',
+    ],
+  ),
+});
+
+final _privacyGooglePlay = _replaceSections(privacyNotice, {
+  '3. Dữ liệu thanh toán': (
+    heading: '3. Dữ liệu thanh toán',
+    body: [
+      'Số dư Ví, các đơn nạp / mở khóa / VIP (số tiền, thời điểm, trạng thái, chương liên quan) và quyền đọc đã mua.',
+      'Thanh toán trên Android do Google Play xử lý; PanelForge chỉ nhận mã giao dịch để xác thực, '
+          'không nhận số thẻ hay thông tin tài khoản thanh toán của bạn.',
+    ],
+  ),
+});
+
+final _faqGooglePlay = _replaceSections(faqDocument, {
+  'Làm sao để đọc chương trả phí?': (
+    heading: 'Làm sao để đọc chương trả phí?',
+    body: [
+      'Chạm vào chương có biểu tượng ổ khóa, chọn "Dùng Ví để đọc" để mở khóa cả chương bằng số dư Ví '
+          '(nạp Ví qua Google Play ở tab Cửa hàng). Chọn "Đọc thử trang xem trước" để đọc các trang miễn phí trước khi quyết định.',
+    ],
+  ),
+  'Đã chuyển khoản nhưng Ví chưa có tiền?': (
+    heading: 'Đã thanh toán qua Google Play nhưng Ví chưa có tiền?',
+    body: [
+      'Tiền vào Ví khi giao dịch được Google Play và PanelForge xác nhận. Nếu mạng bị gián đoạn lúc thanh toán, '
+          'mở lại ứng dụng để giao dịch được xác nhận lại. Quá lâu chưa được cộng, hãy liên hệ hỗ trợ kèm mã đơn hàng Google Play.',
+    ],
+  ),
+});
+
+/// Văn bản theo nền tảng: [googlePlayBilling] = true (Android) dùng bản thanh toán Google Play, không nhắc VietQR.
+Map<String, LegalDocument> legalDocumentsFor({required bool googlePlayBilling}) => googlePlayBilling
+    ? {
+        'terms': _termsGooglePlay,
+        'privacy': _privacyGooglePlay,
+        'copyright': copyrightNotice,
+        'faq': _faqGooglePlay,
+      }
+    : legalDocuments;
