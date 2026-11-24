@@ -3,6 +3,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 import 'package:google_fonts/google_fonts.dart';
 import '../../providers/api_providers.dart';
+import '../../services/api_client.dart' show ApiException;
 import '../../theme/app_theme.dart';
 
 enum _LoginViewMode {
@@ -160,11 +161,30 @@ class _LoginPageState extends ConsumerState<LoginPage> {
       _finishLogin();
     } catch (e) {
       if (!mounted) return;
+      // Backend trả 401 "Tài khoản chưa được kích hoạt..." cho email chưa xác thực →
+      // chuyển sang bước nhập PIN (có nút gửi lại mã) thay vì để người dùng kẹt ở form mật khẩu.
+      if (_isEmailNotConfirmedError(e)) {
+        setState(() {
+          _isLoading = false;
+          _mode = _LoginViewMode.verifyEmail;
+          _verifyPinController.clear();
+          _errorMessage = null;
+          _successNotice =
+              'Tài khoản chưa được kích hoạt. Nhập mã PIN đã gửi về email, hoặc bấm "Gửi lại mã PIN".';
+        });
+        return;
+      }
       setState(() {
         _isLoading = false;
         _errorMessage = e.toString().replaceAll('ApiException: ', '');
       });
     }
+  }
+
+  static bool _isEmailNotConfirmedError(Object e) {
+    if (e is! ApiException || e.statusCode != 401) return false;
+    final msg = e.message.toLowerCase();
+    return msg.contains('chưa được kích hoạt') || msg.contains('mã pin');
   }
 
   // ─── 2. Đăng ký tài khoản Độc giả mới ────────────────────────────────────
@@ -320,6 +340,7 @@ class _LoginPageState extends ConsumerState<LoginPage> {
     setState(() {
       _isLoading = true;
       _errorMessage = null;
+      _successNotice = null;
     });
 
     try {
@@ -343,6 +364,33 @@ class _LoginPageState extends ConsumerState<LoginPage> {
       setState(() {
         _isLoading = false;
         _errorMessage = e.toString().replaceAll('ApiException: ', '');
+      });
+    }
+  }
+
+  Future<void> _handleResendVerification() async {
+    final email = _emailController.text.trim().toLowerCase();
+    if (email.isEmpty) {
+      setState(() => _errorMessage = 'Vui lòng nhập email tài khoản của bạn.');
+      return;
+    }
+    setState(() {
+      _isLoading = true;
+      _errorMessage = null;
+      _successNotice = null;
+    });
+    try {
+      final msg = await ref.read(authServiceProvider).resendVerification(email: email);
+      if (!mounted) return;
+      setState(() {
+        _isLoading = false;
+        _successNotice = msg;
+      });
+    } catch (e) {
+      if (!mounted) return;
+      setState(() {
+        _isLoading = false;
+        _errorMessage = e.toString();
       });
     }
   }
@@ -1061,6 +1109,14 @@ class _LoginPageState extends ConsumerState<LoginPage> {
               : const Text('Kích Hoạt Tài Khoản', style: TextStyle(fontWeight: FontWeight.w700)),
         ),
         const SizedBox(height: 8),
+
+        TextButton(
+          onPressed: _isLoading ? null : _handleResendVerification,
+          child: const Text(
+            'Gửi lại mã PIN',
+            style: TextStyle(color: AppColors.primary, fontSize: 13, fontWeight: FontWeight.w700),
+          ),
+        ),
 
         TextButton(
           onPressed: () {

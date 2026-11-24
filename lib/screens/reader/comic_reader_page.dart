@@ -4,7 +4,7 @@ import 'package:flutter/material.dart';
 import 'package:panelforge/services/api_client.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
-import 'package:go_router/go_router.dart';
+import '../../navigation/back_navigation.dart';
 import 'package:google_fonts/google_fonts.dart';
 import '../../models/api_dtos.dart';
 import '../../models/comic_model.dart';
@@ -572,7 +572,7 @@ class _ComicReaderPageState extends ConsumerState<ComicReaderPage> with WidgetsB
           elevation: 0,
           leading: IconButton(
             icon: const Icon(Icons.arrow_back_ios_new_rounded, color: Colors.white, size: 20),
-            onPressed: () => context.pop(),
+            onPressed: () => context.popOrGo('/series/${widget.seriesId}'),
           ),
         ),
         body: const Center(
@@ -599,7 +599,7 @@ class _ComicReaderPageState extends ConsumerState<ComicReaderPage> with WidgetsB
           elevation: 0,
           leading: IconButton(
             icon: const Icon(Icons.arrow_back_ios_new_rounded, color: Colors.white, size: 20),
-            onPressed: () => context.pop(),
+            onPressed: () => context.popOrGo('/series/${widget.seriesId}'),
           ),
         ),
         body: Center(
@@ -746,7 +746,7 @@ class _ComicReaderPageState extends ConsumerState<ComicReaderPage> with WidgetsB
                       IconButton(
                         icon: const Icon(Icons.arrow_back_ios_new_rounded, size: 18),
                         color: hudTextColor,
-                        onPressed: () => context.pop(),
+                        onPressed: () => context.popOrGo('/series/${widget.seriesId}'),
                       ),
                       const SizedBox(width: 4),
                       Expanded(
@@ -1380,7 +1380,7 @@ class _ComicReaderPageState extends ConsumerState<ComicReaderPage> with WidgetsB
         elevation: 0,
         leading: IconButton(
           icon: const Icon(Icons.arrow_back_ios_new_rounded, color: Colors.white, size: 20),
-          onPressed: () => context.pop(),
+          onPressed: () => context.popOrGo('/series/${widget.seriesId}'),
         ),
         title: Text(
           series.title,

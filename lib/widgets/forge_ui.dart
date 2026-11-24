@@ -192,7 +192,9 @@ class ForgeSectionHeader extends StatelessWidget {
     return InkWell(
       onTap: onMore,
       child: Padding(
-        padding: const EdgeInsets.fromLTRB(16, 18, 8, 10),
+        // Không thụt lề trái: các màn dùng header này (Thông báo, Đã tải) đã có padding 16 ở ListView,
+        // thụt thêm 16 làm tiêu đề lệch so với nội dung bên dưới.
+        padding: const EdgeInsets.fromLTRB(0, 18, 0, 10),
         child: Row(
           children: [
             Expanded(

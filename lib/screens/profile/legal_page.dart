@@ -1,5 +1,5 @@
 import 'package:flutter/material.dart';
-import 'package:go_router/go_router.dart';
+import '../../navigation/back_navigation.dart';
 import 'package:google_fonts/google_fonts.dart';
 import '../../content/legal_content.dart';
 import '../../theme/app_theme.dart';
@@ -22,7 +22,7 @@ class LegalPage extends StatelessWidget {
         leading: IconButton(
           tooltip: 'Quay lại',
           icon: Icon(Icons.arrow_back_rounded, color: ForgeColors.text),
-          onPressed: () => context.pop(),
+          onPressed: () => context.popOrGo('/settings'),
         ),
         title: Text(
           doc?.title ?? 'Không tìm thấy',
