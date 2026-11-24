@@ -19,9 +19,13 @@ class ActivityPage extends ConsumerWidget {
   @override
   Widget build(BuildContext context, WidgetRef ref) {
     final auth = ref.watch(authStateProvider);
+    // Giao dịch thật từ `GET /api/wallet/me` (giống màn Ví); bộ nhớ đệm trên máy chỉ để dự phòng khi chưa tải được.
+    final serverTransactions = auth.isAuthenticated
+        ? ref.watch(walletNotifierProvider).asData?.value.transactions
+        : null;
     final transactions = !auth.isAuthenticated
         ? const <WalletTransactionDto>[]
-        : PreferencesService.getWalletTransactions();
+        : (serverTransactions ?? PreferencesService.getWalletTransactions());
     final history = PreferencesService.getReadingHistory();
     final notifications = ref.watch(notificationsProvider);
     final unread = ref.watch(unreadNotificationCountProvider);

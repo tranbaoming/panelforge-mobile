@@ -19,7 +19,8 @@ class LibrarySyncState {
   final DateTime? lastSyncedAt;
   final String? error;
 
-  /// Tăng mỗi lần thư viện trên máy được ghi đè từ server — màn hình watch để vẽ lại.
+  /// Tăng mỗi lần thư viện trên máy thay đổi (ghi đè từ server, hoặc thao tác trên máy như đọc chương,
+  /// thêm Đọc sau) — màn hình watch để vẽ lại.
   final int version;
 
   const LibrarySyncState({this.syncing = false, this.lastSyncedAt, this.error, this.version = 0});
@@ -98,6 +99,9 @@ class LibrarySyncNotifier extends Notifier<LibrarySyncState> {
   }
 
   void _onLocalChange(LibraryChange change) {
+    // Tab Cá nhân nằm trong shell (giữ trạng thái) nên không tự vẽ lại khi đóng Reader;
+    // báo thay đổi để Lịch sử / Đọc sau / Theo dõi hiện ngay mục vừa đọc.
+    state = state.copyWith(version: state.version + 1);
     if (!_signedIn) return;
     if (change.progress != null) {
       final entry = change.progress!;
