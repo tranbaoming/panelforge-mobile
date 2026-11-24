@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import '../../navigation/back_navigation.dart';
 import 'package:google_fonts/google_fonts.dart';
 import '../../content/legal_content.dart';
+import '../../services/google_play_billing_service.dart';
 import '../../theme/app_theme.dart';
 
 /// Trang văn bản: Điều khoản sử dụng, Chính sách bảo mật, Bản quyền, Câu hỏi thường gặp (`/legal/:id`).
@@ -11,7 +12,7 @@ class LegalPage extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final doc = legalDocuments[docId];
+    final doc = legalDocumentsFor(googlePlayBilling: GooglePlayBillingService.isSupportedPlatform)[docId];
     final isFaq = docId == 'faq';
     return Scaffold(
       backgroundColor: ForgeColors.bg,

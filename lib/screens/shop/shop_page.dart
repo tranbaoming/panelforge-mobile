@@ -191,7 +191,10 @@ class _BalanceCard extends ConsumerWidget {
           ),
           const SizedBox(height: 8),
           Text(
-            'Nạp Ví bằng VietQR — xác nhận là tiền vào Ví ngay để mở khóa từng ấn bản.',
+            // Android (Google Play): không nhắc VietQR — chính sách thanh toán của Play.
+            GooglePlayBillingService.isSupportedPlatform
+                ? 'Nạp Ví qua Google Play — tiền vào Ví ngay để mở khóa từng ấn bản.'
+                : 'Nạp Ví bằng VietQR — xác nhận là tiền vào Ví ngay để mở khóa từng ấn bản.',
             style: GoogleFonts.plusJakartaSans(fontSize: 13, color: ForgeColors.textSoft),
           ),
         ],
