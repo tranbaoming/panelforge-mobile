@@ -390,8 +390,9 @@ class _UnlockChapterBottomSheetState extends ConsumerState<UnlockChapterBottomSh
           ),
           const Divider(color: AppColors.darkBorder, height: 22),
           row(
-            'Số dư sau thanh toán:',
-            formatVnd(balance - _priceVnd),
+            hasEnoughMoney ? 'Số dư sau thanh toán:' : 'Cần nạp thêm:',
+            // Ví không thể âm: khi thiếu tiền hiện số tiền còn thiếu thay vì "-10.000đ".
+            formatVnd((balance - _priceVnd).abs()),
             color: hasEnoughMoney ? AppColors.mint : AppColors.rose,
             bold: true,
           ),

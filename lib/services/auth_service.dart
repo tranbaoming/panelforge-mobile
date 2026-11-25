@@ -262,23 +262,6 @@ class AuthService {
     return null;
   }
 
-  /// Lấy thông tin tài khoản người dùng từ Google userinfo API qua access_token
-  Future<Map<String, dynamic>?> _fetchGoogleUserInfo(String accessToken) async {
-    try {
-      final dio = Dio();
-      final response = await dio.get(
-        'https://www.googleapis.com/oauth2/v3/userinfo',
-        options: Options(headers: {'Authorization': 'Bearer $accessToken'}),
-      );
-      if (response.data is Map<String, dynamic>) {
-        return response.data as Map<String, dynamic>;
-      }
-    } catch (e) {
-      debugPrint('[AuthService] Không lấy được thông tin từ Google userinfo: $e');
-    }
-    return null;
-  }
-
   /// Xác thực Google Native trên Android / iOS
   Future<AuthResponseModel?> _signInWithGoogleNative() async {
     final googleSignIn = GoogleSignIn(
@@ -297,51 +280,10 @@ class AuthService {
     final googleAccessToken = auth.accessToken;
 
     if (googleIdToken == null && googleAccessToken == null) {
-      throw Exception('Không nhận được thông tin xác thực từ tài khoản Google.');
+      throw ApiException('Không nhận được thông tin xác thực từ tài khoản Google.');
     }
 
-    // 1. Thử trao đổi Firebase Token và gửi lên Backend .NET 8
-    String? firebaseIdToken;
-    try {
-      firebaseIdToken = await _exchangeGoogleTokenWithFirebase(
-        idToken: googleIdToken,
-        accessToken: googleAccessToken,
-      );
-    } catch (e) {
-      debugPrint('[AuthService] Native Firebase token exchange failed: $e');
-    }
-
-    if (firebaseIdToken != null && firebaseIdToken.isNotEmpty) {
-      try {
-        return await externalLogin(idToken: firebaseIdToken);
-      } catch (e) {
-        debugPrint('[AuthService] Native backend externalLogin failed: $e. Falling back to local Reader session.');
-      }
-    }
-
-    // 2. An toàn: Fallback tạo phiên Reader hợp lệ từ thông tin thật của Google
-    final fallbackUser = AuthUser(
-      id: account.id,
-      email: account.email,
-      fullName: account.displayName ?? account.email.split('@').first,
-      avatarUrl: account.photoUrl,
-      isActive: true,
-      role: 'User',
-      isEmailConfirmed: true,
-    );
-
-    await PreferencesService.saveAuthUser(fallbackUser.toJson());
-    final authState = AuthState(
-      role: MobileAuthRole.reader,
-      user: fallbackUser,
-    );
-    AuthService.onAuthStateChanged?.call(authState);
-
-    return AuthResponseModel(
-      user: fallbackUser,
-      token: googleIdToken ?? firebaseIdToken,
-      message: 'Đăng nhập Google thành công.',
-    );
+    return _completeGoogleLogin(idToken: googleIdToken, accessToken: googleAccessToken);
   }
 
   /// Xác thực Google chính thức trực tiếp qua WebView trên Windows Desktop
@@ -372,72 +314,24 @@ class AuthService {
     final googleIdToken = tokens['id_token'];
     final googleAccessToken = tokens['access_token'];
 
-    // Trích xuất thông tin Google Profile thật từ JWT ID Token và userinfo
-    Map<String, dynamic>? claims;
-    if (googleIdToken != null && googleIdToken.isNotEmpty) {
-      claims = parseJwtPayload(googleIdToken);
-    }
+    return _completeGoogleLogin(idToken: googleIdToken, accessToken: googleAccessToken);
+  }
 
-    if ((claims == null || claims['email'] == null) &&
-        googleAccessToken != null &&
-        googleAccessToken.isNotEmpty) {
-      final userInfo = await _fetchGoogleUserInfo(googleAccessToken);
-      if (userInfo != null) {
-        claims = {...?claims, ...userInfo};
-      }
-    }
-
-    final email = claims?['email'] as String?;
-    final fullName = (claims?['name'] ?? email?.split('@').first ?? 'Độc Giả Google') as String;
-    final avatarUrl = claims?['picture'] as String?;
-    final sub = (claims?['sub'] ?? DateTime.now().millisecondsSinceEpoch).toString();
-
-    // Bước 1: Thử đổi sang Firebase ID Token và gọi externalLogin lên Backend .NET 8
-    String? firebaseIdToken;
+  /// Đổi token Google → Firebase ID Token → phiên thật trên Backend (`/api/auth/external-login`).
+  /// Lỗi ở bước nào cũng ném ra để màn Đăng nhập báo lỗi — không tạo "phiên Reader" chỉ có trên máy:
+  /// phiên đó không có cookie server nên Ví, đọc chương, đồng bộ thư viện... đều lỗi 401.
+  Future<AuthResponseModel> _completeGoogleLogin({String? idToken, String? accessToken}) async {
+    final String firebaseIdToken;
     try {
       firebaseIdToken = await _exchangeGoogleTokenWithFirebase(
-        idToken: googleIdToken,
-        accessToken:
-            googleAccessToken?.isNotEmpty == true ? googleAccessToken : null,
+        idToken: idToken,
+        accessToken: accessToken?.isNotEmpty == true ? accessToken : null,
       );
     } catch (e) {
       debugPrint('[AuthService] Trao đổi Firebase ID Token thất bại: $e');
+      throw ApiException('Không xác thực được tài khoản Google. Vui lòng thử lại.');
     }
-
-    if (firebaseIdToken != null && firebaseIdToken.isNotEmpty) {
-      try {
-        final backendResponse = await externalLogin(idToken: firebaseIdToken);
-        return backendResponse;
-      } catch (e) {
-        debugPrint(
-            '[AuthService] Backend externalLogin thất bại: $e. Tự động chuyển sang fallback phiên Reader.');
-      }
-    }
-
-    // Bước 2: Tự động fallback tạo phiên Reader hợp lệ từ thông tin thật của Google
-    final realEmail = (email != null && email.isNotEmpty) ? email : 'reader@panelforge.com';
-    final fallbackUser = AuthUser(
-      id: sub,
-      email: realEmail,
-      fullName: fullName,
-      avatarUrl: avatarUrl,
-      isActive: true,
-      role: 'User',
-      isEmailConfirmed: true,
-    );
-
-    await PreferencesService.saveAuthUser(fallbackUser.toJson());
-    final authState = AuthState(
-      role: MobileAuthRole.reader,
-      user: fallbackUser,
-    );
-    AuthService.onAuthStateChanged?.call(authState);
-
-    return AuthResponseModel(
-      user: fallbackUser,
-      token: googleIdToken ?? firebaseIdToken,
-      message: 'Đăng nhập Google thành công.',
-    );
+    return externalLogin(idToken: firebaseIdToken);
   }
 
   /// 4. Lấy thông tin tài khoản hiện tại từ Cookie HttpOnly pf_access

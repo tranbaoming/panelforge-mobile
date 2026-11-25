@@ -66,6 +66,13 @@ class _WalletTopupDialogState extends ConsumerState<WalletTopupDialog> with Sing
   void initState() {
     super.initState();
     _tabController = TabController(length: 2, vsync: this, initialIndex: widget.initialTab.clamp(0, 1));
+    // Mở Ví từ bất kỳ đâu (Cài đặt, sheet mở khóa chương...) → lấy số dư & lịch sử mới nhất,
+    // giữ dữ liệu đang hiện trong lúc tải để không nháy.
+    Future.microtask(() {
+      if (mounted && ref.read(authStateProvider).isAuthenticated) {
+        ref.read(walletNotifierProvider.notifier).refresh(silent: true);
+      }
+    });
     if (_useGooglePlayBilling) {
       // Thông báo kết quả do PanelForgeApp hiển thị; hộp thoại chỉ tắt trạng thái đang mua.
       _billingSub = ref.read(googlePlayBillingProvider).events.listen((event) {

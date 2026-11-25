@@ -74,6 +74,22 @@ void main() {
 
   tearDown(() => container.dispose());
 
+  test('local changes bump version so the Profile tab redraws history right after reading', () async {
+    final before = container.read(librarySyncProvider).version;
+    await PreferencesService.saveReadingProgress(
+      ReadingHistoryEntry(
+        seriesId: 's1',
+        seriesTitle: 'S1',
+        chapterId: 'c1',
+        chapterNumber: 1,
+        lastPageNumber: 1,
+        totalPages: 3,
+        readAt: DateTime(2026, 11, 24),
+      ),
+    );
+    expect(container.read(librarySyncProvider).version, greaterThan(before));
+  });
+
   test('guests never call the server, even when they change lists', () async {
     await PreferencesService.toggleBookmark('local-1');
     await container.read(librarySyncProvider.notifier).syncNow();

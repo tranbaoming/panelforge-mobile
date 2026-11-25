@@ -4,4 +4,7 @@
          to allow setting breakpoints, to provide hot reload, etc.
     -->
     <uses-permission android:name="android.permission.INTERNET"/>
+    <!-- Chỉ bản debug/profile được gọi HTTP tới máy chủ dev (10.0.2.2 / localhost).
+         Bản release (Google Play) chỉ dùng HTTPS qua --dart-define=API_BASE_URL. -->
+    <application android:usesCleartextTraffic="true" />
 </manifest>

@@ -19,10 +19,21 @@ flutter test
 flutter run
 ```
 
+Release cho Google Play (gói AAB):
+
+```bash
+flutter build appbundle --release --dart-define=API_BASE_URL=https://<máy chủ production>
+```
+
+- Cần `android/key.properties` + upload keystore (mẫu: `android/key.properties.example`, cả hai đã .gitignore). Thiếu key hoặc thiếu `API_BASE_URL` https → Gradle chặn `bundleRelease`.
+- Bản release chỉ gọi HTTPS; HTTP (cleartext) chỉ bật ở manifest `src/debug` / `src/profile` cho máy chủ dev.
+- Tăng `version: x.y.z+N` trong `pubspec.yaml` (N = versionCode) mỗi lần upload, và giữ `AppInfo.version` khớp.
+
 Backend API Base URL:
-- Android Emulator: `http://10.0.2.2:5044`
-- iOS / Desktop / Web: `http://localhost:5044`
+- Bản build có `--dart-define=API_BASE_URL=...` → dùng địa chỉ đó (bắt buộc cho release).
+- Không có (dev): Android Emulator `http://10.0.2.2:5044`; iOS / Desktop / Web `http://localhost:5044`.
 - Base URL is chosen automatically by `services/api_config.dart` (no in-app server config screen).
+- Đăng nhập Google: lỗi đổi token / backend thì báo lỗi, không tạo phiên chỉ có trên máy.
 - Catalog đầy đủ được lưu sau mỗi lần tải thành công; mất mạng (lỗi kết nối / 5xx) thì Trang chủ dùng bản đã lưu kèm dải "Không có kết nối".
 - Deep link: `panelforge://app/series/<id>` (Android intent-filter + iOS CFBundleURLTypes) → GoRouter mở `/series/<id>`.
 

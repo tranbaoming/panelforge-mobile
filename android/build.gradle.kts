@@ -20,13 +20,15 @@ subprojects {
 }
 
 subprojects {
-    afterEvaluate {
-        if (project.plugins.hasPlugin("com.android.application") ||
-            project.plugins.hasPlugin("com.android.library")) {
-            val android = project.extensions.findByName("android") as? com.android.build.gradle.BaseExtension
+    val pinNdk: Project.() -> Unit = {
+        if (plugins.hasPlugin("com.android.application") || plugins.hasPlugin("com.android.library")) {
+            val android = extensions.findByName("android") as? com.android.build.gradle.BaseExtension
             android?.ndkVersion = "30.0.14904198"
         }
     }
+    // `:app` đã được evaluate xong ở khối evaluationDependsOn phía trên → afterEvaluate sẽ lỗi
+    // "Cannot run Project.afterEvaluate(Action) when the project is already evaluated".
+    if (state.executed) pinNdk() else afterEvaluate { pinNdk() }
 }
 
 tasks.register<Delete>("clean") {
