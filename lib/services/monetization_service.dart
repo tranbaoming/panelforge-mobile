@@ -6,6 +6,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../models/api_dtos.dart';
 import 'api_client.dart';
 import 'preferences_service.dart';
+import '../providers/api_providers.dart' show authStateProvider;
 
 /// Dịch vụ Ví độc giả, mở khóa chương và thanh toán VietQR — kết nối trực tiếp `WalletController`.
 ///
@@ -189,6 +190,15 @@ final monetizationServiceProvider = Provider<MonetizationService>((ref) {
 class WalletNotifier extends Notifier<AsyncValue<UserWalletDto>> {
   @override
   AsyncValue<UserWalletDto> build() {
+    ref.listen<String?>(authStateProvider.select((s) => s.user?.id), (prev, next) {
+      if (prev != next) {
+        _syncEntitlementProviders();
+        state = const AsyncLoading();
+        if (next != null) {
+          Future.microtask(_load);
+        }
+      }
+    });
     Future.microtask(_load);
     return const AsyncLoading();
   }

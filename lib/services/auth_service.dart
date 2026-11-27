@@ -1,9 +1,12 @@
 import 'dart:async';
 import 'dart:convert';
 import 'dart:io';
+import 'package:cached_network_image/cached_network_image.dart';
 import 'package:dio/dio.dart';
 import 'package:flutter/foundation.dart';
+import 'package:flutter/painting.dart';
 import 'package:google_sign_in/google_sign_in.dart';
+import 'package:path_provider/path_provider.dart';
 import '../models/auth_models.dart';
 import 'api_client.dart';
 import 'cbz_package_service.dart';
@@ -526,8 +529,11 @@ class AuthService {
     // Xóa sạch cookie trong bộ nhớ và file storage của CookieJar
     await ApiClient.cookieJar.deleteAll();
 
-    // Xóa thông tin xác thực trong SharedPreferences
-    await PreferencesService.clearAuthSession();
+    // Xóa toàn bộ dữ liệu gắn với người dùng hiện tại (ví, quyền đọc, thư viện, lịch sử, tìm kiếm, thiết bị nhớ 2FA)
+    await PreferencesService.clearUserScopedData();
+
+    // Xóa cache ảnh trong bộ nhớ và trên đĩa (tránh lộ ảnh trang trả phí cho tài khoản sau)
+    await clearImageCaches();
 
     // Xóa toàn bộ gói truyện tải offline để bảo vệ bản quyền & tránh lộ chương trả phí khi đổi tài khoản
     try {
@@ -634,6 +640,45 @@ class AuthService {
     }
   }
 
+  /// Hook cho test kiểm chứng việc xóa cache ảnh đĩa/bộ nhớ khi đăng xuất.
+  static Future<void> Function()? imageCacheClearer;
+
+  /// Xóa cache ảnh trong bộ nhớ (`PaintingBinding.imageCache`) và trên đĩa (`CachedNetworkImage`).
+  static Future<void> clearImageCaches() async {
+    if (imageCacheClearer != null) {
+      await imageCacheClearer!();
+      return;
+    }
+    try {
+      PaintingBinding.instance.imageCache.clear();
+      PaintingBinding.instance.imageCache.clearLiveImages();
+    } catch (_) {}
+
+    if (kIsWeb) return;
+
+    Directory? tempDir;
+    try {
+      tempDir = await getTemporaryDirectory();
+    } catch (_) {
+      // Môi trường unit test không có plugin path_provider: tránh khởi tạo DefaultCacheManager
+      // (IOFileSystem gọi getTemporaryDirectory không await trong constructor).
+      return;
+    }
+
+    try {
+      await CachedNetworkImageProvider.defaultCacheManager.emptyCache();
+    } catch (e) {
+      debugPrint('[AuthService] Không xóa được DefaultCacheManager: $e');
+    }
+
+    try {
+      final cachedImgDir = Directory('${tempDir.path}${Platform.pathSeparator}libCachedImageData');
+      if (await cachedImgDir.exists()) {
+        await cachedImgDir.delete(recursive: true);
+      }
+    } catch (_) {}
+  }
+
   /// Callback điều hướng sang `/login?redirect=...` khi phiên bị thu hồi/hết hạn trên server.
   static VoidCallback? onSessionExpiredRedirect;
   static bool _isHandlingSessionExpiry = false;
@@ -646,9 +691,10 @@ class AuthService {
       try {
         await ApiClient.cookieJar.deleteAll();
       } catch (_) {}
-      await PreferencesService.clearAuthSession();
+      await PreferencesService.clearUserScopedData();
       onAuthStateChanged?.call(AuthState.unauthenticated());
       onSessionExpiredRedirect?.call();
+      await clearImageCaches();
     } finally {
       _isHandlingSessionExpiry = false;
     }
