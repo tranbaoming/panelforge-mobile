@@ -243,9 +243,10 @@ void main() {
       }
       // Chưa đăng nhập: không có Đổi mật khẩu / Đăng xuất / Xoá tài khoản / Review.
       expect(find.text('Nhập mã Review'), findsNothing);
-      expect(find.text('Đổi mật khẩu'), findsNothing);
+      expect(find.text('Đổi mật khẩu tài khoản'), findsNothing);
+      expect(find.text('Bảo mật & phiên đăng nhập'), findsNothing);
       expect(find.text('Xoá tài khoản'), findsNothing);
-      expect(find.text('Đăng xuất'), findsNothing);
+      expect(find.text('Đăng xuất khỏi thiết bị này'), findsNothing);
     });
 
     testWidgets('Signed-in Settings shows password, trusted device, logout and delete account', (
@@ -256,11 +257,22 @@ void main() {
       await tester.pumpAndSettle();
       await openSettings(tester);
 
-      for (final label in ['Hồ sơ của tôi', 'Đổi mật khẩu', 'Thiết bị tin cậy', 'Lịch sử giao dịch', 'Đăng xuất']) {
-        expect(find.text(label), findsOneWidget, reason: label);
+      for (final label in [
+        'Hồ sơ của tôi',
+        'Lịch sử giao dịch',
+        'Bảo mật & phiên đăng nhập',
+        'Xác Thực 2 Bước (2FA)',
+        'Đổi mật khẩu tài khoản',
+        'Thiết bị tin cậy',
+        'Đăng xuất khỏi thiết bị này',
+      ]) {
+        final row = find.text(label);
+        await scrollTo(tester, row);
+        expect(row, findsOneWidget, reason: label);
       }
       final delete = find.text('Xoá tài khoản');
-      await scrollTo(tester, delete);
+      await tester.scrollUntilVisible(delete, -200, scrollable: find.byType(Scrollable).last);
+      await tester.pumpAndSettle();
       await tester.tap(delete);
       await tester.pumpAndSettle();
       // Hộp xác nhận nêu rõ hậu quả; Huỷ thì không làm gì.

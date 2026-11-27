@@ -55,6 +55,7 @@ dependencies:
   in_app_purchase: ^3.2.1
   in_app_purchase_android: ^0.5.5
   flutter_secure_storage: ^11.2.0
+  qr_flutter: ^4.1.0
 
 dev_dependencies:
   flutter_test:

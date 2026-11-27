@@ -119,5 +119,19 @@ void main() {
       expect(allLogs, isNot(contains('777888')));
       expect(allLogs, isNot(contains('raw-secret-string-token')));
     });
+
+    test('redacts 2FA setup secrets (sharedKey, authenticatorUri, formattedKey)', () {
+      final redacted = AuthInterceptor.redactForLog({
+        'sharedKey': 'JBSWY3DPEHPK3PXP',
+        'authenticatorUri': 'otpauth://totp/PanelForge:user@example.com?secret=JBSWY3DPEHPK3PXP&issuer=PanelForge',
+        'formattedKey': 'JBSW Y3DP EHPK 3PXP',
+        'message': 'OK',
+      }) as Map;
+
+      expect(redacted['sharedKey'], AuthInterceptor.redactedValue);
+      expect(redacted['authenticatorUri'], AuthInterceptor.redactedValue);
+      expect(redacted['formattedKey'], AuthInterceptor.redactedValue);
+      expect(redacted['message'], 'OK');
+    });
   });
 }
