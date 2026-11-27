@@ -1,4 +1,5 @@
 import 'dart:async';
+import 'dart:convert';
 import 'dart:io' show Platform, Directory;
 import 'package:cookie_jar/cookie_jar.dart';
 import 'package:dio/dio.dart';
@@ -41,6 +42,90 @@ class AuthInterceptor extends QueuedInterceptor {
 
   static Completer<bool>? _refreshCompleter;
 
+  static const String redactedValue = '[REDACTED]';
+
+  static final RegExp _sensitiveEndpoints = RegExp(
+    r'/api/(auth|wallet|payment|payments|billing|iap)/',
+    caseSensitive: false,
+  );
+
+  /// Kiểm tra khóa có chứa dữ liệu nhạy cảm cần che khi ghi log hay không.
+  static bool isSensitiveKey(String key) {
+    final normalized = key.toLowerCase().replaceAll(RegExp(r'[^a-z0-9]'), '');
+    if (normalized == 'code' ||
+        normalized == 'otp' ||
+        normalized == 'totp' ||
+        normalized == 'pin' ||
+        normalized == 'secret' ||
+        normalized == 'token' ||
+        normalized == 'cookie' ||
+        normalized == 'authorization' ||
+        normalized == 'receipt' ||
+        normalized == 'signature') {
+      return true;
+    }
+    const sensitiveSubstrings = [
+      'password',
+      'passwd',
+      'secret',
+      'token',
+      'otp',
+      'totp',
+      '2fa',
+      'twofactor',
+      'recoverycode',
+      'verificationcode',
+      'authcode',
+      'backupcode',
+      'cookie',
+      'authorization',
+      'credential',
+      'privatekey',
+      'apikey',
+      'receipt',
+      'signature',
+    ];
+    for (final s in sensitiveSubstrings) {
+      if (normalized.contains(s)) return true;
+    }
+    return false;
+  }
+
+  /// Che đệ quy mọi giá trị nhạy cảm (mật khẩu, OTP, mã 2FA, token...) trước khi ghi log.
+  static dynamic redactForLog(dynamic data, {bool sensitiveEndpoint = false}) {
+    if (data == null) return null;
+    if (data is Map) {
+      return data.map((k, v) {
+        final keyStr = k.toString();
+        if (isSensitiveKey(keyStr)) {
+          return MapEntry(keyStr, redactedValue);
+        }
+        return MapEntry(keyStr, redactForLog(v));
+      });
+    }
+    if (data is List) {
+      return data.map((e) => redactForLog(e)).toList();
+    }
+    if (data is FormData) {
+      return {
+        for (final entry in data.fields)
+          entry.key: isSensitiveKey(entry.key) ? redactedValue : entry.value,
+      };
+    }
+    if (data is String) {
+      final trimmed = data.trim();
+      if ((trimmed.startsWith('{') && trimmed.endsWith('}')) ||
+          (trimmed.startsWith('[') && trimmed.endsWith(']'))) {
+        try {
+          final decoded = jsonDecode(trimmed);
+          return redactForLog(decoded, sensitiveEndpoint: sensitiveEndpoint);
+        } catch (_) {}
+      }
+      if (sensitiveEndpoint) return redactedValue;
+    }
+    return data;
+  }
+
   @override
   void onRequest(RequestOptions options, RequestInterceptorHandler handler) {
     // 1. Chống CSRF: Bắt buộc header X-Requested-With ở mọi request
@@ -55,7 +140,13 @@ class AuthInterceptor extends QueuedInterceptor {
     if (kDebugMode) {
       debugPrint('[API REQUEST] ${options.method} ${options.uri}');
       if (options.data != null) {
-        debugPrint('[API REQUEST BODY] ${options.data}');
+        final isSensitive = _sensitiveEndpoints.hasMatch(options.path) ||
+            _sensitiveEndpoints.hasMatch(options.uri.toString());
+        final sanitized = redactForLog(
+          options.data,
+          sensitiveEndpoint: isSensitive,
+        );
+        debugPrint('[API REQUEST BODY] $sanitized');
       }
     }
 
@@ -76,7 +167,10 @@ class AuthInterceptor extends QueuedInterceptor {
 
     if (kDebugMode) {
       debugPrint('[API ERROR] $status: ${err.message}');
-      debugPrint('[API ERROR DATA] ${err.response?.data}');
+      if (err.response?.data != null) {
+        final sanitizedErr = redactForLog(err.response?.data);
+        debugPrint('[API ERROR DATA] $sanitizedErr');
+      }
     }
 
     // 1. Phòng thủ Brute-force: Bắt lỗi 429 Too Many Requests
