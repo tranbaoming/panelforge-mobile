@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'package:flutter/material.dart' show ThemeMode;
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../models/api_dtos.dart';
@@ -128,8 +129,12 @@ class AuthNotifier extends Notifier<AuthState> {
     AuthService.onAuthStateChanged = (newState) {
       state = newState;
     };
+    ApiClient.onSessionExpiredCallback = () {
+      unawaited(AuthService.handleSessionExpired());
+    };
     ref.onDispose(() {
       AuthService.onAuthStateChanged = null;
+      ApiClient.onSessionExpiredCallback = null;
     });
 
     final cachedUser = PreferencesService.getAuthUser();

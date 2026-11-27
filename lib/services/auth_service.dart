@@ -634,18 +634,24 @@ class AuthService {
     }
   }
 
-  /// Xử lý dọn dẹp khi phiên bị hết hạn (chỉ khi không có phiên Reader cục bộ hợp lệ hoặc khi logout)
+  /// Callback điều hướng sang `/login?redirect=...` khi phiên bị thu hồi/hết hạn trên server.
+  static VoidCallback? onSessionExpiredRedirect;
+  static bool _isHandlingSessionExpiry = false;
+
+  /// Xử lý dọn dẹp và đăng xuất khi phiên bị hết hạn hoặc thu hồi trên server.
   static Future<void> handleSessionExpired() async {
-    final cached = PreferencesService.getAuthUser();
-    if (cached != null) {
-      debugPrint('[AuthService] Đang có phiên Reader hợp lệ, bỏ qua tự động đăng xuất ngầm.');
-      return;
-    }
+    if (_isHandlingSessionExpiry) return;
+    _isHandlingSessionExpiry = true;
     try {
-      await ApiClient.cookieJar.deleteAll();
-    } catch (_) {}
-    await PreferencesService.clearAuthSession();
-    onAuthStateChanged?.call(AuthState.unauthenticated());
+      try {
+        await ApiClient.cookieJar.deleteAll();
+      } catch (_) {}
+      await PreferencesService.clearAuthSession();
+      onAuthStateChanged?.call(AuthState.unauthenticated());
+      onSessionExpiredRedirect?.call();
+    } finally {
+      _isHandlingSessionExpiry = false;
+    }
   }
 }
 

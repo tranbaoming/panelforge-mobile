@@ -39,7 +39,8 @@ class AuthRouterListenable extends ChangeNotifier {
 final appRouterProvider = Provider<GoRouter>((ref) {
   final authNotifier = AuthRouterListenable(ref);
 
-  return GoRouter(
+  late final GoRouter router;
+  router = GoRouter(
     navigatorKey: _rootNavigatorKey,
     initialLocation: '/',
     refreshListenable: authNotifier,
@@ -166,6 +167,29 @@ final appRouterProvider = Provider<GoRouter>((ref) {
       ),
     ],
   );
+
+  AuthService.onSessionExpiredRedirect = () {
+    final config = router.routerDelegate.currentConfiguration;
+    String? currentRaw;
+    if (config.isNotEmpty) {
+      final last = config.last;
+      if (last is ImperativeRouteMatch) {
+        currentRaw = last.matches.uri.toString();
+      } else {
+        currentRaw = config.uri.toString();
+      }
+    }
+    if (currentRaw != null && (currentRaw == '/login' || currentRaw.startsWith('/login?'))) {
+      return;
+    }
+    final target = safeLoginRedirect(currentRaw);
+    router.go(target != null ? loginPathFor(target) : '/login');
+  };
+  ref.onDispose(() {
+    AuthService.onSessionExpiredRedirect = null;
+  });
+
+  return router;
 });
 
 /// Router dự phòng tương thích ngược nếu được gọi tĩnh
