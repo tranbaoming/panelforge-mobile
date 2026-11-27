@@ -392,7 +392,6 @@ class _SettingsPageState extends ConsumerState<SettingsPage> {
           if (authed) ...[
             _Item('Hồ sơ của tôi', subtitle: auth.user?.email, onTap: () => ReaderProfileSheet.show(context)),
             _Item('Lịch sử giao dịch', onTap: () => WalletTopupDialog.show(context, initialTab: 1)),
-            _Item('Xoá tài khoản', danger: true, onTap: _deleteAccount),
             const _Header('Bảo mật & phiên đăng nhập'),
             _TwoFactorSecurityCard(
               enabled: auth.user?.twoFactorEnabled == true,
@@ -411,6 +410,7 @@ class _SettingsPageState extends ConsumerState<SettingsPage> {
               onTap: _forgetDevice,
             ),
             _Item('Đăng xuất khỏi thiết bị này', onTap: () => showLogoutConfirmDialog(context, ref)),
+            _Item('Xoá tài khoản', danger: true, onTap: _deleteAccount),
           ] else
             _Item('Đăng nhập / Đăng ký', onTap: () => context.push('/login')),
           const _Header('Cài đặt ứng dụng'),

@@ -111,11 +111,13 @@ class _TwoFactorSetupSheetState extends ConsumerState<_TwoFactorSetupSheet> {
       _submitError = null;
     });
 
+    final messenger = ScaffoldMessenger.of(context);
+    final navigator = Navigator.of(context);
     try {
       final message = await ref.read(authStateProvider.notifier).confirmTwoFactorSetup(code);
       if (!mounted) return;
-      Navigator.of(context).pop();
-      ScaffoldMessenger.of(context).showSnackBar(
+      navigator.pop();
+      messenger.showSnackBar(
         SnackBar(
           content: Text(message),
           behavior: SnackBarBehavior.floating,
@@ -399,14 +401,16 @@ class _DisableTwoFactorDialogState extends ConsumerState<_DisableTwoFactorDialog
       _error = null;
     });
 
+    final messenger = ScaffoldMessenger.of(context);
+    final navigator = Navigator.of(context);
     try {
       final message = await ref.read(authStateProvider.notifier).disableTwoFactor(
             code,
             _passwordController.text,
           );
       if (!mounted) return;
-      Navigator.of(context).pop();
-      ScaffoldMessenger.of(context).showSnackBar(
+      navigator.pop();
+      messenger.showSnackBar(
         SnackBar(
           content: Text(message),
           behavior: SnackBarBehavior.floating,
