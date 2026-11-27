@@ -4,6 +4,7 @@ import 'package:flutter/material.dart';
 import 'package:google_fonts/google_fonts.dart';
 import '../models/comic_model.dart';
 import '../models/comic_package_models.dart';
+import '../services/reader_image_auth.dart';
 import '../theme/app_theme.dart';
 import 'locked_page_tile.dart';
 import 'text_region_overlay.dart';
@@ -22,6 +23,9 @@ class AdaptiveWebtoonView extends StatefulWidget {
   /// Bấm "Mở khóa trang" trên trang trả phí lẻ chưa mua.
   final ValueChanged<ComicPageData>? onUnlockPage;
 
+  /// HTTP headers (gồm Cookie phiên từ DEC-04 helper) cho ảnh trang truyện.
+  final Map<String, String>? imageHttpHeaders;
+
   const AdaptiveWebtoonView({
     super.key,
     required this.chapter,
@@ -34,6 +38,7 @@ class AdaptiveWebtoonView extends StatefulWidget {
     required this.onTapScreen,
     this.onRegionTap,
     this.onUnlockPage,
+    this.imageHttpHeaders,
   });
 
   @override
@@ -97,13 +102,15 @@ class AdaptiveWebtoonViewState extends State<AdaptiveWebtoonView> {
     }
   }
 
-  Widget _buildImageContent(String pathOrUrl) {
+  Widget _buildImageContent(BuildContext context, String pathOrUrl) {
     final isNetwork = pathOrUrl.startsWith('http://') || pathOrUrl.startsWith('https://');
     if (isNetwork) {
+      final memCacheWidth = ReaderImageAuth.memCacheWidthForContext(context, maxLogicalWidth: 680.0);
       return CachedNetworkImage(
         imageUrl: pathOrUrl,
+        httpHeaders: widget.imageHttpHeaders,
         fit: BoxFit.contain,
-        memCacheWidth: 1080,
+        memCacheWidth: memCacheWidth,
         placeholder: (context, url) => Container(
           height: 450,
           color: Colors.black12,
@@ -207,7 +214,7 @@ class AdaptiveWebtoonViewState extends State<AdaptiveWebtoonView> {
                               builder: (context, constraints) {
                                 return Stack(
                                   children: [
-                                    _buildImageContent(page.imageUrl!),
+                                    _buildImageContent(context, page.imageUrl!),
                                     if (widget.package != null && widget.selectedLanguage != null)
                                       Positioned.fill(
                                         child: TextRegionOverlay(

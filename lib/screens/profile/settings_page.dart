@@ -17,6 +17,7 @@ import '../../services/preferences_service.dart';
 import '../../theme/app_theme.dart';
 import '../../widgets/logout_dialog.dart';
 import '../../widgets/reader_profile_sheet.dart';
+import '../../widgets/two_factor_dialogs.dart';
 import '../../widgets/wallet_topup_dialog.dart';
 
 /// Ngôn ngữ giao diện duy nhất ứng dụng đang có.
@@ -390,7 +391,14 @@ class _SettingsPageState extends ConsumerState<SettingsPage> {
           const _Header('Tài khoản'),
           if (authed) ...[
             _Item('Hồ sơ của tôi', subtitle: auth.user?.email, onTap: () => ReaderProfileSheet.show(context)),
-            _Item('Đổi mật khẩu', onTap: () => showChangePasswordDialog(context, ref)),
+            _Item('Lịch sử giao dịch', onTap: () => WalletTopupDialog.show(context, initialTab: 1)),
+            const _Header('Bảo mật & phiên đăng nhập'),
+            _TwoFactorSecurityCard(
+              enabled: auth.user?.twoFactorEnabled == true,
+              onSetup: () => showTwoFactorSetupSheet(context, ref),
+              onDisable: () => showDisableTwoFactorDialog(context, ref),
+            ),
+            _Item('Đổi mật khẩu tài khoản', onTap: () => showChangePasswordDialog(context, ref)),
             _Item(
               'Thiết bị đang đăng nhập',
               subtitle: 'Quản lý tối đa 3 thiết bị & đăng xuất từ xa',
@@ -401,13 +409,10 @@ class _SettingsPageState extends ConsumerState<SettingsPage> {
               subtitle: 'Xoá thiết bị này khỏi danh sách bỏ qua xác thực 2 lớp',
               onTap: _forgetDevice,
             ),
-            _Item('Lịch sử giao dịch', onTap: () => WalletTopupDialog.show(context, initialTab: 1)),
+            _Item('Đăng xuất khỏi thiết bị này', onTap: () => showLogoutConfirmDialog(context, ref)),
+            _Item('Xoá tài khoản', danger: true, onTap: _deleteAccount),
           ] else
             _Item('Đăng nhập / Đăng ký', onTap: () => context.push('/login')),
-          if (authed) ...[
-            _Item('Đăng xuất', onTap: () => showLogoutConfirmDialog(context, ref)),
-            _Item('Xoá tài khoản', danger: true, onTap: _deleteAccount),
-          ],
           const _Header('Cài đặt ứng dụng'),
           _Item(
             'Ngôn ngữ',
@@ -558,6 +563,122 @@ class _Item extends StatelessWidget {
             ],
           ),
         ),
+      ),
+    );
+  }
+}
+
+/// Thẻ Xác Thực 2 Bước (2FA) trong mục "Bảo mật & phiên đăng nhập".
+class _TwoFactorSecurityCard extends StatelessWidget {
+  final bool enabled;
+  final VoidCallback onSetup;
+  final VoidCallback onDisable;
+
+  const _TwoFactorSecurityCard({
+    required this.enabled,
+    required this.onSetup,
+    required this.onDisable,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    final badgeColor = enabled ? ForgeColors.green : ForgeColors.muted;
+    final badgeBg = enabled ? ForgeColors.green.withValues(alpha: 0.14) : ForgeColors.chip;
+    final badgeBorder = enabled ? ForgeColors.green.withValues(alpha: 0.4) : ForgeColors.border;
+
+    return Container(
+      margin: const EdgeInsets.fromLTRB(16, 2, 16, 12),
+      padding: const EdgeInsets.all(16),
+      decoration: BoxDecoration(
+        color: ForgeColors.surface,
+        borderRadius: BorderRadius.circular(14),
+        border: Border.all(color: ForgeColors.border),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+          Row(
+            children: [
+              Icon(
+                enabled ? Icons.verified_user_rounded : Icons.shield_outlined,
+                color: enabled ? ForgeColors.green : ForgeColors.accent,
+                size: 22,
+              ),
+              const SizedBox(width: 10),
+              Expanded(
+                child: Text(
+                  'Xác Thực 2 Bước (2FA)',
+                  style: GoogleFonts.plusJakartaSans(
+                    fontSize: 16,
+                    fontWeight: FontWeight.w800,
+                    color: ForgeColors.text,
+                  ),
+                ),
+              ),
+              const SizedBox(width: 8),
+              Container(
+                key: const ValueKey('2fa-status-badge'),
+                padding: const EdgeInsets.symmetric(horizontal: 9, vertical: 4),
+                decoration: BoxDecoration(
+                  color: badgeBg,
+                  borderRadius: BorderRadius.circular(999),
+                  border: Border.all(color: badgeBorder),
+                ),
+                child: Text(
+                  enabled ? 'ĐÃ BẬT' : 'CHƯA BẬT',
+                  style: GoogleFonts.plusJakartaSans(
+                    fontSize: 11,
+                    fontWeight: FontWeight.w800,
+                    letterSpacing: 0.4,
+                    color: badgeColor,
+                  ),
+                ),
+              ),
+            ],
+          ),
+          const SizedBox(height: 8),
+          Text(
+            'Bảo vệ tài khoản bằng mã TOTP RFC 6238 từ ứng dụng Authenticator.',
+            style: GoogleFonts.plusJakartaSans(
+              fontSize: 13,
+              color: ForgeColors.muted,
+              height: 1.45,
+            ),
+          ),
+          const SizedBox(height: 14),
+          if (enabled)
+            OutlinedButton.icon(
+              key: const ValueKey('2fa-action-button'),
+              onPressed: onDisable,
+              style: OutlinedButton.styleFrom(
+                foregroundColor: ForgeColors.danger,
+                side: BorderSide(color: ForgeColors.danger.withValues(alpha: 0.6)),
+                padding: const EdgeInsets.symmetric(vertical: 12),
+                shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
+              ),
+              icon: const Icon(Icons.gpp_maybe_rounded, size: 18),
+              label: Text(
+                'Tắt 2FA',
+                style: GoogleFonts.plusJakartaSans(fontSize: 14, fontWeight: FontWeight.w700),
+              ),
+            )
+          else
+            FilledButton.icon(
+              key: const ValueKey('2fa-action-button'),
+              onPressed: onSetup,
+              style: FilledButton.styleFrom(
+                backgroundColor: ForgeColors.accent,
+                foregroundColor: Colors.white,
+                padding: const EdgeInsets.symmetric(vertical: 12),
+                shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
+              ),
+              icon: const Icon(Icons.qr_code_2_rounded, size: 18),
+              label: Text(
+                'Cài đặt 2FA Authenticator',
+                style: GoogleFonts.plusJakartaSans(fontSize: 14, fontWeight: FontWeight.w700),
+              ),
+            ),
+        ],
       ),
     );
   }

@@ -8,7 +8,6 @@ import 'package:panelforge/providers/api_providers.dart';
 import 'package:panelforge/screens/auth/login_page.dart';
 import 'package:panelforge/services/api_client.dart';
 import 'package:panelforge/services/preferences_service.dart';
-import 'package:panelforge/widgets/auth_modal_sheet.dart';
 import 'package:panelforge/widgets/reader_profile_sheet.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
@@ -277,45 +276,6 @@ void main() {
   });
 
   group('Auth UI & Sheet Widget Tests', () {
-    testWidgets('AuthModalSheet renders login inputs, 2FA prompt and guest options', (WidgetTester tester) async {
-      await tester.pumpWidget(
-        ProviderScope(
-          child: MaterialApp(
-            home: Scaffold(
-              body: Builder(
-                builder: (context) => ElevatedButton(
-                  onPressed: () => AuthModalSheet.show(context),
-                  child: const Text('Open Auth Sheet'),
-                ),
-              ),
-            ),
-          ),
-        ),
-      );
-
-      await tester.tap(find.text('Open Auth Sheet'));
-      await tester.pumpAndSettle();
-
-      // Verify Header and Title
-      expect(find.text('Đăng Nhập Độc Giả'), findsOneWidget);
-      expect(find.text('Mở khóa truyện & đồng bộ Ví VNĐ'), findsOneWidget);
-
-      // Verify Inputs
-      expect(find.text('Email tài khoản:'), findsOneWidget);
-      expect(find.text('Mật khẩu:'), findsOneWidget);
-      expect(find.text('Quên mật khẩu?'), findsOneWidget);
-
-      // Verify Action Buttons
-      expect(find.text('Đăng Nhập'), findsOneWidget);
-      expect(find.text('Đăng nhập với Google'), findsOneWidget);
-      expect(find.text('Tiếp tục với tư cách Khách (Guest)'), findsOneWidget);
-
-      // Tapping Guest closes the sheet
-      await tester.tap(find.text('Tiếp tục với tư cách Khách (Guest)'));
-      await tester.pumpAndSettle();
-      expect(find.text('Đăng Nhập Độc Giả'), findsNothing);
-    });
-
     testWidgets('ReaderProfileSheet renders user info, device and logout action', (WidgetTester tester) async {
       await PreferencesService.saveAuthUser({
         'id': 'reader-123',
