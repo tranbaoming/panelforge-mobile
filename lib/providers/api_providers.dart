@@ -165,6 +165,48 @@ class AuthNotifier extends Notifier<AuthState> {
   void updateState(AuthState newState) {
     state = newState;
   }
+
+  /// Làm mới thông tin tài khoản hiện tại từ `GET /api/auth/me` (giữ nguyên role & landingContext).
+  Future<AuthUser?> refreshCurrentUser() async {
+    if (!state.isAuthenticated) return null;
+    try {
+      final freshUser = await ref.read(authServiceProvider).getMe();
+      await PreferencesService.saveAuthUser(freshUser.toJson());
+      state = state.copyWith(user: freshUser);
+      return freshUser;
+    } catch (_) {
+      return state.user;
+    }
+  }
+
+  Future<TwoFactorSetupModel> enableTwoFactor() {
+    return ref.read(authServiceProvider).enableTwoFactor();
+  }
+
+  Future<String> confirmTwoFactorSetup(String code) async {
+    final res = await ref.read(authServiceProvider).confirmTwoFactorSetup(code);
+    if (res.user != null) {
+      await PreferencesService.saveAuthUser(res.user!.toJson());
+      state = state.copyWith(user: res.user);
+    } else if (state.user != null) {
+      final updated = state.user!.copyWith(twoFactorEnabled: true);
+      await PreferencesService.saveAuthUser(updated.toJson());
+      state = state.copyWith(user: updated);
+    }
+    await refreshCurrentUser();
+    return res.message ?? 'Đã bật xác thực 2 bước (2FA) thành công.';
+  }
+
+  Future<String> disableTwoFactor(String code, String currentPassword) async {
+    final msg = await ref.read(authServiceProvider).disableTwoFactor(code, currentPassword);
+    if (state.user != null) {
+      final updated = state.user!.copyWith(twoFactorEnabled: false);
+      await PreferencesService.saveAuthUser(updated.toJson());
+      state = state.copyWith(user: updated);
+    }
+    await refreshCurrentUser();
+    return msg;
+  }
 }
 
 final authStateProvider = NotifierProvider<AuthNotifier, AuthState>(AuthNotifier.new);
