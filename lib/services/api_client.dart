@@ -8,6 +8,7 @@ import 'package:flutter/foundation.dart';
 import 'package:path_provider/path_provider.dart';
 import 'api_config.dart';
 import 'preferences_service.dart';
+import 'secure_storage_service.dart';
 
 class ApiException implements Exception {
   final String message;
@@ -298,9 +299,10 @@ class ApiClient {
   /// CookieJar toàn cục được khởi tạo từ PersistCookieJar
   static CookieJar get cookieJar => _cookieJar ?? CookieJar();
 
-  /// Khởi tạo thư mục và PersistCookieJar lưu trữ HttpOnly cookies
-  static Future<CookieJar> initCookieJar() async {
-    if (_cookieJar != null) return _cookieJar!;
+  /// Khởi tạo PersistCookieJar lưu trữ HttpOnly cookies trong SecureCookieStorage (Keystore/Keychain)
+  /// và tự động di chuyển + xóa thư mục `.cookies` dạng rõ cũ nếu có (AUD-FL-02).
+  static Future<CookieJar> initCookieJar({SecureKeyValueStore? store}) async {
+    if (_cookieJar != null && store == null) return _cookieJar!;
 
     if (kIsWeb) {
       _cookieJar = CookieJar();
@@ -308,17 +310,24 @@ class ApiClient {
     }
 
     try {
-      final appSupportDir = await getApplicationSupportDirectory();
-      final cookieDir = Directory('${appSupportDir.path}/.cookies');
-      if (!await cookieDir.exists()) {
-        await cookieDir.create(recursive: true);
-      }
+      final secureStorage = SecureCookieStorage(store: store);
+      await secureStorage.init(true, false);
+
+      // Di chuyển an toàn cookie phiên cũ từ `.cookies` (nếu có) rồi xóa thư mục plaintext cũ.
+      try {
+        final appSupportDir = await getApplicationSupportDirectory();
+        final legacyCookieDir = Directory('${appSupportDir.path}/.cookies');
+        if (await legacyCookieDir.exists()) {
+          await secureStorage.migrateLegacyCookieDir(legacyCookieDir);
+        }
+      } catch (_) {}
+
       _cookieJar = PersistCookieJar(
-        storage: FileStorage(cookieDir.path),
+        storage: secureStorage,
         persistSession: true,
       );
     } catch (e) {
-      debugPrint('[ApiClient] Khởi tạo PersistCookieJar thất bại: $e. Sử dụng CookieJar bộ nhớ tạm.');
+      debugPrint('[ApiClient] Khởi tạo SecureCookieStorage thất bại: $e. Sử dụng CookieJar bộ nhớ tạm.');
       _cookieJar = CookieJar();
     }
 

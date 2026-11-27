@@ -12,6 +12,7 @@ import '../../models/comic_package_models.dart';
 import '../../providers/api_providers.dart';
 import '../../services/catalog_service.dart';
 import '../../services/preferences_service.dart';
+import '../../services/reader_image_auth.dart';
 import '../../services/screen_security_service.dart';
 import '../../theme/app_theme.dart';
 import '../../widgets/edition_language_menu.dart';
@@ -49,6 +50,7 @@ class _ComicReaderPageState extends ConsumerState<ComicReaderPage> with WidgetsB
   String _activeLanguage = 'vi';
   List<ChapterLanguageOption> _chapterLanguages = const [];
   bool _isOfflinePackage = false;
+  Map<String, String>? _imageHeaders;
   bool _isLoading = true;
   String? _errorMessage;
 
@@ -284,7 +286,7 @@ class _ComicReaderPageState extends ConsumerState<ComicReaderPage> with WidgetsB
     });
 
     try {
-      final seriesDetail = await CatalogService().getSeriesDetail(widget.seriesId, lang: _preferredLanguage);
+      final seriesDetail = await ref.read(catalogServiceProvider).getSeriesDetail(widget.seriesId, lang: _preferredLanguage);
       final series = SeriesItem.fromPublicDetailDto(seriesDetail);
 
       final chId = widget.chapterId ?? (series.chapters.isNotEmpty ? series.chapters.first.id : null);
@@ -384,23 +386,17 @@ class _ComicReaderPageState extends ConsumerState<ComicReaderPage> with WidgetsB
       final isDownloaded = PreferencesService.isChapterDownloaded(chId);
       final cbzService = ref.read(cbzPackageServiceProvider);
 
-      LoadedComicPackage? package;
+      LoadedComicPackage? loadedPackage;
       if (isDownloaded) {
-        package = await cbzService.loadOfflinePackage(chId);
+        loadedPackage = await cbzService.loadOfflinePackage(chId);
       }
 
-      package ??= await cbzService.loadPackage(
-        chapterId: chId,
-        manifestUrl: targetChapter.manifestUrl,
-        cbzUrl: targetChapter.cbzPackageUrl,
-      );
-
-      final loadedPackage = package;
       ChapterItem currentChapter = targetChapter;
       var readingMode = _readingMode;
+      Map<String, String>? imageHeaders;
 
-      if (loadedPackage.manifest.pageFiles.isNotEmpty && isDownloaded) {
-        // Nạp các trang trực tiếp từ file offline
+      if (loadedPackage != null && loadedPackage.manifest.pageFiles.isNotEmpty && isDownloaded) {
+        // Nạp các trang trực tiếp từ file offline (0 request mạng)
         final offlinePages = <ComicPageData>[];
         for (int i = 0; i < loadedPackage.manifest.pageFiles.length; i++) {
           final filePath = loadedPackage.getPageFilePath(i);
@@ -410,10 +406,12 @@ class _ComicReaderPageState extends ConsumerState<ComicReaderPage> with WidgetsB
         }
         currentChapter = targetChapter.copyWith(pageCount: offlinePages.length, pages: offlinePages);
       } else {
-        // Nạp qua Catalog API — D9b: 404 EDITION_NOT_PUBLISHED tuyệt đối không tự động fallback sang ngôn ngữ khác.
+        // Nạp online qua duy nhất 1 request metadata từ Catalog API (AUD-FL-06).
+        // D9b: 404 EDITION_NOT_PUBLISHED tuyệt đối không tự động fallback sang ngôn ngữ khác.
+        final catalogService = ref.read(catalogServiceProvider);
         PublicChapterReadDto readDto;
         try {
-          readDto = await CatalogService().readChapter(chId, lang: _activeLanguage);
+          readDto = await catalogService.readChapter(chId, lang: _activeLanguage);
         } on ApiException catch (e) {
           if (e.statusCode == 404) {
             throw ApiException(
@@ -431,12 +429,21 @@ class _ComicReaderPageState extends ConsumerState<ComicReaderPage> with WidgetsB
         } else if (readDto.readingDirection == ApiReadingDirection.vertical || series.format == ComicFormat.webtoon) {
           readingMode = ReadingMode.webtoon;
         }
+
+        // DEC-04: lấy Cookie headers từ CookieJar cho ảnh trang truyện (1 helper tập trung).
+        final firstNetworkUrl = currentChapter.pages
+            .map((p) => p.imageUrl)
+            .whereType<String>()
+            .firstWhere((u) => u.startsWith('http://') || u.startsWith('https://'), orElse: () => '');
+        if (firstNetworkUrl.isNotEmpty) {
+          imageHeaders = await ReaderImageAuth.headersForUrl(firstNetworkUrl);
+        }
       }
       // Độc giả đã chọn chế độ đọc riêng cho bộ này → ưu tiên hơn hướng đọc mặc định của server.
       readingMode = _savedReadingMode ?? readingMode;
 
       String? selectedLang = _selectedLanguage;
-      if (loadedPackage.availableLanguages.isNotEmpty) {
+      if (loadedPackage != null && loadedPackage.availableLanguages.isNotEmpty) {
         selectedLang ??= loadedPackage.availableLanguages.first;
       }
 
@@ -449,10 +456,11 @@ class _ComicReaderPageState extends ConsumerState<ComicReaderPage> with WidgetsB
           _series = series;
           _currentChapter = currentChapter;
           _loadedPackage = loadedPackage;
+          _imageHeaders = imageHeaders;
           _selectedLanguage = selectedLang;
-          _isOfflinePackage = isDownloaded;
+          _isOfflinePackage = isDownloaded && loadedPackage != null && loadedPackage.manifest.pageFiles.isNotEmpty;
           _readingMode = readingMode;
-          _webtoonTileSpacing = loadedPackage.manifest.webtoonTileSpacing;
+          _webtoonTileSpacing = loadedPackage?.manifest.webtoonTileSpacing ?? 0.0;
           _isLoading = false;
           _currentPage = initialPage;
         });
@@ -474,7 +482,7 @@ class _ComicReaderPageState extends ConsumerState<ComicReaderPage> with WidgetsB
           ),
         );
         // Lượt xem thật trên catalog; lỗi mạng không ảnh hưởng việc đọc.
-        CatalogService().recordChapterView(currentChapter.id, lang: _activeLanguage).catchError((Object e) {
+        ref.read(catalogServiceProvider).recordChapterView(currentChapter.id, lang: _activeLanguage).catchError((Object e) {
           debugPrint('[ChapterView] $e');
         });
 
@@ -699,6 +707,7 @@ class _ComicReaderPageState extends ConsumerState<ComicReaderPage> with WidgetsB
                 },
                 onTapScreen: _toggleHud,
                 onUnlockPage: _isOfflinePackage ? null : _showUnlockChapterSheet,
+                imageHttpHeaders: _imageHeaders,
               ),
             ),
           ),
