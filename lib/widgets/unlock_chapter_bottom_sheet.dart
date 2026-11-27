@@ -191,10 +191,13 @@ class _UnlockChapterBottomSheetState extends ConsumerState<UnlockChapterBottomSh
 
   @override
   Widget build(BuildContext context) {
-    final wallet = ref.watch(walletNotifierProvider).asData?.value;
+    final walletAsync = ref.watch(walletNotifierProvider);
+    final wallet = walletAsync.asData?.value;
     final currentBalanceVnd = wallet?.balanceVnd ?? PreferencesService.getLocalBalanceVnd();
-    final hasEnoughMoney = currentBalanceVnd >= _priceVnd;
-    final missingVnd = (_priceVnd - currentBalanceVnd).clamp(0, 1 << 31);
+    final isBalanceLoading = currentBalanceVnd == null && walletAsync.isLoading;
+    final isBalanceUnavailable = currentBalanceVnd == null && !walletAsync.isLoading;
+    final hasEnoughMoney = currentBalanceVnd != null && currentBalanceVnd >= _priceVnd;
+    final missingVnd = currentBalanceVnd == null ? 0 : (_priceVnd - currentBalanceVnd).clamp(0, 1 << 31);
 
     return Container(
       decoration: const BoxDecoration(
@@ -231,13 +234,18 @@ class _UnlockChapterBottomSheetState extends ConsumerState<UnlockChapterBottomSh
               _buildMethodSelector(),
               const SizedBox(height: 14),
               if (_method == _UnlockMethod.wallet)
-                _buildWalletSummary(currentBalanceVnd, hasEnoughMoney)
+                _buildWalletSummary(currentBalanceVnd, hasEnoughMoney, isLoading: isBalanceLoading)
               else
                 _buildVietQrHint(),
               const SizedBox(height: 16),
               if (_errorMessage != null) _buildError(_errorMessage!),
-              if (_method == _UnlockMethod.wallet && !hasEnoughMoney) _buildInsufficientBanner(missingVnd),
-              _buildPrimaryAction(hasEnoughMoney),
+              if (_method == _UnlockMethod.wallet && !isBalanceLoading && !isBalanceUnavailable && !hasEnoughMoney)
+                _buildInsufficientBanner(missingVnd),
+              _buildPrimaryAction(
+                hasEnoughMoney,
+                isBalanceLoading: isBalanceLoading,
+                isBalanceUnavailable: isBalanceUnavailable,
+              ),
             ],
           ],
         ),
@@ -357,7 +365,8 @@ class _UnlockChapterBottomSheetState extends ConsumerState<UnlockChapterBottomSh
     );
   }
 
-  Widget _buildWalletSummary(int balance, bool hasEnoughMoney) {
+  Widget _buildWalletSummary(int? balance, bool hasEnoughMoney, {bool isLoading = false}) {
+    final unavailableLabel = isLoading ? 'Đang tải...' : '—';
     Widget row(String label, String value, {Color color = Colors.white, bool bold = false}) => Row(
       mainAxisAlignment: MainAxisAlignment.spaceBetween,
       children: [
@@ -381,7 +390,11 @@ class _UnlockChapterBottomSheetState extends ConsumerState<UnlockChapterBottomSh
       ),
       child: Column(
         children: [
-          row('Số dư Ví hiện tại:', formatVnd(balance)),
+          row(
+            'Số dư Ví hiện tại:',
+            balance == null ? unavailableLabel : formatVnd(balance),
+            color: balance == null ? AppColors.darkTextSecondary : Colors.white,
+          ),
           const SizedBox(height: 10),
           row(
             'Giá mở khóa:',
@@ -390,10 +403,14 @@ class _UnlockChapterBottomSheetState extends ConsumerState<UnlockChapterBottomSh
           ),
           const Divider(color: AppColors.darkBorder, height: 22),
           row(
-            hasEnoughMoney ? 'Số dư sau thanh toán:' : 'Cần nạp thêm:',
+            balance == null
+                ? 'Số dư sau thanh toán:'
+                : (hasEnoughMoney ? 'Số dư sau thanh toán:' : 'Cần nạp thêm:'),
             // Ví không thể âm: khi thiếu tiền hiện số tiền còn thiếu thay vì "-10.000đ".
-            formatVnd((balance - _priceVnd).abs()),
-            color: hasEnoughMoney ? AppColors.mint : AppColors.rose,
+            balance == null ? unavailableLabel : formatVnd((balance - _priceVnd).abs()),
+            color: balance == null
+                ? AppColors.darkTextSecondary
+                : (hasEnoughMoney ? AppColors.mint : AppColors.rose),
             bold: true,
           ),
         ],
@@ -466,7 +483,11 @@ class _UnlockChapterBottomSheetState extends ConsumerState<UnlockChapterBottomSh
     );
   }
 
-  Widget _buildPrimaryAction(bool hasEnoughMoney) {
+  Widget _buildPrimaryAction(
+    bool hasEnoughMoney, {
+    bool isBalanceLoading = false,
+    bool isBalanceUnavailable = false,
+  }) {
     final style = ElevatedButton.styleFrom(
       backgroundColor: AppColors.primary,
       foregroundColor: Colors.white,
@@ -485,6 +506,22 @@ class _UnlockChapterBottomSheetState extends ConsumerState<UnlockChapterBottomSh
         onPressed: _isProcessing ? null : _createVietQrOrder,
         icon: _isProcessing ? spinner : const Icon(Icons.qr_code_rounded, size: 18),
         label: Text('Tạo mã VietQR ${formatVnd(_priceVnd)}', style: labelStyle),
+        style: style,
+      );
+    }
+    if (isBalanceLoading) {
+      return ElevatedButton.icon(
+        onPressed: null,
+        icon: spinner,
+        label: Text('Đang tải số dư...', style: labelStyle),
+        style: style,
+      );
+    }
+    if (isBalanceUnavailable) {
+      return ElevatedButton.icon(
+        onPressed: () => ref.read(walletNotifierProvider.notifier).refresh(),
+        icon: const Icon(Icons.refresh_rounded, size: 18),
+        label: Text('Thử tải lại số dư', style: labelStyle),
         style: style,
       );
     }
@@ -591,14 +628,35 @@ class ChapterPurchaseOptionsSheet extends ConsumerWidget {
                     child: Icon(Icons.account_balance_wallet_rounded, size: 15, color: Colors.white),
                   ),
                   const SizedBox(width: 8),
-                  Text(
-                    formatVnd(balance),
-                    style: GoogleFonts.plusJakartaSans(
-                      fontSize: 20,
-                      fontWeight: FontWeight.w800,
-                      color: ForgeColors.text,
+                  if (balance == null)
+                    Row(
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        const SizedBox(
+                          width: 16,
+                          height: 16,
+                          child: CircularProgressIndicator(strokeWidth: 2, color: ForgeColors.accent),
+                        ),
+                        const SizedBox(width: 8),
+                        Text(
+                          'Đang tải...',
+                          style: GoogleFonts.plusJakartaSans(
+                            fontSize: 15,
+                            fontWeight: FontWeight.w600,
+                            color: ForgeColors.textSoft,
+                          ),
+                        ),
+                      ],
+                    )
+                  else
+                    Text(
+                      formatVnd(balance),
+                      style: GoogleFonts.plusJakartaSans(
+                        fontSize: 20,
+                        fontWeight: FontWeight.w800,
+                        color: ForgeColors.text,
+                      ),
                     ),
-                  ),
                 ],
               ),
             ],

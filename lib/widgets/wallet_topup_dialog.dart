@@ -200,7 +200,7 @@ class _WalletTopupDialogState extends ConsumerState<WalletTopupDialog> with Sing
                                   const Icon(Icons.account_balance_wallet_rounded, size: 14, color: AppColors.primary),
                                   const SizedBox(width: 5),
                                   Text(
-                                    formatVnd(currentVnd),
+                                    currentVnd == null ? 'Đang tải...' : formatVnd(currentVnd),
                                     style: GoogleFonts.plusJakartaSans(
                                       fontSize: 12,
                                       fontWeight: FontWeight.w800,

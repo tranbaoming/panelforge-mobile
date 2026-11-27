@@ -457,12 +457,12 @@ class PreferencesService {
   }
 
   // ─── Local Wallet Cache ───────────────────────────────────────────────────
-  static int getLocalBalanceVnd() {
+  static int? getLocalBalanceVnd() {
     final vnd = _prefs?.getInt(_keyWalletBalanceVnd);
     if (vnd != null) return vnd;
     final coins = _prefs?.getInt(_keyWalletBalance);
     if (coins != null && coins > 0) return coins * 100;
-    return 50000;
+    return null;
   }
 
   static Future<void> setLocalBalanceVnd(int amount) async {
@@ -470,8 +470,15 @@ class PreferencesService {
     await _prefs?.setInt(_keyWalletBalance, amount ~/ 100);
   }
 
-  static int getLocalBalanceCoins() {
-    return getLocalBalanceVnd() ~/ 100;
+  static Future<void> clearLocalWallet() async {
+    await _prefs?.remove(_keyWalletBalanceVnd);
+    await _prefs?.remove(_keyWalletBalance);
+    await _prefs?.remove(_keyWalletTransactions);
+  }
+
+  static int? getLocalBalanceCoins() {
+    final vnd = getLocalBalanceVnd();
+    return vnd == null ? null : vnd ~/ 100;
   }
 
   static Future<void> setLocalBalanceCoins(int coins) async {
@@ -558,19 +565,6 @@ class PreferencesService {
 
   static Future<void> saveAuthUser(Map<String, dynamic> userMap) async {
     await _prefs?.setString(_keyAuthUser, jsonEncode(userMap));
-    // Khởi tạo số dư ví mặc định 50.000đ cho độc giả mới nếu chưa có
-    if (_prefs?.getInt(_keyWalletBalanceVnd) == null && _prefs?.getInt(_keyWalletBalance) == null) {
-      await setLocalBalanceVnd(50000);
-      await addWalletTransaction(
-        WalletTransactionDto(
-          id: 'welcome-${DateTime.now().millisecondsSinceEpoch}',
-          title: 'Quà tặng chào mừng Độc giả mới',
-          amountVnd: 50000,
-          createdAt: DateTime.now(),
-          balanceAfter: 50000,
-        ),
-      );
-    }
   }
 
   static String? getRememberDeviceToken() {
