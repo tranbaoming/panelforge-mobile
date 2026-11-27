@@ -564,6 +564,11 @@ class PreferencesService {
   }
 
   static Future<void> saveAuthUser(Map<String, dynamic> userMap) async {
+    final previousId = getAuthUser()?['id']?.toString();
+    final nextId = userMap['id']?.toString();
+    if (previousId != null && previousId.isNotEmpty && nextId != null && nextId.isNotEmpty && previousId != nextId) {
+      await clearUserScopedData();
+    }
     await _prefs?.setString(_keyAuthUser, jsonEncode(userMap));
   }
 
@@ -603,6 +608,34 @@ class PreferencesService {
     await _prefs?.remove(_keyAuthUser);
     await _prefs?.remove(_keyIsRestrictedReader);
     await _prefs?.remove(_keyRestrictionNotice);
+  }
+
+  /// Xóa toàn bộ dữ liệu gắn với người dùng hiện tại khi đăng xuất hoặc đổi tài khoản (AUD-FL-05).
+  /// Giữ nguyên các cài đặt mức thiết bị (giao diện sáng/tối, cỡ chữ, ngôn ngữ đọc, cache catalog công khai).
+  static Future<void> clearUserScopedData() async {
+    await clearAuthSession();
+    const userKeys = [
+      _keyRememberDeviceToken,
+      _keyWalletBalance,
+      _keyWalletBalanceVnd,
+      _keyWalletTransactions,
+      _keyUnlockedChapters,
+      _keyChapterEntitlements,
+      _keyBookmarks,
+      _keyReadingHistory,
+      _keyFavorites,
+      _keyFollows,
+      _keyFollowSeenAt,
+      _keyLastSyncAt,
+      _keyRecentSearches,
+      _keyRecentTokens,
+      _keyOfflineChapters,
+      _keyOfflineChapterMeta,
+    ];
+    await Future.wait([
+      for (final key in userKeys)
+        if (_prefs != null) _prefs!.remove(key),
+    ]);
   }
 }
 
