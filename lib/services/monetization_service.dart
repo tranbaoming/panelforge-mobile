@@ -137,7 +137,7 @@ class MonetizationService {
 
   /// Xóa cache Ví khi phiên đăng nhập không còn hợp lệ (Guest / đăng xuất / 401).
   Future<void> clearLocalCache() async {
-    await PreferencesService.setLocalBalanceVnd(0);
+    await PreferencesService.clearLocalWallet();
     await PreferencesService.replaceUnlockedChapterIds(const {});
   }
 

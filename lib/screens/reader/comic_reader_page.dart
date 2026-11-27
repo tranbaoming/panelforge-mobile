@@ -1476,11 +1476,13 @@ class _ComicReaderPageState extends ConsumerState<ComicReaderPage> with WidgetsB
                               style: GoogleFonts.plusJakartaSans(fontSize: 13, color: AppColors.darkTextSecondary),
                             ),
                             Text(
-                              formatVnd(balanceVnd),
+                              balanceVnd == null ? 'Đang tải...' : formatVnd(balanceVnd),
                               style: GoogleFonts.plusJakartaSans(
                                 fontSize: 14,
                                 fontWeight: FontWeight.w700,
-                                color: balanceVnd >= priceVnd ? AppColors.mint : AppColors.rose,
+                                color: balanceVnd == null
+                                    ? AppColors.darkTextSecondary
+                                    : (balanceVnd >= priceVnd ? AppColors.mint : AppColors.rose),
                               ),
                             ),
                           ],

@@ -24,9 +24,10 @@ class WalletChip extends ConsumerWidget {
 
     final walletAsync = ref.watch(walletNotifierProvider);
 
-    // Lấy số dư VNĐ: ưu tiên từ server (walletAsync), fallback về cache cục bộ
+    // Lấy số dư VNĐ: ưu tiên từ server (walletAsync), chỉ dùng cache thật nếu đã tải từ server trước đó.
     final cachedVnd = PreferencesService.getLocalBalanceVnd();
     final balanceVnd = walletAsync.asData?.value.balanceVnd ?? cachedVnd;
+    final isLoading = balanceVnd == null && walletAsync.isLoading;
 
     return InkWell(
       onTap: () {
@@ -64,7 +65,16 @@ class WalletChip extends ConsumerWidget {
           children: [
             const Icon(Icons.account_balance_wallet_rounded, color: ForgeColors.gold, size: 15),
             const SizedBox(width: 5),
-            Text(formatVnd(balanceVnd), style: ForgeText.tabular(fontSize: 12.5)),
+            if (isLoading)
+              const SizedBox(
+                width: 12,
+                height: 12,
+                child: CircularProgressIndicator(strokeWidth: 1.8, color: ForgeColors.gold),
+              )
+            else if (balanceVnd == null)
+              Text('—', style: ForgeText.tabular(fontSize: 12.5))
+            else
+              Text(formatVnd(balanceVnd), style: ForgeText.tabular(fontSize: 12.5)),
           ],
         ),
       ),
