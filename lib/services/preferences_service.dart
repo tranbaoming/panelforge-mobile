@@ -1,6 +1,7 @@
 import 'dart:convert';
 import 'package:shared_preferences/shared_preferences.dart';
 import '../models/api_dtos.dart';
+import 'secure_storage_service.dart';
 
 class PreferencesService {
   static const String _keyBaseUrl = 'panelforge_custom_base_url';
@@ -48,6 +49,26 @@ class PreferencesService {
     // Màn hình cấu hình máy chủ đã bị gỡ: xóa địa chỉ tùy chỉnh còn lưu từ trước để app luôn dùng ApiConfig mặc định.
     if (_prefs?.containsKey(_keyBaseUrl) ?? false) {
       await _prefs?.remove(_keyBaseUrl);
+    }
+    // Khởi tạo secure storage và di chuyển an toàn phiên/device token cũ từ SharedPreferences (AUD-FL-02).
+    await SecureStorageService.init();
+    await _migrateLegacyAuthFromSharedPreferences();
+  }
+
+  static Future<void> _migrateLegacyAuthFromSharedPreferences() async {
+    final legacyAuth = _prefs?.getString(_keyAuthUser);
+    if (legacyAuth != null && legacyAuth.isNotEmpty) {
+      if (SecureStorageService.getAuthUserJsonSync() == null) {
+        await SecureStorageService.setAuthUserJson(legacyAuth);
+      }
+      await _prefs?.remove(_keyAuthUser);
+    }
+    final legacyDeviceToken = _prefs?.getString(_keyRememberDeviceToken);
+    if (legacyDeviceToken != null && legacyDeviceToken.isNotEmpty) {
+      if (SecureStorageService.getRememberDeviceTokenSync() == null) {
+        await SecureStorageService.setRememberDeviceToken(legacyDeviceToken);
+      }
+      await _prefs?.remove(_keyRememberDeviceToken);
     }
   }
 
@@ -550,9 +571,9 @@ class PreferencesService {
 
   static Future<void> setTextScale(double value) async => _prefs?.setDouble(_keyTextScale, value);
 
-  // ─── Authentication & Session Storage ───────────────────────────────────────
+  // ─── Authentication & Session Storage (backed by SecureStorageService) ─────
   static Map<String, dynamic>? getAuthUser() {
-    final str = _prefs?.getString(_keyAuthUser);
+    final str = SecureStorageService.getAuthUserJsonSync();
     if (str == null || str.isEmpty) return null;
     try {
       final decoded = jsonDecode(str);
@@ -569,19 +590,18 @@ class PreferencesService {
     if (previousId != null && previousId.isNotEmpty && nextId != null && nextId.isNotEmpty && previousId != nextId) {
       await clearUserScopedData();
     }
-    await _prefs?.setString(_keyAuthUser, jsonEncode(userMap));
+    await SecureStorageService.setAuthUserJson(jsonEncode(userMap));
+    // Bảo đảm không bao giờ còn bản rõ trong SharedPreferences.
+    await _prefs?.remove(_keyAuthUser);
   }
 
   static String? getRememberDeviceToken() {
-    return _prefs?.getString(_keyRememberDeviceToken);
+    return SecureStorageService.getRememberDeviceTokenSync();
   }
 
   static Future<void> setRememberDeviceToken(String? token) async {
-    if (token == null || token.trim().isEmpty) {
-      await _prefs?.remove(_keyRememberDeviceToken);
-    } else {
-      await _prefs?.setString(_keyRememberDeviceToken, token.trim());
-    }
+    await SecureStorageService.setRememberDeviceToken(token);
+    await _prefs?.remove(_keyRememberDeviceToken);
   }
 
   static bool getIsRestrictedReader() {
@@ -605,6 +625,7 @@ class PreferencesService {
   }
 
   static Future<void> clearAuthSession() async {
+    await SecureStorageService.clearAuthCredentials();
     await _prefs?.remove(_keyAuthUser);
     await _prefs?.remove(_keyIsRestrictedReader);
     await _prefs?.remove(_keyRestrictionNotice);
@@ -613,6 +634,7 @@ class PreferencesService {
   /// Xóa toàn bộ dữ liệu gắn với người dùng hiện tại khi đăng xuất hoặc đổi tài khoản (AUD-FL-05).
   /// Giữ nguyên các cài đặt mức thiết bị (giao diện sáng/tối, cỡ chữ, ngôn ngữ đọc, cache catalog công khai).
   static Future<void> clearUserScopedData() async {
+    await SecureStorageService.clearAllCredentials();
     await clearAuthSession();
     const userKeys = [
       _keyRememberDeviceToken,
