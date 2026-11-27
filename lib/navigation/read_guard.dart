@@ -25,6 +25,24 @@ String? safeLoginRedirect(String? raw) {
   return raw;
 }
 
+/// Điều hướng tới `/login?redirect=<route hiện tại>` khi tính năng (Ví, mở khóa chương...) cần đăng nhập.
+void openLoginForCurrentRoute(BuildContext context, {String? fallbackRedirect}) {
+  final router = GoRouter.maybeOf(context);
+  if (router == null) return;
+  final config = router.routerDelegate.currentConfiguration;
+  String? currentRaw;
+  if (config.isNotEmpty) {
+    final last = config.last;
+    if (last is ImperativeRouteMatch) {
+      currentRaw = last.matches.uri.toString();
+    } else {
+      currentRaw = config.uri.toString();
+    }
+  }
+  final target = safeLoginRedirect(currentRaw) ?? safeLoginRedirect(fallbackRedirect);
+  router.push(target != null ? loginPathFor(target) : '/login');
+}
+
 /// Bảo đảm người dùng đã đăng nhập trước khi đọc.
 ///
 /// Chưa đăng nhập → sheet mời đăng nhập (ảnh bìa [series], "Tiếp Theo" / "Để sau").

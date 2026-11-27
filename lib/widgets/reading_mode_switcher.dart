@@ -4,6 +4,7 @@ import 'package:flutter/material.dart';
 import 'package:google_fonts/google_fonts.dart';
 import '../models/comic_model.dart';
 import '../models/comic_package_models.dart';
+import '../services/reader_image_auth.dart';
 import '../theme/app_theme.dart';
 import 'adaptive_webtoon_view.dart';
 import 'guided_panel_viewer.dart';
@@ -26,6 +27,30 @@ class ReadingModeSwitcher extends StatefulWidget {
   /// Bấm "Mở khóa trang" trên trang trả phí lẻ chưa mua.
   final ValueChanged<ComicPageData>? onUnlockPage;
 
+  /// HTTP headers (gồm Cookie phiên từ DEC-04 helper) cho ảnh trang truyện.
+  final Map<String, String>? imageHttpHeaders;
+
+  /// Số trang kế tiếp tối đa được tải trước trong chế độ lật trang.
+  static const int prefetchRadius = 2;
+
+  /// Tính danh sách chỉ số trang lân cận (0-based) cần tải trước, giới hạn trong [radius].
+  static List<int> computePrefetchIndices(
+    int currentIndex,
+    int totalPages, {
+    int radius = prefetchRadius,
+  }) {
+    if (totalPages <= 1 || radius <= 0) return const [];
+    final indices = <int>[];
+    for (int offset = 1; offset <= radius; offset++) {
+      final next = currentIndex + offset;
+      if (next >= 0 && next < totalPages) indices.add(next);
+    }
+    if (currentIndex - 1 >= 0 && currentIndex - 1 < totalPages) {
+      indices.add(currentIndex - 1);
+    }
+    return indices;
+  }
+
   const ReadingModeSwitcher({
     super.key,
     required this.chapter,
@@ -40,6 +65,7 @@ class ReadingModeSwitcher extends StatefulWidget {
     this.webtoonTileSpacing = 0.0,
     this.onRegionTap,
     this.onUnlockPage,
+    this.imageHttpHeaders,
   });
 
   @override
@@ -49,13 +75,23 @@ class ReadingModeSwitcher extends StatefulWidget {
 class ReadingModeSwitcherState extends State<ReadingModeSwitcher> {
   late PageController _pageController;
   final GlobalKey<AdaptiveWebtoonViewState> _webtoonKey = GlobalKey<AdaptiveWebtoonViewState>();
+  final TransformationController _zoomController = TransformationController();
+  final Set<String> _prefetchedUrls = {};
   int _currentPage = 1;
   int _currentPanelIndex = 0; // -1: Overview, 0..N-1: specific panel
+  bool _isZoomed = false;
+
+  @visibleForTesting
+  TransformationController get zoomControllerForTest => _zoomController;
+
+  @visibleForTesting
+  bool get isZoomed => _isZoomed;
 
   @override
   void initState() {
     super.initState();
     _currentPage = widget.initialPage;
+    _zoomController.addListener(_onZoomChanged);
     final initialIndex = (_currentPage - 1).clamp(
       0,
       widget.chapter.pages.isEmpty ? 0 : widget.chapter.pages.length - 1,
@@ -70,12 +106,58 @@ class ReadingModeSwitcherState extends State<ReadingModeSwitcher> {
     } else {
       _pageController = PageController(initialPage: initialIndex);
     }
+
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (mounted) _prefetchAdjacentPages(initialIndex);
+    });
+  }
+
+  void _onZoomChanged() {
+    final scale = _zoomController.value.getMaxScaleOnAxis();
+    final zoomedNow = scale > 1.01;
+    if (zoomedNow != _isZoomed && mounted) {
+      setState(() => _isZoomed = zoomedNow);
+    }
+  }
+
+  void _resetZoom() {
+    if (_zoomController.value != Matrix4.identity()) {
+      _zoomController.value = Matrix4.identity();
+    }
+    if (_isZoomed) {
+      _isZoomed = false;
+    }
+  }
+
+  void _prefetchAdjacentPages(int currentIndex) {
+    if (!mounted || widget.mode == ReadingMode.webtoon) return;
+    final pages = widget.chapter.pages;
+    if (pages.isEmpty) return;
+    final memCacheWidth = ReaderImageAuth.memCacheWidthForContext(context, maxLogicalWidth: 580.0);
+    final targets = ReadingModeSwitcher.computePrefetchIndices(currentIndex, pages.length);
+    for (final idx in targets) {
+      final page = pages[idx];
+      if (page.isPaywalled) continue;
+      final url = page.imageUrl;
+      if (url == null || (!url.startsWith('http://') && !url.startsWith('https://'))) continue;
+      if (!_prefetchedUrls.add(url)) continue;
+      final provider = CachedNetworkImageProvider(
+        url,
+        headers: widget.imageHttpHeaders,
+        maxWidth: memCacheWidth,
+      );
+      precacheImage(provider, context).catchError((Object _) {});
+    }
   }
 
   @override
   void didUpdateWidget(covariant ReadingModeSwitcher oldWidget) {
     super.didUpdateWidget(oldWidget);
     if (oldWidget.mode != widget.mode || oldWidget.chapter != widget.chapter) {
+      _resetZoom();
+      if (oldWidget.chapter.id != widget.chapter.id) {
+        _prefetchedUrls.clear();
+      }
       final targetIndex = (_currentPage - 1).clamp(
         0,
         widget.chapter.pages.isEmpty ? 0 : widget.chapter.pages.length - 1,
@@ -90,6 +172,9 @@ class ReadingModeSwitcherState extends State<ReadingModeSwitcher> {
       } else {
         _pageController = PageController(initialPage: targetIndex);
       }
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        if (mounted) _prefetchAdjacentPages(targetIndex);
+      });
     }
 
     if (oldWidget.isGuidedPanelMode != widget.isGuidedPanelMode) {
@@ -100,11 +185,13 @@ class ReadingModeSwitcherState extends State<ReadingModeSwitcher> {
   void jumpToPage(int page) {
     if (widget.chapter.pages.isEmpty) return;
     final clampedPage = page.clamp(1, widget.chapter.pages.length);
+    _resetZoom();
     setState(() {
       _currentPage = clampedPage;
       _currentPanelIndex = 0;
     });
     widget.onPageChanged(clampedPage);
+    _prefetchAdjacentPages(clampedPage - 1);
 
     if (widget.mode == ReadingMode.webtoon) {
       _webtoonKey.currentState?.jumpToPage(clampedPage);
@@ -123,6 +210,8 @@ class ReadingModeSwitcherState extends State<ReadingModeSwitcher> {
 
   @override
   void dispose() {
+    _zoomController.removeListener(_onZoomChanged);
+    _zoomController.dispose();
     _pageController.dispose();
     super.dispose();
   }
@@ -171,6 +260,7 @@ class ReadingModeSwitcherState extends State<ReadingModeSwitcher> {
           onTapScreen: widget.onTapScreen,
           onRegionTap: widget.onRegionTap,
           onUnlockPage: widget.onUnlockPage,
+          imageHttpHeaders: widget.imageHttpHeaders,
         ),
       );
     }
@@ -189,17 +279,19 @@ class ReadingModeSwitcherState extends State<ReadingModeSwitcher> {
     return PageView.builder(
       controller: _pageController,
       reverse: isRtl,
-      physics: widget.isGuidedPanelMode
-          ? const NeverScrollableScrollPhysics() // Khóa lướt tự do để Guided Panel Viewer điều khiển
+      physics: (widget.isGuidedPanelMode || _isZoomed)
+          ? const NeverScrollableScrollPhysics() // Khóa lướt trang khi đang phóng to hoặc Guided Panel
           : const BouncingScrollPhysics(),
       itemCount: pages.length,
       onPageChanged: (index) {
         final actualPage = isRtl ? (pages.length - index) : (index + 1);
+        _resetZoom();
         setState(() {
           _currentPage = actualPage;
           _currentPanelIndex = 0;
         });
         widget.onPageChanged(actualPage);
+        _prefetchAdjacentPages(actualPage - 1);
       },
       itemBuilder: (context, index) {
         final actualIndex = isRtl ? (pages.length - 1 - index) : index;
@@ -238,12 +330,19 @@ class ReadingModeSwitcherState extends State<ReadingModeSwitcher> {
           );
         }
 
-        // Chế độ đọc thông thường (bấm vào màn hình để bật tắt HUD)
+        // Chế độ đọc thông thường: hỗ trợ pinch-zoom & pan không lật trang nhầm (AUD-FL-06)
         return GestureDetector(
           behavior: HitTestBehavior.opaque,
           onTap: widget.onTapScreen,
-          child: Center(
-            child: pageWidget,
+          child: InteractiveViewer(
+            transformationController: _zoomController,
+            minScale: 1.0,
+            maxScale: 4.0,
+            panEnabled: _isZoomed,
+            scaleEnabled: true,
+            child: Center(
+              child: pageWidget,
+            ),
           ),
         );
       },
@@ -324,7 +423,7 @@ class ReadingModeSwitcherState extends State<ReadingModeSwitcher> {
                       builder: (context, constraints) {
                         return Stack(
                           children: [
-                            _buildImageContent(page.imageUrl!),
+                            _buildImageContent(context, page.imageUrl!),
                             // TÍNH NĂNG 3: MULTILINGUAL TEXT LAYERS VỚI TƯƠNG TÁC
                             if (widget.package != null && widget.selectedLanguage != null)
                               Positioned.fill(
@@ -434,11 +533,14 @@ class ReadingModeSwitcherState extends State<ReadingModeSwitcher> {
     );
   }
 
-  Widget _buildImageContent(String pathOrUrl) {
+  Widget _buildImageContent(BuildContext context, String pathOrUrl) {
     final isNetwork = pathOrUrl.startsWith('http://') || pathOrUrl.startsWith('https://');
     if (isNetwork) {
+      final memCacheWidth = ReaderImageAuth.memCacheWidthForContext(context, maxLogicalWidth: 580.0);
       return CachedNetworkImage(
         imageUrl: pathOrUrl,
+        httpHeaders: widget.imageHttpHeaders,
+        memCacheWidth: memCacheWidth,
         fit: BoxFit.contain,
         placeholder: (context, url) => Container(
           height: 400,

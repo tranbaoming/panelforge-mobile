@@ -1,4 +1,5 @@
 import 'dart:async';
+import 'dart:convert';
 import 'dart:io' show Platform, Directory;
 import 'package:cookie_jar/cookie_jar.dart';
 import 'package:dio/dio.dart';
@@ -7,6 +8,7 @@ import 'package:flutter/foundation.dart';
 import 'package:path_provider/path_provider.dart';
 import 'api_config.dart';
 import 'preferences_service.dart';
+import 'secure_storage_service.dart';
 
 class ApiException implements Exception {
   final String message;
@@ -26,11 +28,13 @@ class AuthInterceptor extends QueuedInterceptor {
   final Dio dio;
   final CookieJar cookieJar;
   final VoidCallback onSessionExpired;
+  final Dio Function()? refreshDioFactory;
 
   AuthInterceptor({
     required this.dio,
     required this.cookieJar,
     required this.onSessionExpired,
+    this.refreshDioFactory,
   });
 
   /// Các endpoint không thử silent refresh khi gặp 401 (do 401 là kết quả nghiệp vụ hợp lệ)
@@ -40,6 +44,93 @@ class AuthInterceptor extends QueuedInterceptor {
   );
 
   static Completer<bool>? _refreshCompleter;
+
+  static const String redactedValue = '[REDACTED]';
+
+  static final RegExp _sensitiveEndpoints = RegExp(
+    r'/api/(auth|wallet|payment|payments|billing|iap)/',
+    caseSensitive: false,
+  );
+
+  /// Kiểm tra khóa có chứa dữ liệu nhạy cảm cần che khi ghi log hay không.
+  static bool isSensitiveKey(String key) {
+    final normalized = key.toLowerCase().replaceAll(RegExp(r'[^a-z0-9]'), '');
+    if (normalized == 'code' ||
+        normalized == 'otp' ||
+        normalized == 'totp' ||
+        normalized == 'pin' ||
+        normalized == 'secret' ||
+        normalized == 'token' ||
+        normalized == 'cookie' ||
+        normalized == 'authorization' ||
+        normalized == 'receipt' ||
+        normalized == 'signature') {
+      return true;
+    }
+    const sensitiveSubstrings = [
+      'password',
+      'passwd',
+      'secret',
+      'token',
+      'otp',
+      'totp',
+      '2fa',
+      'twofactor',
+      'recoverycode',
+      'verificationcode',
+      'authcode',
+      'backupcode',
+      'cookie',
+      'authorization',
+      'credential',
+      'privatekey',
+      'apikey',
+      'sharedkey',
+      'authenticatoruri',
+      'formattedkey',
+      'receipt',
+      'signature',
+    ];
+    for (final s in sensitiveSubstrings) {
+      if (normalized.contains(s)) return true;
+    }
+    return false;
+  }
+
+  /// Che đệ quy mọi giá trị nhạy cảm (mật khẩu, OTP, mã 2FA, token...) trước khi ghi log.
+  static dynamic redactForLog(dynamic data, {bool sensitiveEndpoint = false}) {
+    if (data == null) return null;
+    if (data is Map) {
+      return data.map((k, v) {
+        final keyStr = k.toString();
+        if (isSensitiveKey(keyStr)) {
+          return MapEntry(keyStr, redactedValue);
+        }
+        return MapEntry(keyStr, redactForLog(v));
+      });
+    }
+    if (data is List) {
+      return data.map((e) => redactForLog(e)).toList();
+    }
+    if (data is FormData) {
+      return {
+        for (final entry in data.fields)
+          entry.key: isSensitiveKey(entry.key) ? redactedValue : entry.value,
+      };
+    }
+    if (data is String) {
+      final trimmed = data.trim();
+      if ((trimmed.startsWith('{') && trimmed.endsWith('}')) ||
+          (trimmed.startsWith('[') && trimmed.endsWith(']'))) {
+        try {
+          final decoded = jsonDecode(trimmed);
+          return redactForLog(decoded, sensitiveEndpoint: sensitiveEndpoint);
+        } catch (_) {}
+      }
+      if (sensitiveEndpoint) return redactedValue;
+    }
+    return data;
+  }
 
   @override
   void onRequest(RequestOptions options, RequestInterceptorHandler handler) {
@@ -55,7 +146,13 @@ class AuthInterceptor extends QueuedInterceptor {
     if (kDebugMode) {
       debugPrint('[API REQUEST] ${options.method} ${options.uri}');
       if (options.data != null) {
-        debugPrint('[API REQUEST BODY] ${options.data}');
+        final isSensitive = _sensitiveEndpoints.hasMatch(options.path) ||
+            _sensitiveEndpoints.hasMatch(options.uri.toString());
+        final sanitized = redactForLog(
+          options.data,
+          sensitiveEndpoint: isSensitive,
+        );
+        debugPrint('[API REQUEST BODY] $sanitized');
       }
     }
 
@@ -76,7 +173,10 @@ class AuthInterceptor extends QueuedInterceptor {
 
     if (kDebugMode) {
       debugPrint('[API ERROR] $status: ${err.message}');
-      debugPrint('[API ERROR DATA] ${err.response?.data}');
+      if (err.response?.data != null) {
+        final sanitizedErr = redactForLog(err.response?.data);
+        debugPrint('[API ERROR DATA] $sanitizedErr');
+      }
     }
 
     // 1. Phòng thủ Brute-force: Bắt lỗi 429 Too Many Requests
@@ -98,22 +198,23 @@ class AuthInterceptor extends QueuedInterceptor {
       final uri = err.requestOptions.uri.toString();
 
       // Bỏ qua nếu là endpoint auth nghiệp vụ (nhập sai pass, sai mã OTP,...)
-      // hoặc các endpoint kiểm tra thông tin (/api/auth/me, /api/wallet/me)
-      final isSelfCheckEndpoint = path.contains('/api/auth/me') ||
-          path.contains('/api/wallet/me') ||
-          uri.contains('/api/auth/me') ||
-          uri.contains('/api/wallet/me');
-
       if (_authEndpoints.hasMatch(path) || _authEndpoints.hasMatch(uri)) {
         return handler.next(err);
       }
 
+      // Chỉ xử lý hết hạn phiên khi người dùng đang có phiên đăng nhập cục bộ.
+      final hasLocalSession = PreferencesService.getAuthUser() != null;
+
       // Đã thử refresh cho request này rồi mà vẫn 401 -> phiên thực sự hết hạn.
-      // Tuyệt đối không cho phép lỗi 401 từ /api/auth/me hoặc /api/wallet/me xóa phiên Reader.
       if (err.requestOptions.extra['is_retry'] == true) {
-        if (!isSelfCheckEndpoint && PreferencesService.getAuthUser() == null) {
+        if (hasLocalSession) {
           onSessionExpired();
         }
+        return handler.next(err);
+      }
+
+      // Khách chưa đăng nhập gặp 401 -> không cần silent refresh hay đá ra /login.
+      if (!hasLocalSession) {
         return handler.next(err);
       }
 
@@ -129,15 +230,11 @@ class AuthInterceptor extends QueuedInterceptor {
           final retryResponse = await dio.fetch(retryOptions);
           return handler.resolve(retryResponse);
         } else {
-          if (!isSelfCheckEndpoint && PreferencesService.getAuthUser() == null) {
-            onSessionExpired();
-          }
+          onSessionExpired();
           return handler.next(err);
         }
       } catch (_) {
-        if (!isSelfCheckEndpoint && PreferencesService.getAuthUser() == null) {
-          onSessionExpired();
-        }
+        onSessionExpired();
         return handler.next(err);
       }
     }
@@ -155,22 +252,25 @@ class AuthInterceptor extends QueuedInterceptor {
     _refreshCompleter = completer;
 
     try {
-      final refreshDio = Dio(
-        BaseOptions(
-          baseUrl: ApiConfig.baseUrl,
-          connectTimeout: const Duration(seconds: 15),
-          receiveTimeout: const Duration(seconds: 15),
-          headers: {
-            'Accept': 'application/json',
-            'Content-Type': 'application/json',
-            'X-Requested-With': 'XMLHttpRequest',
-            'User-Agent': ApiClient.getUserAgent(),
-          },
-        ),
-      );
+      final refreshDio = refreshDioFactory?.call() ??
+          Dio(
+            BaseOptions(
+              baseUrl: ApiConfig.baseUrl,
+              connectTimeout: const Duration(seconds: 15),
+              receiveTimeout: const Duration(seconds: 15),
+              headers: {
+                'Accept': 'application/json',
+                'Content-Type': 'application/json',
+                'X-Requested-With': 'XMLHttpRequest',
+                'User-Agent': ApiClient.getUserAgent(),
+              },
+            ),
+          );
 
       // Đính kèm cùng CookieJar để tự động gửi cookie pf_refresh và lưu lại pf_access mới
-      refreshDio.interceptors.add(CookieManager(cookieJar));
+      if (!refreshDio.interceptors.any((i) => i is CookieManager)) {
+        refreshDio.interceptors.add(CookieManager(cookieJar));
+      }
 
       final response = await refreshDio.post(
         '/api/auth/refresh',
@@ -202,9 +302,10 @@ class ApiClient {
   /// CookieJar toàn cục được khởi tạo từ PersistCookieJar
   static CookieJar get cookieJar => _cookieJar ?? CookieJar();
 
-  /// Khởi tạo thư mục và PersistCookieJar lưu trữ HttpOnly cookies
-  static Future<CookieJar> initCookieJar() async {
-    if (_cookieJar != null) return _cookieJar!;
+  /// Khởi tạo PersistCookieJar lưu trữ HttpOnly cookies trong SecureCookieStorage (Keystore/Keychain)
+  /// và tự động di chuyển + xóa thư mục `.cookies` dạng rõ cũ nếu có (AUD-FL-02).
+  static Future<CookieJar> initCookieJar({SecureKeyValueStore? store}) async {
+    if (_cookieJar != null && store == null) return _cookieJar!;
 
     if (kIsWeb) {
       _cookieJar = CookieJar();
@@ -212,17 +313,24 @@ class ApiClient {
     }
 
     try {
-      final appSupportDir = await getApplicationSupportDirectory();
-      final cookieDir = Directory('${appSupportDir.path}/.cookies');
-      if (!await cookieDir.exists()) {
-        await cookieDir.create(recursive: true);
-      }
+      final secureStorage = SecureCookieStorage(store: store);
+      await secureStorage.init(true, false);
+
+      // Di chuyển an toàn cookie phiên cũ từ `.cookies` (nếu có) rồi xóa thư mục plaintext cũ.
+      try {
+        final appSupportDir = await getApplicationSupportDirectory();
+        final legacyCookieDir = Directory('${appSupportDir.path}/.cookies');
+        if (await legacyCookieDir.exists()) {
+          await secureStorage.migrateLegacyCookieDir(legacyCookieDir);
+        }
+      } catch (_) {}
+
       _cookieJar = PersistCookieJar(
-        storage: FileStorage(cookieDir.path),
+        storage: secureStorage,
         persistSession: true,
       );
     } catch (e) {
-      debugPrint('[ApiClient] Khởi tạo PersistCookieJar thất bại: $e. Sử dụng CookieJar bộ nhớ tạm.');
+      debugPrint('[ApiClient] Khởi tạo SecureCookieStorage thất bại: $e. Sử dụng CookieJar bộ nhớ tạm.');
       _cookieJar = CookieJar();
     }
 
@@ -364,6 +472,10 @@ class ApiClient {
         message = resData['message'];
       } else if (resData.containsKey('error') && resData['error'] is String) {
         message = resData['error'];
+      } else if (resData.containsKey('detail') && resData['detail'] is String) {
+        message = resData['detail'];
+      } else if (resData.containsKey('title') && resData['title'] is String) {
+        message = resData['title'];
       }
     } else if (e.error is String && (e.error as String).isNotEmpty) {
       message = e.error as String;

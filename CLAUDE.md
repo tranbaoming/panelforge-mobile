@@ -81,7 +81,7 @@ lib/
 │   ├── shop/shop_page.dart            # Tab Cửa hàng: thẻ Tài sản (Ví/VIP thật), NẠP VÍ (VietQR) / GÓI VIP, Lịch sử giao dịch, Điều khoản
 │   ├── profile/
 │   │   ├── profile_page.dart          # Tab Cá nhân: thẻ Tạo tài khoản / hồ sơ + Ví, lối tắt Đọc sau / Theo dõi / Đã mở khóa, thẻ Lịch sử / Yêu thích
-│   │   ├── settings_page.dart         # /settings (bánh răng): Tài khoản (hồ sơ, đổi MK, thiết bị tin cậy, giao dịch, mã Review, đăng xuất, xoá TK), Cài đặt ứng dụng (ngôn ngữ giao diện, giao diện, ...), Trợ giúp, Khác
+│   │   ├── settings_page.dart         # /settings (bánh răng): Tài khoản (hồ sơ, giao dịch), Bảo mật & phiên đăng nhập (thẻ 2FA bật/tắt, đổi MK, thiết bị đăng nhập, thiết bị tin cậy, đăng xuất, xoá TK), Cài đặt ứng dụng (ngôn ngữ giao diện, giao diện, ...), Trợ giúp, Khác
 │   │   ├── legal_page.dart            # /legal/:id — terms | privacy | copyright | faq (nội dung ở lib/content/legal_content.dart)
 │   │   ├── downloads_page.dart        # /downloads (từ Cài đặt): chương đã tải offline theo bộ, dung lượng, xoá từng chương / xoá hết
 │   │   └── activity_page.dart         # /activity (chuông có số chưa đọc ở tab Cá nhân): thông báo từ server, giao dịch Ví, đọc gần đây, lối vào Review (/review)
@@ -98,6 +98,7 @@ lib/
 │   ├── vertical_page_slider.dart      # Thanh trượt trang dọc mép phải reader: ẩn, chỉ hiện khi bấm đè mép phải (lướt vẫn bình thường)
 │   ├── sketch_drawing_dialog.dart     # Canvas drawing for pinpoint feedback
 │   ├── watermark_overlay.dart         # Security watermark overlay (BR-17)
+│   ├── two_factor_dialogs.dart        # 2FA TOTP: sheet cài đặt (enable-2fa → QR/khóa → verify-2fa) & hộp thoại tắt (disable-2fa: mã + mật khẩu)
 │   ├── vip_purchase_sheet.dart        # Mua VIP: trừ Ví hoặc VietQR (đơn VipSubscription)
 │   ├── forge_ui.dart                  # Thẻ truyện, logo, header section, lưới 2 cột (bảng màu ForgeColors)
 │   ├── wallet_chip.dart               # Header wallet balance indicator
