@@ -85,6 +85,9 @@ class AuthInterceptor extends QueuedInterceptor {
       'credential',
       'privatekey',
       'apikey',
+      'sharedkey',
+      'authenticatoruri',
+      'formattedkey',
       'receipt',
       'signature',
     ];
@@ -469,6 +472,10 @@ class ApiClient {
         message = resData['message'];
       } else if (resData.containsKey('error') && resData['error'] is String) {
         message = resData['error'];
+      } else if (resData.containsKey('detail') && resData['detail'] is String) {
+        message = resData['detail'];
+      } else if (resData.containsKey('title') && resData['title'] is String) {
+        message = resData['title'];
       }
     } else if (e.error is String && (e.error as String).isNotEmpty) {
       message = e.error as String;

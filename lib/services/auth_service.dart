@@ -478,6 +478,50 @@ class AuthService {
     return 'Thiết bị này đã được xóa khỏi danh sách thiết bị tin cậy.';
   }
 
+  /// 11d. Khởi tạo thiết lập 2FA (TOTP RFC 6238) — trả về khóa bí mật & URI QR.
+  /// POST /api/auth/enable-2fa (chỉ lưu pending secret, 2FA chưa bật cho đến khi xác nhận).
+  Future<TwoFactorSetupModel> enableTwoFactor() async {
+    final response = await _client.post('/api/auth/enable-2fa', data: {});
+    if (response.data is Map<String, dynamic>) {
+      return TwoFactorSetupModel.fromJson(response.data as Map<String, dynamic>);
+    }
+    throw ApiException('Không thể khởi tạo thiết lập xác thực 2 bước.');
+  }
+
+  /// 11e. Xác nhận bật 2FA bằng mã TOTP 6 chữ số trong phiên đã đăng nhập.
+  /// POST /api/auth/verify-2fa (không có email, rememberDevice: false; không cấp lại token).
+  Future<AuthResponseModel> confirmTwoFactorSetup(String code) async {
+    final response = await _client.post(
+      '/api/auth/verify-2fa',
+      data: {
+        'code': code.trim(),
+        'rememberDevice': false,
+      },
+    );
+    if (response.data is Map<String, dynamic>) {
+      return AuthResponseModel.fromJson(response.data as Map<String, dynamic>);
+    }
+    throw ApiException('Phản hồi xác thực 2FA không hợp lệ.');
+  }
+
+  /// 11f. Tắt 2FA bằng mã TOTP 6 chữ số và mật khẩu hiện tại (tài khoản Google-only có thể để trống mật khẩu).
+  /// POST /api/auth/disable-2fa — đồng thời xóa thiết bị tin cậy cục bộ do backend thu hồi toàn bộ thiết bị tin cậy.
+  Future<String> disableTwoFactor(String code, String currentPassword) async {
+    final response = await _client.post(
+      '/api/auth/disable-2fa',
+      data: {
+        'code': code.trim(),
+        'currentPassword': currentPassword,
+      },
+    );
+    await PreferencesService.setRememberDeviceToken(null);
+
+    if (response.data is Map<String, dynamic> && response.data['message'] != null) {
+      return response.data['message'].toString();
+    }
+    return 'Đã tắt xác thực 2 bước (2FA).';
+  }
+
   /// 11a. Xoá (vô hiệu hóa) tài khoản của chính mình rồi đăng xuất cục bộ.
   /// DELETE /api/users/{id} — Backend chỉ Soft Delete (IsActive = false), giao dịch & nhật ký được giữ lại.
   Future<void> deleteMyAccount(String userId) async {

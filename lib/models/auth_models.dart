@@ -56,6 +56,54 @@ class AuthUser {
       'canCreateStudio': canCreateStudio,
     };
   }
+
+  AuthUser copyWith({
+    String? id,
+    String? email,
+    String? fullName,
+    String? phoneNumber,
+    String? avatarUrl,
+    bool? isActive,
+    bool? isEmailConfirmed,
+    bool? twoFactorEnabled,
+    String? role,
+    bool? canCreateStudio,
+  }) {
+    return AuthUser(
+      id: id ?? this.id,
+      email: email ?? this.email,
+      fullName: fullName ?? this.fullName,
+      phoneNumber: phoneNumber ?? this.phoneNumber,
+      avatarUrl: avatarUrl ?? this.avatarUrl,
+      isActive: isActive ?? this.isActive,
+      isEmailConfirmed: isEmailConfirmed ?? this.isEmailConfirmed,
+      twoFactorEnabled: twoFactorEnabled ?? this.twoFactorEnabled,
+      role: role ?? this.role,
+      canCreateStudio: canCreateStudio ?? this.canCreateStudio,
+    );
+  }
+}
+
+/// Dữ liệu thiết lập 2FA (TOTP RFC 6238) từ `POST /api/auth/enable-2fa`.
+@immutable
+class TwoFactorSetupModel {
+  final String sharedKey;
+  final String authenticatorUri;
+  final String formattedKey;
+
+  const TwoFactorSetupModel({
+    required this.sharedKey,
+    required this.authenticatorUri,
+    required this.formattedKey,
+  });
+
+  factory TwoFactorSetupModel.fromJson(Map<String, dynamic> json) {
+    return TwoFactorSetupModel(
+      sharedKey: json['sharedKey']?.toString() ?? '',
+      authenticatorUri: json['authenticatorUri']?.toString() ?? '',
+      formattedKey: json['formattedKey']?.toString() ?? '',
+    );
+  }
 }
 
 /// Mô hình phản hồi từ các endpoint xác thực của Backend (.NET AuthResponse)
