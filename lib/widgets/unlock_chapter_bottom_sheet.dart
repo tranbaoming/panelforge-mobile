@@ -7,11 +7,11 @@ import 'package:go_router/go_router.dart';
 import 'package:google_fonts/google_fonts.dart';
 import '../models/api_dtos.dart';
 import '../models/comic_model.dart';
+import '../navigation/read_guard.dart';
 import '../providers/api_providers.dart';
 import '../services/api_client.dart';
 import '../services/preferences_service.dart';
 import '../theme/app_theme.dart';
-import 'auth_modal_sheet.dart';
 import 'forge_ui.dart';
 import 'vietqr_payment_panel.dart';
 import 'wallet_topup_dialog.dart';
@@ -56,7 +56,10 @@ class UnlockChapterBottomSheet extends ConsumerStatefulWidget {
     final container = ProviderScope.containerOf(context, listen: false);
     if (!container.read(authStateProvider).isAuthenticated) {
       showLoginRequiredSnackBar(context, 'Vui lòng đăng nhập tài khoản Độc giả để mua chương này.');
-      AuthModalSheet.show(context);
+      openLoginForCurrentRoute(
+        context,
+        fallbackRedirect: series != null ? '/series/${series.id}' : null,
+      );
       return Future.value();
     }
     return showModalBottomSheet(
@@ -94,9 +97,10 @@ class _UnlockChapterBottomSheetState extends ConsumerState<UnlockChapterBottomSh
 
   bool _handleAuthError(Object e) {
     if (e is ApiException && e.statusCode == 401) {
+      final fallback = widget.series != null ? '/series/${widget.series!.id}' : null;
       Navigator.of(context).pop();
       showLoginRequiredSnackBar(context, 'Phiên đăng nhập đã hết hạn. Vui lòng đăng nhập lại để thanh toán.');
-      AuthModalSheet.show(context);
+      openLoginForCurrentRoute(context, fallbackRedirect: fallback);
       return true;
     }
     return false;

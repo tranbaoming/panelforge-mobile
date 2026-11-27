@@ -2,10 +2,10 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:google_fonts/google_fonts.dart';
 import '../models/api_dtos.dart';
+import '../navigation/read_guard.dart';
 import '../providers/api_providers.dart';
 import '../services/preferences_service.dart';
 import '../theme/app_theme.dart';
-import 'auth_modal_sheet.dart';
 import 'wallet_topup_dialog.dart';
 
 /// Chip hiển thị số dư Ví tiền (VNĐ) trên Header
@@ -47,7 +47,7 @@ class WalletChip extends ConsumerWidget {
               ),
             ),
           );
-          AuthModalSheet.show(context);
+          openLoginForCurrentRoute(context);
         } else {
           WalletTopupDialog.show(context);
         }
