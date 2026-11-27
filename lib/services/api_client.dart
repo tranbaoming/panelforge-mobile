@@ -27,11 +27,13 @@ class AuthInterceptor extends QueuedInterceptor {
   final Dio dio;
   final CookieJar cookieJar;
   final VoidCallback onSessionExpired;
+  final Dio Function()? refreshDioFactory;
 
   AuthInterceptor({
     required this.dio,
     required this.cookieJar,
     required this.onSessionExpired,
+    this.refreshDioFactory,
   });
 
   /// Các endpoint không thử silent refresh khi gặp 401 (do 401 là kết quả nghiệp vụ hợp lệ)
@@ -192,22 +194,23 @@ class AuthInterceptor extends QueuedInterceptor {
       final uri = err.requestOptions.uri.toString();
 
       // Bỏ qua nếu là endpoint auth nghiệp vụ (nhập sai pass, sai mã OTP,...)
-      // hoặc các endpoint kiểm tra thông tin (/api/auth/me, /api/wallet/me)
-      final isSelfCheckEndpoint = path.contains('/api/auth/me') ||
-          path.contains('/api/wallet/me') ||
-          uri.contains('/api/auth/me') ||
-          uri.contains('/api/wallet/me');
-
       if (_authEndpoints.hasMatch(path) || _authEndpoints.hasMatch(uri)) {
         return handler.next(err);
       }
 
+      // Chỉ xử lý hết hạn phiên khi người dùng đang có phiên đăng nhập cục bộ.
+      final hasLocalSession = PreferencesService.getAuthUser() != null;
+
       // Đã thử refresh cho request này rồi mà vẫn 401 -> phiên thực sự hết hạn.
-      // Tuyệt đối không cho phép lỗi 401 từ /api/auth/me hoặc /api/wallet/me xóa phiên Reader.
       if (err.requestOptions.extra['is_retry'] == true) {
-        if (!isSelfCheckEndpoint && PreferencesService.getAuthUser() == null) {
+        if (hasLocalSession) {
           onSessionExpired();
         }
+        return handler.next(err);
+      }
+
+      // Khách chưa đăng nhập gặp 401 -> không cần silent refresh hay đá ra /login.
+      if (!hasLocalSession) {
         return handler.next(err);
       }
 
@@ -223,15 +226,11 @@ class AuthInterceptor extends QueuedInterceptor {
           final retryResponse = await dio.fetch(retryOptions);
           return handler.resolve(retryResponse);
         } else {
-          if (!isSelfCheckEndpoint && PreferencesService.getAuthUser() == null) {
-            onSessionExpired();
-          }
+          onSessionExpired();
           return handler.next(err);
         }
       } catch (_) {
-        if (!isSelfCheckEndpoint && PreferencesService.getAuthUser() == null) {
-          onSessionExpired();
-        }
+        onSessionExpired();
         return handler.next(err);
       }
     }
@@ -249,22 +248,25 @@ class AuthInterceptor extends QueuedInterceptor {
     _refreshCompleter = completer;
 
     try {
-      final refreshDio = Dio(
-        BaseOptions(
-          baseUrl: ApiConfig.baseUrl,
-          connectTimeout: const Duration(seconds: 15),
-          receiveTimeout: const Duration(seconds: 15),
-          headers: {
-            'Accept': 'application/json',
-            'Content-Type': 'application/json',
-            'X-Requested-With': 'XMLHttpRequest',
-            'User-Agent': ApiClient.getUserAgent(),
-          },
-        ),
-      );
+      final refreshDio = refreshDioFactory?.call() ??
+          Dio(
+            BaseOptions(
+              baseUrl: ApiConfig.baseUrl,
+              connectTimeout: const Duration(seconds: 15),
+              receiveTimeout: const Duration(seconds: 15),
+              headers: {
+                'Accept': 'application/json',
+                'Content-Type': 'application/json',
+                'X-Requested-With': 'XMLHttpRequest',
+                'User-Agent': ApiClient.getUserAgent(),
+              },
+            ),
+          );
 
       // Đính kèm cùng CookieJar để tự động gửi cookie pf_refresh và lưu lại pf_access mới
-      refreshDio.interceptors.add(CookieManager(cookieJar));
+      if (!refreshDio.interceptors.any((i) => i is CookieManager)) {
+        refreshDio.interceptors.add(CookieManager(cookieJar));
+      }
 
       final response = await refreshDio.post(
         '/api/auth/refresh',
