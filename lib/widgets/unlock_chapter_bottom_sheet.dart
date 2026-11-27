@@ -31,12 +31,17 @@ class UnlockChapterBottomSheet extends ConsumerStatefulWidget {
   /// Bản ngôn ngữ mua (vi/en/ja) — mua theo từng ngôn ngữ; giá của chương đã là giá bản này.
   final String language;
 
+  /// Có tự đẩy route `/reader/...` sau khi mở khóa không.
+  /// Tắt khi mở sheet từ ngay trong `ComicReaderPage` để tránh xếp chồng hai màn Reader.
+  final bool navigateToReaderOnUnlock;
+
   const UnlockChapterBottomSheet({
     super.key,
     required this.chapter,
     this.series,
     required this.onUnlocked,
     this.language = 'vi',
+    this.navigateToReaderOnUnlock = true,
   });
 
   /// Guest sẽ nhận SnackBar yêu cầu đăng nhập thay vì mở màn hình thanh toán.
@@ -46,6 +51,7 @@ class UnlockChapterBottomSheet extends ConsumerStatefulWidget {
     SeriesItem? series,
     required VoidCallback onUnlocked,
     String language = 'vi',
+    bool navigateToReaderOnUnlock = true,
   }) {
     final container = ProviderScope.containerOf(context, listen: false);
     if (!container.read(authStateProvider).isAuthenticated) {
@@ -57,8 +63,13 @@ class UnlockChapterBottomSheet extends ConsumerStatefulWidget {
       context: context,
       isScrollControlled: true,
       backgroundColor: Colors.transparent,
-      builder: (context) =>
-          UnlockChapterBottomSheet(chapter: chapter, series: series, onUnlocked: onUnlocked, language: language),
+      builder: (context) => UnlockChapterBottomSheet(
+        chapter: chapter,
+        series: series,
+        onUnlocked: onUnlocked,
+        language: language,
+        navigateToReaderOnUnlock: navigateToReaderOnUnlock,
+      ),
     );
   }
 
@@ -177,9 +188,20 @@ class _UnlockChapterBottomSheetState extends ConsumerState<UnlockChapterBottomSh
         ),
       ),
     );
-    if (widget.series != null && router != null) {
+    final alreadyOnReader = router != null &&
+        widget.series != null &&
+        _isAlreadyOnReaderRoute(router, widget.series!.id, widget.chapter.id);
+    if (widget.navigateToReaderOnUnlock && widget.series != null && router != null && !alreadyOnReader) {
       router.push('/reader/${widget.series!.id}?chapterId=${widget.chapter.id}');
     }
+  }
+
+  static bool _isAlreadyOnReaderRoute(GoRouter router, String seriesId, String chapterId) {
+    final config = router.routerDelegate.currentConfiguration;
+    final lastPath = config.isNotEmpty ? config.last.matchedLocation : config.uri.path;
+    if (lastPath != '/reader/$seriesId') return false;
+    final currentChapterId = config.uri.queryParameters['chapterId'];
+    return currentChapterId == null || currentChapterId == chapterId;
   }
 
   void _openTopupDialog() {

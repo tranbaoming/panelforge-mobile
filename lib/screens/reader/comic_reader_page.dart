@@ -333,6 +333,7 @@ class _ComicReaderPageState extends ConsumerState<ComicReaderPage> with WidgetsB
       chapter: chapter,
       series: _series,
       language: _activeLanguage,
+      navigateToReaderOnUnlock: false,
       onUnlocked: _reloadUnlockedPages,
     );
   }
@@ -1502,6 +1503,7 @@ class _ComicReaderPageState extends ConsumerState<ComicReaderPage> with WidgetsB
                           chapter: currentChapter,
                           series: series,
                           language: _activeLanguage,
+                          navigateToReaderOnUnlock: false,
                           onUnlocked: () {
                             setState(() => _lockedByServer = false);
                             _loadChapterContent(series, currentChapter);
