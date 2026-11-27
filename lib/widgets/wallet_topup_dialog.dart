@@ -4,12 +4,12 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:google_fonts/google_fonts.dart';
 import '../models/api_dtos.dart';
+import '../navigation/read_guard.dart';
 import '../providers/api_providers.dart';
 import '../services/api_client.dart';
 import '../services/google_play_billing_service.dart';
 import '../services/preferences_service.dart';
 import '../theme/app_theme.dart';
-import 'auth_modal_sheet.dart';
 import 'vietqr_payment_panel.dart';
 import 'wallet_history.dart';
 
@@ -35,7 +35,7 @@ class WalletTopupDialog extends ConsumerStatefulWidget {
     final container = ProviderScope.containerOf(context, listen: false);
     if (!container.read(authStateProvider).isAuthenticated) {
       showLoginRequiredSnackBar(context, 'Vui lòng đăng nhập tài khoản Độc giả để nạp tiền vào Ví.');
-      AuthModalSheet.show(context);
+      openLoginForCurrentRoute(context, fallbackRedirect: seriesId != null ? '/series/$seriesId' : '/shop');
       return Future.value();
     }
     return showDialog(
@@ -133,9 +133,10 @@ class _WalletTopupDialogState extends ConsumerState<WalletTopupDialog> with Sing
       if (!mounted) return;
       setState(() => _isLoadingQr = false);
       if (e is ApiException && e.statusCode == 401) {
+        final fallback = widget.seriesId != null ? '/series/${widget.seriesId}' : '/shop';
         Navigator.of(context).pop();
         showLoginRequiredSnackBar(context, 'Phiên đăng nhập đã hết hạn. Vui lòng đăng nhập lại để nạp tiền.');
-        AuthModalSheet.show(context);
+        openLoginForCurrentRoute(context, fallbackRedirect: fallback);
         return;
       }
       showPaymentErrorSnackBar(

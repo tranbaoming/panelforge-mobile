@@ -471,13 +471,17 @@ class _LoginPageState extends ConsumerState<LoginPage> {
   /// - Mở từ nút "Đọc" trong app (`ensureLoggedInForReading`) → đóng màn này và trả `true`; nút đó tự mở tiếp chương.
   /// - Có `redirect` (điều hướng thẳng tới /reader/...) → thay màn này bằng đúng trang đích.
   /// - Còn lại → về Trang chủ.
+  static const Set<String> _shellTabRoutes = {'/', '/for-you', '/search', '/shop', '/profile'};
+
   void _finishLogin() {
     if (_finished || !mounted) return;
     _finished = true;
     final target = widget.redirect;
     final canPop = context.canPop();
     if (target != null) {
-      if (canPop) {
+      if (_shellTabRoutes.contains(target)) {
+        context.go(target);
+      } else if (canPop) {
         context.pushReplacement(target);
       } else {
         context.go('/');
